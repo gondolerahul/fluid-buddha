@@ -1,0 +1,365 @@
+"""
+Heavy Thinker (Req 3.3.2) — the grounded reasoning engine.
+
+Runs the standard function-calling loop: the model must call ``query_cortex``
+to ground itself, may then call client-action / component tools, and finishes
+with the spoken explanation as plain text. ``query_cortex`` is executed
+server-side; action/component tools are recorded, assigned a ``sync_id`` and
+acked so the model can continue.
+"""
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Optional, Sequence
+
+from app.ai.base import ChatMessage, LLMClient
+from app.config import Settings
+from app.cortex.bridge import CortexBridge
+from app.cortex.query import query_cortex
+from app.orchestrator.components import normalize_component
+from app.orchestrator.pagegen import build_extreme_brief, normalize_page
+from app.orchestrator.personas import VALID_PERSONAS
+from app.orchestrator.prompts import build_reaction_system, build_thinker_system
+from app.orchestrator.result import ClientAction, ComponentPayload, Grounding, PageSpec
+from app.orchestrator.sitemap import resolve_route
+from app.orchestrator.tools import ACTION_TOOLS, COMPONENT_TOOLS, tools_for
+
+logger = logging.getLogger(__name__)
+
+# Each loop iteration is a full LLM round-trip, so fewer = lower latency. Four
+# is plenty for the common path (one grounding search, then act + speak) while
+# still leaving headroom; the forced-answer pass below guarantees a reply.
+_MAX_TURNS = 4
+# Hard cap on real cortex searches per turn. One grounded retrieval (top_k=5)
+# answers nearly every SDR question; a second search is a whole extra round-trip
+# of latency for marginal gain, so we cap at one. Gemini 3.x keeps emitting
+# query_cortex (copying the history pattern) even after we withdraw it from the
+# tool list, so we ALSO refuse to execute it past this many calls.
+_MAX_CORTEX = 1
+
+
+def _sync_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+
+
+def _account(result: "ThinkResult", resp, system: str = "", messages=()) -> None:
+    """Add one LLM call's token + tool-call spend to the result (req F). Falls
+    back to a length estimate when the engine reports no usage (mock mode)."""
+    from app.analytics.pricing import estimate_tokens
+    in_tok = resp.input_tokens or (
+        estimate_tokens(system) + sum(estimate_tokens(getattr(m, "text", "")) for m in messages)
+    )
+    out_tok = resp.output_tokens or estimate_tokens(resp.text)
+    result.input_tokens += int(in_tok)
+    result.output_tokens += int(out_tok)
+    result.tool_calls += len(resp.tool_calls or [])
+
+
+@dataclass
+class ThinkResult:
+    answer_text: str = ""
+    actions: list[ClientAction] = field(default_factory=list)
+    components: list[ComponentPayload] = field(default_factory=list)
+    pages: list[PageSpec] = field(default_factory=list)
+    grounding: Grounding = field(default_factory=Grounding)
+    # Cost analytics (req F): which LLM tier ran + the tokens/tool-calls it spent.
+    llm_kind: str = "thinker"        # 'fast' (lean) | 'thinker' (heavy)
+    input_tokens: int = 0
+    output_tokens: int = 0
+    tool_calls: int = 0
+
+
+class HeavyThinker:
+    def __init__(self, llm: LLMClient, settings: Settings) -> None:
+        self._llm = llm
+        self._settings = settings
+
+    async def think(
+        self,
+        *,
+        user_text: str,
+        persona: Optional[str],
+        bridge: CortexBridge,
+        history: Sequence[ChatMessage] = (),
+        site_key: str = "hirebuddha",
+        intelligence: str = "advance",
+        page: Optional[str] = None,
+        section: Optional[str] = None,
+        sections: Optional[list[dict]] = None,
+        related: Optional[list] = None,
+        probe: bool = False,
+    ) -> ThinkResult:
+        extreme_brief = build_extreme_brief(site_key) if intelligence == "extreme" else None
+        system = build_thinker_system(
+            persona, site_key, intelligence=intelligence,
+            page=page, section=section, sections=sections,
+            extreme_brief=extreme_brief, related=related, probe=probe,
+        )
+        messages: list[ChatMessage] = list(history) + [
+            ChatMessage(role="user", text=user_text)
+        ]
+        result = ThinkResult()
+        cortex_calls = 0
+        t0 = time.monotonic()
+        turns = 0
+
+        # Tools are gated by the configured intelligence tier. The no-cortex
+        # variant (offered once the search budget is spent) is derived from the
+        # SAME gated set so a lower tier never gets a higher-tier tool back.
+        gated_tools = tools_for(intelligence, site_key)
+        no_cortex_tools = [t for t in gated_tools if t.name != "query_cortex"]
+
+        for _ in range(_MAX_TURNS):
+            turns += 1
+            # After the search budget is spent, withdraw query_cortex from the
+            # offered tools so the model is nudged to act/answer instead.
+            tools = gated_tools if cortex_calls < _MAX_CORTEX else no_cortex_tools
+            resp = await self._llm.generate(
+                system=system,
+                messages=messages,
+                tools=tools,
+                model=self._settings.heavy_model,
+                temperature=0.5,
+                max_output_tokens=1024,
+                # Thinking disabled for latency: gemini-3.5-flash "thinking" adds
+                # ~1s+/call (and several calls per turn) for little gain on this
+                # grounded-SDR task. Raise this to re-enable deeper reasoning.
+                thinking_budget=1,
+            )
+            _account(result, resp, system, messages)
+
+            # Capture spoken text on EVERY turn: Gemini 3.x often bundles the
+            # final answer in the same turn as its action tool calls (navigate/
+            # render), so we must not wait for a tool-free turn to keep it.
+            if resp.text.strip():
+                result.answer_text = resp.text.strip()
+
+            if not resp.tool_calls:
+                break
+
+            # Replay the model's tool-call turn (required for Vertex ordering).
+            messages.append(ChatMessage(role="model", tool_calls=resp.tool_calls))
+            productive = False  # did this turn do anything other than over-budget search?
+            for call in resp.tool_calls:
+                over_budget = (
+                    call.name == "query_cortex" and cortex_calls >= _MAX_CORTEX
+                )
+                if over_budget:
+                    # Gemini re-calls query_cortex even after it's withdrawn (it
+                    # copies the history pattern); refuse the extra search rather
+                    # than execute it, and tell it to answer now.
+                    tool_result: Any = {
+                        "ok": False,
+                        "note": "Search budget reached — answer now using prior "
+                                "results; do not search again.",
+                    }
+                else:
+                    if call.name == "query_cortex":
+                        cortex_calls += 1
+                    tool_result = await self._handle_tool_call(
+                        call, bridge, result, site_key
+                    )
+                    productive = True
+                messages.append(ChatMessage(
+                    role="tool", tool_name=call.name, tool_result=tool_result
+                ))
+
+            # A whole turn of nothing-but-refused-searches → stop; the finishing
+            # pass below will force a spoken answer from what we already have.
+            if not productive:
+                logger.info("thinker: search budget exhausted, forcing answer")
+                break
+        else:
+            logger.warning("Heavy Thinker hit max turns without a final answer")
+
+        # If the model kept calling tools and never spoke, force a final answer.
+        # A tool-free pass alone returns empty under the strict "must ground"
+        # system prompt, so we add an explicit nudge to answer from context.
+        if not result.answer_text:
+            nudge = ChatMessage(
+                role="user",
+                text="Now answer me directly in 2-3 spoken sentences using what "
+                     "you found. Do not call any tools.",
+            )
+            forced = await self._llm.generate(
+                system=system,
+                messages=list(messages) + [nudge],
+                model=self._settings.heavy_model,
+                temperature=0.5,
+                max_output_tokens=512,
+                thinking_budget=0,  # no thinking — spend the whole budget on the answer
+            )
+            _account(result, forced, system, list(messages) + [nudge])
+            if forced.text.strip():
+                result.answer_text = forced.text.strip()
+
+        if not result.answer_text:
+            result.answer_text = (
+                "Here's what I found — want me to go deeper on any part?"
+                if result.grounding.found
+                else "I want to get this exactly right — let me connect you with the team."
+            )
+
+        logger.info(
+            "thinker done in %.1fs: turns=%d cortex_searches=%d actions=%d "
+            "components=%d grounded=%s answer_len=%d",
+            time.monotonic() - t0, turns, cortex_calls, len(result.actions),
+            len(result.components), result.grounding.found, len(result.answer_text),
+        )
+        return result
+
+    async def _handle_tool_call(
+        self, call, bridge: CortexBridge, result: ThinkResult, site_key: str
+    ):
+        name = call.name
+        args = call.args or {}
+
+        if name == "query_cortex":
+            res = await query_cortex(
+                bridge,
+                args.get("query", ""),
+                top_k=self._settings.cortex_retrieval_top_k,
+                threshold=self._settings.cortex_confidence_threshold,
+            )
+            result.grounding = Grounding(
+                confidence=res["confidence"],
+                found=res["found"],
+                sources=[
+                    {"document": s.get("document"), "section": s.get("section"),
+                     "score": s.get("score")}
+                    for s in res.get("snippets", [])
+                ],
+            )
+            return res
+
+        if name == "generate_page":
+            title, sections = normalize_page(args.get("title"), args.get("sections"))
+            sync_id = _sync_id("page")
+            result.pages.append(PageSpec(sync_id=sync_id, title=title, sections=sections))
+            return {"ok": True, "sync_id": sync_id, "section_count": len(sections)}
+
+        if name == "call_site_api":
+            from app.apis.registry import get_site_apis
+            return await get_site_apis(site_key).call(
+                args.get("operation_id", ""), args.get("params") or {}
+            )
+
+        if name in COMPONENT_TOOLS:
+            if name == "render_component":
+                sync_id = _sync_id("ui")
+                ctype, st = normalize_component(
+                    args.get("component_type", "table"), args.get("initial_state", {}) or {}
+                )
+                result.components.append(ComponentPayload(
+                    sync_id=sync_id,
+                    component_type=ctype,
+                    initial_state=st,
+                    explanation_text=args.get("explanation_text", "") or "",
+                ))
+                return {"ok": True, "sync_id": sync_id}
+            # patch_component
+            return {"ok": True, "target_sync_id": args.get("target_sync_id")}
+
+        if name in ACTION_TOOLS:
+            action = self._to_action(name, args, site_key)
+            if action:
+                result.actions.append(action)
+                return {"ok": True}
+            if name == "navigate":
+                # Bad/unknown path — tell the model so it can correct or just speak.
+                return {
+                    "ok": False,
+                    "error": "invalid_route",
+                    "hint": "That path is not a real page. Use only a route from "
+                            "VALID ROUTES, or answer without navigating.",
+                }
+            return {"ok": True}
+
+        logger.warning("Unknown tool call: %s", name)
+        return {"ok": False, "error": "unknown tool"}
+
+    def _to_action(
+        self, name: str, args: dict, site_key: str
+    ) -> Optional[ClientAction]:
+        if name == "navigate":
+            # Snap the model's guess to a real route; drop it if too far off so
+            # the visitor is never sent to a 404 (Req 3.5).
+            path = resolve_route(site_key, args.get("path") or "")
+            if not path:
+                logger.warning("navigate dropped — invalid path %r", args.get("path"))
+                return None
+            return ClientAction(type="navigate", path=path)
+        if name == "scroll_to":
+            section_id = args.get("section_id")
+            direction = args.get("direction")
+            if not section_id and not direction:
+                return None
+            return ClientAction(
+                type="scroll_to", section_id=section_id, direction=direction
+            )
+        if name == "set_persona":
+            persona = args.get("persona")
+            if persona in VALID_PERSONAS:
+                return ClientAction(type="set_icp", icp=persona)
+        return None
+
+    async def react(
+        self, *, component_type: str, state: dict,
+        persona: Optional[str] = None, site_key: str = "hirebuddha",
+    ) -> str:
+        """A short, live spoken reaction to the visitor interacting with a
+        component. Ungrounded by design (it comments on the numbers they're
+        exploring), so it uses the fast model and no tools."""
+        system = build_reaction_system(persona, site_key, component_type, state)
+        try:
+            resp = await self._llm.generate(
+                system=system,
+                messages=[ChatMessage(
+                    role="user",
+                    text="React in one short spoken sentence to my latest change.",
+                )],
+                model=self._settings.fast_model,
+                temperature=0.6,
+                max_output_tokens=80,
+                thinking_budget=0,
+            )
+        except Exception as exc:
+            logger.warning("react failed: %s", exc)
+            return ""
+        return resp.text.strip()
+
+    async def welcome(
+        self,
+        *,
+        persona: Optional[str],
+        bridge: CortexBridge,
+        site_key: str = "hirebuddha",
+        intelligence: str = "advance",
+        page: Optional[str] = None,
+        section: Optional[str] = None,
+        sections: Optional[list[dict]] = None,
+    ) -> ThinkResult:
+        """Agent-initiated greeting that introduces the current page (Req 3.x,
+        voice-first onboarding). Grounded via the same query_cortex loop."""
+        directive = (
+            "The visitor just arrived"
+            + (f" on {page}" if page else "")
+            + ". Greet them warmly by name as Pragya in ONE or TWO short sentences, "
+            "briefly say what this page is about (ground it with query_cortex), and "
+            "invite them to ask a question or have you show them around. Do not "
+            "navigate or render components yet."
+        )
+        return await self.think(
+            user_text=directive,
+            persona=persona,
+            bridge=bridge,
+            history=(),
+            site_key=site_key,
+            intelligence=intelligence,
+            page=page,
+            section=section,
+            sections=sections,
+        )

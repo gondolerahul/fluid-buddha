@@ -1,0 +1,112 @@
+"""
+Tenant website management (req B): a logged-in tenant attaches and manages the
+websites the ``<fluid-buddha>`` agent runs on. All routes are tenant-scoped via
+``current_tenant`` — a tenant can only ever see/touch their own sites.
+"""
+from __future__ import annotations
+
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.security import current_tenant
+from app.db import get_session
+from app.tenancy import store
+
+router = APIRouter(prefix="/tenant/websites", tags=["websites"])
+
+_INTELLIGENCE = {"basic", "high", "advance", "extreme"}
+_DESIGN = {"level1", "level2"}
+
+
+class WebsiteCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    domain: str | None = None
+    intelligence: str = "advance"
+    design: str = "level1"
+    accent: str | None = None
+
+
+class WebsiteUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    domain: str | None = None
+    intelligence: str | None = None
+    design: str | None = None
+    accent: str | None = None
+    status: str | None = None
+
+
+def _validate_levels(intelligence: str | None, design: str | None) -> None:
+    if intelligence is not None and intelligence not in _INTELLIGENCE:
+        raise HTTPException(422, f"intelligence must be one of {sorted(_INTELLIGENCE)}")
+    if design is not None and design not in _DESIGN:
+        raise HTTPException(422, f"design must be one of {sorted(_DESIGN)}")
+
+
+async def _owned(db: AsyncSession, website_id: str, tenant) -> store.Website:
+    try:
+        wid = uuid.UUID(website_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Website not found")
+    site = await store.get_website(db, wid, tenant.id)
+    if site is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Website not found")
+    return site
+
+
+@router.get("")
+async def list_websites(
+    tenant: store.Tenant = Depends(current_tenant),
+    db: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return [w.public() for w in await store.list_websites(db, tenant.id)]
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_website(
+    body: WebsiteCreate,
+    tenant: store.Tenant = Depends(current_tenant),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    _validate_levels(body.intelligence, body.design)
+    site = await store.create_website(
+        db, tenant_id=tenant.id, name=body.name, domain=body.domain,
+        intelligence=body.intelligence, design=body.design, accent=body.accent,
+    )
+    return site.public()
+
+
+@router.get("/{website_id}")
+async def get_website(
+    website_id: str,
+    tenant: store.Tenant = Depends(current_tenant),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    return (await _owned(db, website_id, tenant)).public()
+
+
+@router.patch("/{website_id}")
+async def update_website(
+    website_id: str,
+    body: WebsiteUpdate,
+    tenant: store.Tenant = Depends(current_tenant),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    site = await _owned(db, website_id, tenant)
+    _validate_levels(body.intelligence, body.design)
+    updated = await store.update_website(
+        db, site.id, tenant.id, **body.model_dump(exclude_none=True)
+    )
+    return updated.public()
+
+
+@router.delete("/{website_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_website(
+    website_id: str,
+    tenant: store.Tenant = Depends(current_tenant),
+    db: AsyncSession = Depends(get_session),
+) -> None:
+    site = await _owned(db, website_id, tenant)
+    await store.delete_website(db, site.id, tenant.id)

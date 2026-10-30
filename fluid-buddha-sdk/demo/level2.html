@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>fluid-buddha — Design Level 2 · The Presence</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #08090c; color: #eee; overflow: hidden;
+      font-family: ui-sans-serif, system-ui, sans-serif; }
+    .host { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; }
+    .host > div { opacity: .22; max-width: 30ch; }
+    .host h1 { font-size: 2rem; letter-spacing: -.02em; margin: 0 0 8px; }
+    .host p { margin: 0; line-height: 1.5; }
+    a.back { position: fixed; top: 16px; left: 18px; z-index: 5; color: rgba(220,222,232,.5);
+      font-size: 13px; text-decoration: none; opacity: .8; }
+    a.back:hover { color: #f4f1e9; }
+  </style>
+</head>
+<body>
+  <a class="back" href="index.html">← showcase</a>
+  <!-- A near-empty host: Design Level 2 takes the whole viewport. Tap the ring of
+       light to awaken Pragya, then speak. -->
+  <div class="host">
+    <div>
+      <h1>Halden Instruments</h1>
+      <p>The presence is mounted over this page. Step inside — tap the ring to begin.</p>
+    </div>
+  </div>
+
+  <script src="../dist/fluid-buddha.global.js"
+    data-backend="ws://localhost:8081" data-site="hirebuddha"
+    data-accent="#c9a24a" data-intelligence="advance" data-design="level2"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>fluid-buddha — Design Level 3 · The Atmosphere</title>
+  <style>
+    :root { --ink:#f4f1e9; --dim:#a7a294; --gold:#c9a24a; --void:#0a0b0e; --line:rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--ink);
+      background: var(--void); -webkit-font-smoothing: antialiased; line-height: 1.55;
+      background-image: radial-gradient(110% 70% at 85% -10%, color-mix(in srgb, var(--gold) 9%, transparent), transparent 55%); }
+    a.back { position: fixed; top: 16px; left: 18px; z-index: 5; color: var(--dim); font-size: 13px; text-decoration: none; }
+    a.back:hover { color: var(--ink); }
+    main { max-width: 940px; margin: 0 auto; padding: 12vh 6vw 24vh; }
+    h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); letter-spacing: -.025em; margin: 0 0 12px; text-wrap: balance; }
+    .lede { font-size: 1.12rem; color: var(--dim); max-width: 56ch; }
+    .hint { font-size: 13px; color: var(--dim); border-left: 1px solid color-mix(in srgb, var(--gold) 50%, transparent); padding-left: 14px; margin-top: 22px; }
+    .hint kbd { font: inherit; font-size: 12px; padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
+    section { padding: 60px 0; border-top: 1px solid var(--line); }
+    section h2 { font-size: 1.7rem; letter-spacing: -.02em; margin: 0 0 10px; }
+    section p { color: var(--dim); max-width: 62ch; margin: 0; }
+    .meta { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: color-mix(in srgb, var(--gold) 70%, var(--dim)); margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <a class="back" href="index.html">← showcase</a>
+  <main>
+    <h1>Halden Instruments</h1>
+    <p class="lede">Pragya isn't a box on this page — she is the light in the room.</p>
+    <p class="hint">Press <kbd>⌘ K</kbd> (or the mote of light, lower-right) and ask
+       "take me to security" — the page dims and Pragya's light settles on exactly
+       what she's talking about.</p>
+
+    <section id="pricing"><p class="meta">Plans</p><h2>Pricing</h2>
+      <p>Per-axis instruments with calibration and a five-year drift warranty included.</p></section>
+    <section id="security"><p class="meta">Trust</p><h2>Security &amp; compliance</h2>
+      <p>ITAR-aware handling, signed firmware, audited supply chain, encrypted telemetry.</p></section>
+    <section id="integrations"><p class="meta">Connect</p><h2>Integrations</h2>
+      <p>Stream over MQTT, ROS 2, or a signed REST feed; reference drivers for common flight computers.</p></section>
+    <section id="customers"><p class="meta">In the field</p><h2>Who flies with us</h2>
+      <p>North Sea survey drones, deep-ocean ROVs, and two lunar landers in integration.</p></section>
+  </main>
+
+  <script src="../dist/fluid-buddha.global.js"
+    data-backend="ws://localhost:8081" data-site="hirebuddha"
+    data-accent="#c9a24a" data-intelligence="advance" data-design="level3"></script>
+</body>
+</html>

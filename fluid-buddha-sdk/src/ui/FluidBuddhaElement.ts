@@ -1,0 +1,527 @@
+// <fluid-buddha> — the framework-agnostic Web Component. All UI lives in a
+// Shadow DOM so it never collides with the host page's CSS/JS (Req 3.1.2/4.1).
+//
+// Design Level 1 — "The Companion": Pragya is a living Aura you hold. The
+// launcher is a breathing light-form (a 2D AuraCanvas, no WebGL), the panel is
+// molten obsidian glass with a gold light-seam, and the agent's state —
+// dormant · listening · thinking · speaking — is read through how that light
+// behaves, mirrored on the avatar. Voice is the hero; typing is the quiet path.
+
+import { Grounding, PageSpec } from '../protocol';
+import { FluidBuddhaConfig, FluidBuddhaOptions, optionsFromAttributes, resolveConfig } from '../core/config';
+import { HostBridge } from '../core/HostBridge';
+import { Session } from '../core/Session';
+import { applyTokens, fetchDesignSystem } from '../core/designSystem';
+import { Canvas } from './components/canvas';
+import { Level2Shell } from './level2/Level2Shell';
+import { Level3Shell } from './level3/Level3Shell';
+import { PageRenderer, EnquiryPayload } from './page/PageRenderer';
+import { AuraCanvas, AuraState } from './aura/AuraCanvas';
+import { STYLES } from './styles';
+
+const ICONS = {
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+};
+
+function h<K extends keyof HTMLElementTagNameMap>(
+  tag: K, className?: string, text?: string,
+): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text) el.textContent = text;
+  return el;
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+export class FluidBuddhaElement extends HTMLElement {
+  static readonly tagName = 'fluid-buddha';
+
+  private _options: FluidBuddhaOptions = {};
+  private config!: FluidBuddhaConfig;
+  private session!: Session;
+  private canvas!: Canvas;
+  private level2?: Level2Shell;
+  private level3?: Level3Shell;
+  private pageRenderer?: PageRenderer;
+  private pageSurface?: HTMLDivElement;
+
+  private trigger!: HTMLButtonElement;
+  private triggerAura?: AuraCanvas;
+  private avatarAura?: AuraCanvas;
+  private panel!: HTMLDivElement;
+  private messagesEl!: HTMLDivElement;
+  private canvasEl!: HTMLDivElement;
+  private statusEl!: HTMLSpanElement;
+  private micBtn!: HTMLButtonElement;
+  private thinkingEl: HTMLDivElement | null = null;
+  private textarea!: HTMLTextAreaElement;
+  private built = false;
+  private open = false;
+
+  // ---- state-of-light machine ----
+  private auraState: AuraState = 'dormant';
+  private connText = 'online';
+  private thinking = false;
+  private speakingUntil = 0;
+  private reactRaf = 0;
+
+  /** Programmatic config (used by FluidBuddha.init). Merged over attributes. */
+  set options(opts: FluidBuddhaOptions) {
+    this._options = opts;
+    if (this.built) this.config = resolveConfig({ ...optionsFromAttributes(this), ...this._options });
+  }
+
+  connectedCallback(): void {
+    if (this.built) return;
+    this.config = resolveConfig({ ...optionsFromAttributes(this), ...this._options });
+    this.style.setProperty('--fb-accent', this.config.accent);
+    this.setAttribute('data-position', this.config.position);
+    this.setAttribute('data-design', this.config.design);
+    this.build();
+    this.built = true;
+
+    if (this.config.design === 'level1' && this.config.autoStart) {
+      requestAnimationFrame(() => this.openPanel());
+    }
+  }
+
+  disconnectedCallback(): void {
+    if (this.reactRaf) cancelAnimationFrame(this.reactRaf);
+    this.triggerAura?.dispose();
+    this.avatarAura?.dispose();
+    this.level2?.dispose();
+    this.level3?.dispose();
+    this.session?.destroy();
+  }
+
+  // ---- build the shadow UI ----
+  private build(): void {
+    const root = this.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent = STYLES;
+    root.appendChild(style);
+
+    // A single film-grain film over the whole overlay — the "shot on film" luxe.
+    root.appendChild(h('div', 'fb-grain'));
+
+    if (this.config.intelligence === 'extreme') this.setupPageSurface(root);
+
+    if (this.config.design === 'level2') { this.buildLevel2(root); return; }
+    if (this.config.design === 'level3') { this.buildLevel3(root); return; }
+    this.buildPanel(root);
+  }
+
+  // ---- Extreme: runtime-generated full-page surface ----
+  private setupPageSurface(root: ShadowRoot): void {
+    const surface = document.createElement('div');
+    surface.className = 'fbpage hidden';
+
+    const bar = document.createElement('div');
+    bar.className = 'fbpage-bar';
+    bar.append(h('div', 'fbpage-brand', 'Pragya'));
+    const back = h('button', 'fbpage-back', 'Close');
+    back.addEventListener('click', () => surface.classList.add('hidden'));
+    bar.append(back);
+
+    const inner = h('div', 'fbpage-inner');
+    surface.append(bar, inner);
+    root.appendChild(surface);
+
+    this.pageSurface = surface;
+    this.pageRenderer = new PageRenderer(inner, (p) => this.onEnquiry(p));
+
+    void fetchDesignSystem(this.config.api, this.config.site).then((ds) => {
+      if (ds) {
+        applyTokens(surface, ds.tokens);
+        const brand = bar.querySelector('.fbpage-brand');
+        if (brand && ds.name) brand.textContent = ds.name;
+      }
+    });
+  }
+
+  private renderPage(page: PageSpec): void {
+    if (!this.pageRenderer || !this.pageSurface) return;
+    this.pageSurface.classList.remove('hidden');
+    this.pageRenderer.render(page);
+  }
+
+  private onEnquiry(payload: EnquiryPayload): void {
+    const op = payload.operationId ? ` using ${payload.operationId}` : '';
+    this.session.sendText(
+      `Please submit this enquiry${op}: ${JSON.stringify(payload.values)}`,
+    );
+  }
+
+  // ---- Design Level 2: immersive particle overlay ----
+  private buildLevel2(root: ShadowRoot): void {
+    const bridge = new HostBridge(this.config.hooks);
+    const shell = new Level2Shell(root, this.config, {
+      primeAudio: () => this.session.primeAudio(),
+      connect: () => this.session.connect(),
+      startVoice: () => void this.session.startVoice(),
+      stopVoice: () => this.session.stopVoice(),
+      submitText: (text) => this.submitText(text),
+      notifyRendered: (id) => this.session.notifyRendered(id),
+      reportComponentState: (id, patch) => this.session.reportComponentState(id, patch),
+      inputLevel: () => this.session.inputLevel(),
+      outputLevel: () => this.session.outputLevel(),
+    });
+    this.level2 = shell;
+
+    this.session = new Session(this.config, bridge, {
+      onStatus: (s) => shell.setStatus(s),
+      onUserTranscript: (text, interim) => { if (!interim && text) shell.userMessage(text); },
+      onAgentMessage: (text, grounding) => shell.agentMessage(text, grounding),
+      onComponent: (c) => shell.addComponent(c),
+      onPatch: (sid, patch) => shell.patch(sid, patch),
+      onSystem: (msg) => shell.systemMessage(msg),
+      onPage: (p) => this.renderPage(p),
+      onAgentAudio: () => shell.agentAudioTick(),
+      onTourStatus: (text) => shell.setTourStatus(text),
+    });
+    this.session.enableWelcome(() => this.pageContext());
+  }
+
+  // ---- Design Level 3: ambient atmosphere (no widget) ----
+  private buildLevel3(root: ShadowRoot): void {
+    const bridge = new HostBridge(this.config.hooks);
+    const shell = new Level3Shell(root, this.config, {
+      primeAudio: () => this.session.primeAudio(),
+      connect: () => this.session.connect(),
+      startVoice: () => void this.session.startVoice(),
+      stopVoice: () => this.session.stopVoice(),
+      submitText: (text) => this.submitText(text),
+      notifyRendered: (id) => this.session.notifyRendered(id),
+      reportComponentState: (id, patch) => this.session.reportComponentState(id, patch),
+      inputLevel: () => this.session.inputLevel(),
+      outputLevel: () => this.session.outputLevel(),
+    });
+    this.level3 = shell;
+
+    this.session = new Session(this.config, bridge, {
+      onStatus: (s) => shell.setStatus(s),
+      onUserTranscript: (text, interim) => { if (!interim && text) shell.userMessage(text); },
+      onAgentMessage: (text, grounding) => shell.agentMessage(text, grounding),
+      onComponent: (c) => shell.addComponent(c),
+      onPatch: (sid, patch) => shell.patch(sid, patch),
+      onSystem: (msg) => shell.systemMessage(msg),
+      onPage: (p) => this.renderPage(p),
+      onAgentAudio: () => shell.agentAudioTick(),
+      onTourStatus: (text) => shell.setTourStatus(text),
+    });
+    this.session.enableWelcome(() => this.pageContext());
+  }
+
+  // ---- Design Level 1: the Companion ----
+  private buildPanel(root: ShadowRoot): void {
+    const reduce = prefersReducedMotion();
+
+    // — Launcher: a living Aura, not a button with an icon —
+    this.trigger = h('button', 'trigger');
+    this.trigger.setAttribute('aria-label', 'Talk to Pragya');
+    const triggerCanvas = document.createElement('canvas');
+    triggerCanvas.className = 'trigger-aura';
+    this.trigger.append(triggerCanvas);
+    this.trigger.addEventListener('click', () => this.toggle());
+    if (!reduce) this.bindMagnetic(this.trigger);
+    root.appendChild(this.trigger);
+
+    // — Panel: molten obsidian with a gold light-seam —
+    this.panel = h('div', 'panel hidden');
+    this.panel.setAttribute('data-state', 'dormant');
+    const header = h('div', 'header');
+    const profile = h('div', 'profile');
+    const avatar = h('div', 'avatar');
+    const avatarCanvas = document.createElement('canvas');
+    avatar.append(avatarCanvas);
+    const info = h('div');
+    info.append(h('div', 'name', 'Pragya'));
+    this.statusEl = h('span', 'status');
+    this.statusEl.append(h('span', 'dot'), document.createTextNode(' online'));
+    info.append(this.statusEl);
+    profile.append(avatar, info);
+    const closeBtn = h('button', 'icon-btn');
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.innerHTML = ICONS.close;
+    closeBtn.addEventListener('click', () => this.close());
+    header.append(profile, closeBtn);
+    this.panel.append(header);
+
+    // — Messages + generative canvas —
+    this.messagesEl = h('div', 'messages');
+    this.canvasEl = h('div', 'canvas');
+    this.messagesEl.append(this.canvasEl);
+    this.panel.append(this.messagesEl);
+
+    // — Suggestion seeds —
+    const chips = h('div', 'chips');
+    ['Show me pricing', 'How do you integrate?', 'Give me a quick tour'].forEach((label) => {
+      const c = h('button', 'chip', label);
+      c.addEventListener('click', () => this.submitText(label));
+      chips.append(c);
+    });
+    this.panel.append(chips);
+
+    // — Input row: mic is the hero —
+    const inputRow = h('div', 'input');
+    this.textarea = h('textarea');
+    this.textarea.placeholder = 'Speak, or type a question…';
+    this.textarea.setAttribute('aria-label', 'Message Pragya');
+    this.textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.submitText(this.textarea.value);
+        this.textarea.value = '';
+      }
+    });
+    this.micBtn = h('button', 'in-btn');
+    this.micBtn.innerHTML = ICONS.mic;
+    this.micBtn.title = 'Hold a conversation by voice';
+    this.micBtn.setAttribute('aria-label', 'Toggle voice');
+    this.micBtn.addEventListener('click', () => this.toggleVoice());
+    if (!this.voiceEnabled) this.micBtn.classList.add('hidden');
+    const sendBtn = h('button', 'in-btn');
+    sendBtn.innerHTML = ICONS.send;
+    sendBtn.title = 'Send';
+    sendBtn.setAttribute('aria-label', 'Send');
+    sendBtn.addEventListener('click', () => {
+      this.submitText(this.textarea.value);
+      this.textarea.value = '';
+    });
+    inputRow.append(this.textarea, this.micBtn, sendBtn);
+    this.panel.append(inputRow);
+
+    root.appendChild(this.panel);
+
+    // Wire the session
+    const bridge = new HostBridge(this.config.hooks);
+    this.canvas = new Canvas(
+      this.canvasEl,
+      (id) => this.session.notifyRendered(id),
+      (id, patch) => this.session.reportComponentState(id, patch),
+    );
+    this.session = new Session(this.config, bridge, {
+      onStatus: (s) => {
+        this.connText = s === 'open' ? 'voice ready' : s === 'failed' ? 'text mode' : 'online';
+        if (this.auraState === 'dormant') this.updateStatusText();
+      },
+      onUserTranscript: (text, interim) => {
+        if (interim) return;
+        this.canvas.clear();
+        if (text) {
+          this.addMessage('user', text);
+          this.showThinking();
+        }
+      },
+      onAgentMessage: (text, grounding) => { this.hideThinking(); this.addMessage('pragya', text, grounding); this.markSpeaking(); },
+      onComponent: (c) => { this.hideThinking(); this.canvas.add(c); this.markSpeaking(); this.scrollDown(); },
+      onPatch: (sid, patch) => this.canvas.applyPatch(sid, patch),
+      onSystem: (msg) => { this.hideThinking(); this.addMessage('system', msg); },
+      onPage: (p) => { this.hideThinking(); this.renderPage(p); },
+      onAgentAudio: () => this.markSpeaking(),
+      onTourStatus: (text) => { this.connText = text ? 'guided tour' : 'online'; if (this.auraState === 'dormant') this.updateStatusText(); },
+    });
+
+    // The living light — launcher + avatar share the same energy provider so
+    // they breathe with the conversation.
+    const energy = () => Math.max(this.session.inputLevel(), this.session.outputLevel());
+    this.triggerAura = new AuraCanvas(triggerCanvas, { accent: this.config.accent, reducedMotion: reduce });
+    this.triggerAura.start();
+    this.avatarAura = new AuraCanvas(avatarCanvas, { accent: this.config.accent, reducedMotion: reduce });
+    this.avatarAura.setEnergyProvider(energy);
+    this.avatarAura.start();
+
+    this.session.enableWelcome(() => this.pageContext());
+    this.addMessage('pragya', this.config.greeting);
+  }
+
+  /** Magnetic micro-physics: the launcher leans toward the cursor. Driven by
+   *  direct transform writes (no per-frame React-style state) for 60fps. */
+  private bindMagnetic(btn: HTMLButtonElement): void {
+    const onMove = (e: PointerEvent) => {
+      const r = btn.getBoundingClientRect();
+      const dx = (e.clientX - (r.left + r.width / 2)) / r.width;
+      const dy = (e.clientY - (r.top + r.height / 2)) / r.height;
+      btn.style.transform = `translate(${dx * 7}px, ${dy * 7 - 3}px) scale(1.06)`;
+    };
+    const reset = () => { btn.style.transform = ''; };
+    btn.addEventListener('pointermove', onMove);
+    btn.addEventListener('pointerleave', reset);
+    btn.addEventListener('pointerdown', reset);
+  }
+
+  private get voiceEnabled(): boolean {
+    return this.config.intelligence !== 'basic';
+  }
+
+  // ---- state-of-light machine ----
+  private setState(s: AuraState): void {
+    if (s === this.auraState) return;
+    this.auraState = s;
+    this.panel?.setAttribute('data-state', s);
+    this.avatarAura?.setState(s);
+    this.triggerAura?.setState(s);
+    this.updateStatusText();
+  }
+
+  private updateStatusText(): void {
+    const map: Record<AuraState, string> = {
+      dormant: this.connText, listening: 'listening', thinking: 'thinking', speaking: 'speaking',
+    };
+    if (this.statusEl?.lastChild) this.statusEl.lastChild.textContent = ' ' + map[this.auraState];
+  }
+
+  private markSpeaking(): void {
+    this.speakingUntil = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 650;
+  }
+
+  /** One loop while the panel is open: feeds live amplitude to the reactive
+   *  mic ring and resolves the current state-of-light from the session. */
+  private startReactiveLoop(): void {
+    if (typeof requestAnimationFrame !== 'function') return;
+    const tick = () => {
+      if (!this.open) { this.reactRaf = 0; return; }
+      this.reactRaf = requestAnimationFrame(tick);
+      const inL = this.session.inputLevel();
+      const outL = this.session.outputLevel();
+      this.style.setProperty('--fb-energy', Math.max(inL, outL).toFixed(3));
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if (outL > 0.04) this.markSpeaking();
+      let next: AuraState;
+      if (now < this.speakingUntil) next = 'speaking';      // she imparts — warm gold
+      else if (this.thinking) next = 'thinking';            // she contemplates — bright shimmer
+      else if (inL > 0.05) next = 'listening';              // you speak — cool silver
+      else next = 'dormant';                                // present, at rest — warm gold
+      this.setState(next);
+    };
+    this.reactRaf = requestAnimationFrame(tick);
+  }
+
+  // ---- UI helpers ----
+  private addMessage(sender: 'user' | 'pragya' | 'system', text: string, grounding?: Grounding): void {
+    const bubble = h('div', `bubble ${sender}`);
+    bubble.append(h('div', undefined, text));
+    if (grounding?.found) {
+      bubble.append(h('span', 'grounding', `grounded · ${(grounding.confidence * 100).toFixed(0)}%`));
+    }
+    this.messagesEl.insertBefore(bubble, this.canvasEl);
+    this.scrollDown();
+  }
+
+  private showThinking(): void {
+    this.thinking = true;
+    if (this.thinkingEl) return;
+    const el = h('div', 'bubble pragya typing');
+    el.append(h('span', 'dot'), h('span', 'dot'), h('span', 'dot'));
+    el.setAttribute('aria-label', 'Pragya is thinking');
+    this.thinkingEl = el;
+    this.messagesEl.insertBefore(el, this.canvasEl);
+    this.scrollDown();
+  }
+
+  private hideThinking(): void {
+    this.thinking = false;
+    if (!this.thinkingEl) return;
+    this.thinkingEl.remove();
+    this.thinkingEl = null;
+  }
+
+  private scrollDown(): void {
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  private submitText(text: string): void {
+    if (!text.trim()) return;
+    this.session.sendText(text.trim());
+  }
+
+  private toggleVoice(): void {
+    if (this.session.active) {
+      this.session.stopVoice();
+      this.micBtn.classList.remove('live');
+    } else {
+      void this.session.startVoice();
+      this.micBtn.classList.add('live');
+    }
+  }
+
+  /** Snapshot of where the visitor is, sent to the backend for page-awareness. */
+  private pageContext(): Record<string, unknown> {
+    if (typeof location === 'undefined') return {};
+    const page = location.pathname + (location.hash || '');
+    const title = typeof document !== 'undefined' ? document.title : '';
+    let section: string | undefined = location.hash ? location.hash.slice(1) : undefined;
+    if (!section && typeof document !== 'undefined') {
+      const heads = Array.from(document.querySelectorAll('h1,h2,h3')) as HTMLElement[];
+      const vh = window.innerHeight || 800;
+      const inView = heads.find((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= -48 && r.top < vh * 0.6;
+      });
+      section = (inView?.textContent || '').trim().slice(0, 80) || undefined;
+    }
+    return { page, title, section, sections: this.pageSections() };
+  }
+
+  private pageSections(): Array<{ id: string; label: string }> {
+    if (typeof document === 'undefined') return [];
+    try {
+      const out: Array<{ id: string; label: string }> = [];
+      const seen = new Set<string>();
+      for (const el of Array.from(document.querySelectorAll('[id]')) as HTMLElement[]) {
+        const id = el.id;
+        if (!id || seen.has(id)) continue;
+        const tag = el.tagName.toLowerCase();
+        const isSection =
+          tag === 'section' ||
+          (['div', 'main', 'article'].includes(tag) && !!el.querySelector('h1,h2,h3,h4'));
+        if (!isSection) continue;
+        const heading = el.querySelector('h1,h2,h3,h4');
+        const label = (heading?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 70);
+        seen.add(id);
+        out.push({ id, label });
+        if (out.length >= 30) break;
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  // ---- public control surface (for host CTAs) ----
+  ask(text: string): void {
+    if (this.config.design === 'level1') this.openPanel();
+    this.submitText(text);
+  }
+
+  // ---- open/close (Level 1 panel) ----
+  toggle(): void {
+    if (this.config.design !== 'level1') return;
+    this.open ? this.close() : this.openPanel();
+  }
+
+  openPanel(): void {
+    if (this.config.design !== 'level1') return;
+    this.open = true;
+    this.trigger.classList.add('hidden');
+    this.panel.classList.remove('hidden');
+    if (this.voiceEnabled) this.session.primeAudio();
+    this.session.connect();
+    this.startReactiveLoop();
+  }
+
+  close(): void {
+    this.open = false;
+    this.session?.abortTour();
+    if (this.reactRaf) { cancelAnimationFrame(this.reactRaf); this.reactRaf = 0; }
+    this.panel.classList.add('hidden');
+    this.trigger.classList.remove('hidden');
+    this.setState('dormant');
+  }
+}

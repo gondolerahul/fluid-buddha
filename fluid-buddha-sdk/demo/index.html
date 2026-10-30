@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>fluid-buddha · Pragya — design showcase</title>
+  <style>
+    :root {
+      --ink: #f4f1e9; --dim: #a7a294; --gold: #c9a24a; --void: #0a0b0e; --surf: #14161c;
+      --line: rgba(255,255,255,0.08);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink); background: var(--void);
+      background-image:
+        radial-gradient(120% 80% at 80% -10%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 55%),
+        radial-gradient(90% 60% at 0% 110%, rgba(120,140,200,0.06), transparent 60%);
+      -webkit-font-smoothing: antialiased; line-height: 1.55;
+    }
+    .bar {
+      position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 18px;
+      justify-content: space-between; padding: 16px 6vw;
+      backdrop-filter: blur(14px); background: color-mix(in srgb, var(--void) 72%, transparent);
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { font-weight: 700; letter-spacing: -.01em; }
+    .brand b { color: var(--gold); }
+    .levels { display: flex; gap: 8px; }
+    .levels a {
+      font-size: 13px; text-decoration: none; color: var(--dim); padding: 7px 13px;
+      border: 1px solid var(--line); border-radius: 999px; transition: all .2s;
+    }
+    .levels a:hover { color: var(--ink); border-color: color-mix(in srgb, var(--gold) 50%, transparent); }
+    .levels a.on { color: #15130c; background: var(--gold); border-color: var(--gold); font-weight: 600; }
+    main { max-width: 980px; margin: 0 auto; padding: 7vh 6vw 22vh; }
+    .hero h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); letter-spacing: -.025em; margin: 0 0 14px; text-wrap: balance; }
+    .hero p { font-size: 1.15rem; color: var(--dim); max-width: 56ch; margin: 0 0 28px; }
+    .hint { font-size: 13px; color: var(--dim); border-left: 1px solid color-mix(in srgb, var(--gold) 50%, transparent); padding-left: 14px; }
+    .hint kbd { font: inherit; font-size: 12px; padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
+    section { padding: 56px 0; border-top: 1px solid var(--line); }
+    section h2 { font-size: 1.7rem; letter-spacing: -.02em; margin: 0 0 10px; }
+    section p { color: var(--dim); max-width: 62ch; margin: 0; }
+    .meta { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: color-mix(in srgb, var(--gold) 70%, var(--dim)); margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="brand">Halden <b>Instruments</b></div>
+    <nav class="levels">
+      <a href="?design=level1" data-l="level1">L1 · Companion</a>
+      <a href="?design=level2" data-l="level2">L2 · Presence</a>
+      <a href="?design=level3" data-l="level3">L3 · Atmosphere</a>
+    </nav>
+  </div>
+
+  <main>
+    <div class="hero">
+      <h1>Precision sensing for the world's hardest measurements.</h1>
+      <p>Halden builds inertial and optical instruments for aerospace, subsea, and
+         frontier energy. This page knows nothing about Pragya — she is added by a
+         single script tag and lives entirely inside her own Shadow DOM.</p>
+      <p class="hint">Pragya is on this page now. In L1 tap the orb, in L2 tap the
+         ring, in L3 press <kbd>⌘ K</kbd> or the mote of light, lower-right — then
+         ask her to "show me pricing" and watch what she does to the page.</p>
+    </div>
+
+    <section id="pricing">
+      <p class="meta">Plans</p>
+      <h2>Pricing</h2>
+      <p>Instruments are sold per axis, with calibration and a five-year drift
+         warranty included. Volume programs for fleet operators start at forty units.</p>
+    </section>
+    <section id="security">
+      <p class="meta">Trust</p>
+      <h2>Security &amp; compliance</h2>
+      <p>ITAR-aware handling, signed firmware, and an audited supply chain. Field
+         telemetry is encrypted end to end and never leaves your tenant.</p>
+    </section>
+    <section id="integrations">
+      <p class="meta">Connect</p>
+      <h2>Integrations</h2>
+      <p id="persona-note">Stream to your existing stack over MQTT, ROS 2, or a
+         signed REST feed. Reference drivers ship for the usual flight computers.</p>
+    </section>
+    <section id="customers">
+      <p class="meta">In the field</p>
+      <h2>Who flies with us</h2>
+      <p>Survey drones over the North Sea, deep-ocean ROVs, and two lunar landers
+         in integration. When the measurement has to be right the first time, it's Halden.</p>
+    </section>
+  </main>
+
+  <!-- React to Pragya's DOM commands from any framework. -->
+  <script>
+    window.addEventListener('fluidbuddha:set_persona', (e) => console.log('[host] persona ->', e.detail.persona));
+    window.addEventListener('fluidbuddha:navigate', (e) => console.log('[host] navigate ->', e.detail.path));
+    window.addEventListener('fluidbuddha:scroll_to', (e) => console.log('[host] scroll_to ->', e.detail));
+  </script>
+
+  <!-- The build auto-injects only when the script tag carries data-backend; here
+       we init programmatically so the demo can switch design levels by query. -->
+  <script src="../dist/fluid-buddha.global.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const design = params.get('design') || 'level1';
+    document.querySelectorAll('.levels a').forEach((a) => a.classList.toggle('on', a.dataset.l === design));
+    window.FluidBuddha.init({
+      backend: 'ws://localhost:8080',
+      site: 'hirebuddha',
+      accent: params.get('accent') || '#c9a24a',
+      intelligence: 'advance',
+      design,
+      // ?open auto-engages the agent (opens L1 / summons L3) — handy for capture.
+      autoStart: params.has('open'),
+    });
+    // Demo-only: ?spotlight previews L3's "illuminate what I reference" behaviour
+    // by emitting the same scroll_to event the agent would send live.
+    if (params.has('spotlight')) {
+      // Emulate the live flow: the agent scrolls the page, then her light settles.
+      setTimeout(() => {
+        document.getElementById('security')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.dispatchEvent(new CustomEvent('fluidbuddha:scroll_to', { detail: { sectionId: 'security' } }));
+      }, 700);
+    }
+  </script>
+</body>
+</html>

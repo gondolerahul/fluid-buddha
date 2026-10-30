@@ -1,0 +1,46 @@
+{
+  "name": "fluid-buddha",
+  "version": "0.1.0",
+  "description": "Framework-agnostic voice-first agentic UI overlay (<fluid-buddha>) — a Shadow-DOM Web Component injectable into any website via a single script tag.",
+  "type": "module",
+  "main": "./dist/fluid-buddha.cjs",
+  "module": "./dist/fluid-buddha.mjs",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/fluid-buddha.global.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/fluid-buddha.mjs",
+      "require": "./dist/fluid-buddha.cjs"
+    },
+    "./global": "./dist/fluid-buddha.global.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node build.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-vm-modules test/smoke.mjs",
+    "serve:demo": "node build.mjs && python3 -m http.server 4000"
+  },
+  "keywords": [
+    "voice",
+    "web-component",
+    "shadow-dom",
+    "agent",
+    "sdr",
+    "a2ui",
+    "vertex-ai"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "esbuild": "^0.23.0",
+    "jsdom": "^24.1.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@types/three": "^0.160.0",
+    "three": "^0.160.0"
+  }
+}

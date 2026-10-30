@@ -1,0 +1,74 @@
+# Full A2UI backend stack — one command:
+#   docker compose up -d --build
+# Brings up Postgres+pgvector, then the orchestrator (which auto-creates the
+# schema and seeds CORTEX memory from the mounted website docs on first boot).
+# Postgres is exposed on host :5434 to avoid clashing with a local 5432/5433.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: a2ui-cortex-db
+    environment:
+      POSTGRES_USER: cortex
+      POSTGRES_PASSWORD: cortex
+      POSTGRES_DB: cortex
+    ports:
+      - "5434:5432"
+    volumes:
+      - cortex_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cortex -d cortex"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: a2ui-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Internal DB host (compose network), overrides any .env value.
+      CORTEX_DB_URL: postgresql+asyncpg://cortex:cortex@postgres:5432/cortex
+      # Defaults below read from backend/.env if present (compose interpolation).
+      MOCK_AI: ${MOCK_AI:-true}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
+      FAST_MODEL: ${FAST_MODEL:-gemini-2.5-flash}
+      HEAVY_MODEL: ${HEAVY_MODEL:-gemini-2.5-pro}
+      EMBED_MODEL: ${EMBED_MODEL:-text-embedding-004}
+      TTS_MODEL: ${TTS_MODEL:-gemini-3.1-flash-tts-preview}
+      TTS_GEMINI_VOICE: ${TTS_GEMINI_VOICE:-Aoede}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      # Seed the knowledge base from the mounted website docs on first boot.
+      INGEST_ON_START: "true"
+      INGEST_SITE: hirebuddha
+      HIREBUDDHA_CONTENT_DIR: /content
+      # buddha-cognitive-lab docs (mounted below). Ingest manually after boot:
+      #   docker exec a2ui-backend python -m ingestion.ingest --site buddha-cognitive-lab
+      BUDDHA_COGNITIVE_LAB_CONTENT_DIR: /content-bcl
+      # fluidbuddha — the Extreme "container app" (copy + design system + APIs).
+      # Ingest manually after boot:
+      #   docker exec a2ui-backend python -m ingestion.ingest --site fluidbuddha
+      FLUIDBUDDHA_CONTENT_DIR: /fluidbuddha/docs
+      FLUIDBUDDHA_DESIGN_SYSTEM: /fluidbuddha/design/design-system.json
+      FLUIDBUDDHA_OPENAPI: /fluidbuddha/apis/openapi.json
+      # Optional live API for call_site_api (omit to simulate enquiries/data):
+      # FLUIDBUDDHA_API_BASE_URL: https://api.fluidbuddha.example
+      # FLUIDBUDDHA_API_AUTH: "Bearer ..."
+    ports:
+      - "8080:8080"
+    volumes:
+      # HireBuddha's authored page copy, read-only, for ingestion.
+      - ../../hirebuddha-website/docs:/content:ro
+      # Buddha Cognitive Lab's authored page copy, read-only, for ingestion.
+      - ../../buddha-cognitive-lab-website/docs:/content-bcl:ro
+      # fluidbuddha container app: copy + design system + OpenAPI, read-only.
+      - ../fluidbuddha-website:/fluidbuddha:ro
+      # For Vertex (MOCK_AI=false): mount ADC and set the env var below.
+      # - ~/.config/gcloud:/root/.config/gcloud:ro
+    # environment GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
+    restart: unless-stopped
+
+volumes:
+  cortex_pgdata:

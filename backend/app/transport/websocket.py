@@ -1,0 +1,744 @@
+"""
+Multiplexed WebSocket transport — the voice-first cognitive loop (Req 3.2/3.3).
+
+One connection per visitor. The session:
+  * receives mic AUDIO chunks (or a client-side transcript) and STATE updates,
+  * masks latency by speaking the Fast Router ack first, then streams the
+    grounded Heavy Thinker answer,
+  * tags correlated DATA (UI) + AUDIO (TTS) with a shared ``sync_id`` so the
+    frontend jitter buffer can sync them,
+  * handles barge-in by cancelling the in-flight response task.
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import logging
+import re
+import time
+import uuid
+from collections.abc import AsyncIterator
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.db import session_scope
+from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFIDENCE
+from app.orchestrator.result import ClientAction
+from app.orchestrator.tour_store import load_plan
+from app.orchestrator.state import (
+    ConversationState,
+    normalize_intelligence,
+    normalize_sections,
+)
+from app.transport.envelope import Channel, make
+
+logger = logging.getLogger("a2ui.ws")
+router = APIRouter()
+
+# A new utterance arriving within this window of the previous one (while the
+# response is still in flight) is treated as a CONTINUATION of the same question
+# and coalesced — handles ASR/VAD splitting one spoken thought into fragments.
+_COALESCE_WINDOW_S = 10.0
+
+
+def _sid(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+
+
+def split_for_tts(text: str, min_chars: int = 24) -> list[str]:
+    """Break spoken text into sentence-sized chunks for incremental TTS.
+
+    Each chunk is synthesised + streamed separately so the FIRST chunk can play
+    after only its own (short) synthesis instead of waiting for the whole
+    utterance — the dominant latency win for long answers. Short sentences are
+    merged up to ``min_chars`` so we don't over-fragment the prosody.
+    """
+    text = (text or "").strip()
+    if not text:
+        return []
+    parts = re.split(r"(?<=[.!?…])\s+", text)
+    out: list[str] = []
+    buf = ""
+    for s in parts:
+        s = s.strip()
+        if not s:
+            continue
+        buf = f"{buf} {s}".strip() if buf else s
+        if len(buf) >= min_chars:
+            out.append(buf)
+            buf = ""
+    if buf:
+        if out:
+            out[-1] = f"{out[-1]} {buf}".strip()  # fold a tiny tail into the last chunk
+        else:
+            out.append(buf)
+    return out or [text]
+
+
+class VoiceSession:
+    def __init__(
+        self, ws: WebSocket, runtime, site_key: str = "hirebuddha",
+        intelligence: str = "advance",
+    ) -> None:
+        self.ws = ws
+        self.rt = runtime
+        self.session_id = uuid.uuid4().hex
+        self.state = ConversationState(
+            site_key=site_key, intelligence=normalize_intelligence(intelligence)
+        )
+        self._audio: list[bytes] = []
+        self._response_task: asyncio.Task | None = None
+        self._persona_emitted: str | None = None
+        self._greeted = False
+        self._last_utt_text = ""
+        self._last_utt_at = 0.0
+        # True only while the ANSWER (not the ack) is being spoken — barge-in
+        # ignores speech during the ack/thinking phase (user finishing their turn).
+        self._answer_speaking = False
+        # Conversation cache (Feature 2): cached past answers fed to the thinker as
+        # context this turn, and fire-and-forget recording tasks kept referenced.
+        self._related: list = []
+        self._bg_tasks: set[asyncio.Task] = set()
+        # Debounced live reaction to the visitor playing with a component.
+        self._react_task: asyncio.Task | None = None
+
+    # ---- low-level send -------------------------------------------------
+    async def send(self, channel: str, type_: str, payload=None, sync_id=None) -> None:
+        await self.ws.send_json(make(channel, type_, payload, sync_id))
+
+    # ---- lifecycle ------------------------------------------------------
+    async def run(self) -> None:
+        await self.ws.accept()
+        await self.send(Channel.EVENTS, "ready", {
+            "session_id": self.session_id,
+            "config": {
+                "filler_delay_ms": self.rt.settings.ui_filler_delay_ms,
+                "sample_rate": self.rt.settings.tts_sample_rate,
+            },
+        })
+        try:
+            while True:
+                env = await self.ws.receive_json()
+                await self._dispatch(env)
+        except WebSocketDisconnect:
+            logger.info("ws disconnect session=%s", self.session_id)
+        finally:
+            await self._cancel_response()
+
+    async def _dispatch(self, env: dict) -> None:
+        channel = env.get("channel")
+        type_ = (env.get("type") or "").lower()
+        payload = env.get("payload") or {}
+
+        if channel == Channel.AUDIO:
+            if type_ == "start":
+                self._audio.clear()
+            elif type_ == "chunk":
+                data = payload.get("data")
+                if data:
+                    self._audio.append(base64.b64decode(data))
+            elif type_ == "end":
+                transcript = payload.get("transcript") or await self._asr()
+                if transcript.strip():
+                    await self._on_utterance(transcript.strip())
+        elif channel == Channel.EVENTS and type_ == "text":
+            text = (payload.get("text") or "").strip()
+            if text:
+                await self._on_utterance(text)
+        elif channel == Channel.EVENTS and type_ == "hello":
+            await self._on_hello(payload)
+        elif channel == Channel.EVENTS and type_ == "tour_say":
+            await self._on_tour_say(payload)
+        elif channel == Channel.STATE:
+            if type_ == "barge_in":
+                await self._on_barge_in(payload)
+            elif isinstance(payload.get("component_state"), dict):
+                await self._on_component_state(payload["component_state"])
+            else:  # sync
+                self._update_state(payload)
+
+    def _update_state(self, payload: dict) -> None:
+        if "page" in payload:
+            self.state.page = payload["page"]
+        # Accept either "viewport" or the friendlier "section" for the in-view area.
+        if "section" in payload:
+            self.state.viewport = payload["section"]
+        elif "viewport" in payload:
+            self.state.viewport = payload["viewport"]
+        if isinstance(payload.get("sections"), list):
+            self.state.sections = normalize_sections(payload["sections"])
+        if payload.get("persona"):
+            self.state.persona = payload["persona"]
+        if payload.get("intelligence"):
+            self.state.intelligence = normalize_intelligence(payload["intelligence"])
+
+    # ---- ASR over buffered audio (real engines) -------------------------
+    async def _asr(self) -> str:
+        if not self._audio:
+            return ""
+
+        async def chunks() -> AsyncIterator[bytes]:
+            for c in self._audio:
+                yield c
+
+        final = ""
+        try:
+            async for ev in self.rt.engines.asr.transcribe_stream(chunks()):
+                if ev.is_final and ev.text:
+                    final = ev.text
+        except Exception as exc:  # ASR failure shouldn't kill the socket
+            logger.warning("ASR failed: %s", exc)
+        return final
+
+    # ---- turn handling --------------------------------------------------
+    async def _on_utterance(self, transcript: str) -> None:
+        sid = self.session_id[:8]
+        now = time.monotonic()
+        in_flight = bool(self._response_task and not self._response_task.done())
+        # Fragmented speech: if the previous response is still running and this
+        # utterance arrived quickly, it's almost certainly a continuation of the
+        # same question — combine rather than discard the earlier part.
+        if (in_flight and self._last_utt_text
+                and now - self._last_utt_at < _COALESCE_WINDOW_S):
+            transcript = f"{self._last_utt_text} {transcript}".strip()
+            logger.info("ws[%s]: coalesced continuation -> %r", sid, transcript[:200])
+        else:
+            logger.info("ws[%s]: user> %r", sid, transcript[:160])
+        self._last_utt_text = transcript
+        self._last_utt_at = now
+        await self._cancel_response()  # supersede any in-flight response
+        self._response_task = asyncio.create_task(self._respond(transcript))
+
+    async def _on_hello(self, payload: dict) -> None:
+        """Voice-first onboarding: the visitor opened the agent. If a guided tour
+        was authored for this site at ingestion, hand the plan to the client and
+        let it drive the speak→scroll choreography (Req 5); otherwise fall back to
+        the page-aware spoken welcome. Fired once per session (Req 3.x)."""
+        self._update_state(payload)
+        if self._greeted:
+            return
+        self._greeted = True
+        await self._cancel_response()
+
+        # Only offer the tour if the client hasn't opted out (data-tour="false");
+        # otherwise the visitor still gets the spoken welcome.
+        if payload.get("tour", True) is not False:
+            plan = await self._load_tour()
+            if plan is not None:
+                await self.send(Channel.EVENTS, "tour_plan",
+                                {"stops": [s.to_dict() for s in plan.stops]})
+                logger.info("ws[%s]: sent tour plan (%d stops)",
+                            self.session_id[:8], len(plan.stops))
+                return
+
+        self._response_task = asyncio.create_task(self._welcome())
+
+    async def _load_tour(self):
+        try:
+            async with session_scope() as db:
+                return await load_plan(db, self.state.site_key)
+        except Exception as exc:
+            logger.warning("ws[%s]: tour load failed: %s", self.session_id[:8], exc)
+            return None
+
+    async def _on_tour_say(self, payload: dict) -> None:
+        """Speak one pre-planned tour narration, then signal completion so the
+        client performs the stop's move (scroll/navigate) only AFTER the voice
+        has finished — the exact speak/scroll sync the tour requires (Req 5)."""
+        text = (payload.get("text") or "").strip()
+        index = payload.get("index")
+        if not text:
+            return
+        await self._cancel_response()
+        self._response_task = asyncio.create_task(self._tour_say(text, index))
+
+    async def _tour_say(self, text: str, index) -> None:
+        try:
+            # Narration is interruptible by a genuine barge-in (the VAD onset gate
+            # keeps incidental noise from triggering it).
+            self._answer_speaking = True
+            try:
+                await self._speak(text, _sid("tour"))
+            finally:
+                self._answer_speaking = False
+            await self.send(Channel.EVENTS, "tour_done", {"index": index})
+            # Record each played tour step (Req: tour recorded for every step).
+            self._spawn(self._record_tour_stop(index, text))
+        except asyncio.CancelledError:
+            await self.send(Channel.EVENTS, "interrupted", {})
+            raise
+        except Exception as exc:
+            logger.exception("ws[%s]: tour_say failed: %s", self.session_id[:8], exc)
+
+    async def _welcome(self) -> None:
+        try:
+            async with session_scope() as db:
+                bridge = self.rt.bridge(db, self.state.site_key)
+                think = await self.rt.loop.welcome(self.state, bridge)
+            self._answer_speaking = True
+            try:
+                await self._speak(
+                    think.answer_text, _sid("welcome"), grounding=think.grounding
+                )
+            finally:
+                self._answer_speaking = False
+            self.state.add_turn("(visitor arrived on the page)", think.answer_text)
+            self._spawn(self._record_turn(
+                question="(visitor arrived on the page)",
+                answer_text=think.answer_text, components=think.components,
+                actions=think.actions, channel="welcome",
+            ))
+        except asyncio.CancelledError:
+            await self.send(Channel.EVENTS, "interrupted", {})
+            raise
+        except Exception as exc:
+            logger.exception("welcome failed: %s", exc)
+
+    async def _respond(self, transcript: str) -> None:
+        # Cache-first (Feature 2): if we've answered a near-identical question for
+        # this persona before and have enough history, replay it verbatim
+        # (components + byte-exact audio) instead of re-thinking.
+        if await self._maybe_replay(transcript):
+            return
+
+        think_task: asyncio.Task | None = None
+        t0 = time.monotonic()
+        try:
+            await self.send(Channel.STATE, "transcript", {"text": transcript})
+
+            # 1. Fast Router — instant ack (latency masking, Req 3.3.1)
+            self._persona_emitted = self.state.persona
+            route = await self.rt.loop.route(transcript, self.state)
+
+            # Adaptive persona + probe decision (Feature 1): switch only on a
+            # confident, changed read; decide whether to weave in a qualifying
+            # question this turn so we keep learning who the visitor is.
+            probe = should_probe(self.state)
+            switch = bool(route.persona) and self.rt.loop.apply_persona(
+                self.state, route.persona, route.persona_confidence,
+                explicit=route.persona_explicit,
+            )
+            bump_probe(self.state, probe)
+            persona = self.state.persona
+
+            # 2. Hybrid: most turns take the LEAN path (one retrieval + one
+            #    generation, no tool loop); only turns that need a diagram, page,
+            #    navigation, or numbers escalate to the Heavy Thinker. Start it NOW
+            #    so reasoning runs *while* the ack is spoken — overlapping the two
+            #    removes the dead air between ack and answer. (Req 3 / 3.3.2) A
+            #    cached near-match (below the replay bar) rides along as context.
+            heavy = self.rt.loop.needs_heavy(transcript, route.intent)
+            think_task = asyncio.create_task(
+                self._think(transcript, persona, heavy,
+                            related=self._related, probe=probe)
+            )
+
+            await self._speak(route.ack, _sid("ack"))
+
+            if switch:
+                self._persona_emitted = self.state.persona
+                await self.send(Channel.EVENTS, "set_persona",
+                                {"persona": self.state.persona})
+
+            think = await think_task
+            think_task = None
+
+            # 3. Emit DATA (components + full generated pages) — share sync_id
+            #    with the spoken answer
+            primary_sync: str | None = None
+            for comp in think.components:
+                primary_sync = primary_sync or comp.sync_id
+                self.state.register_component(
+                    comp.sync_id, comp.component_type, comp.initial_state)
+                await self.send(Channel.DATA, "render", comp.to_dict(), comp.sync_id)
+            for page in think.pages:
+                primary_sync = primary_sync or page.sync_id
+                await self.send(Channel.DATA, "render_page", page.to_dict(), page.sync_id)
+
+            # 4. Emit EVENTS (DOM commands)
+            for action in think.actions:
+                await self._emit_action(action)
+
+            # 5. Stream the grounded answer as TTS, synced to its component
+            self._answer_speaking = True  # now interruptible by a real barge-in
+            try:
+                await self._speak(think.answer_text, primary_sync or _sid("utt"),
+                                  grounding=think.grounding)
+            finally:
+                self._answer_speaking = False
+            self.state.add_turn(transcript, think.answer_text)
+            self._last_utt_text = ""  # turn answered — next utterance starts fresh
+            logger.info(
+                "ws[%s]: turn complete — answer_len=%d actions=%d components=%d",
+                self.session_id[:8], len(think.answer_text),
+                len(think.actions), len(think.components),
+            )
+            # Record the full multimodal turn for future replay (fire-and-forget).
+            self._spawn(self._record_turn(
+                question=transcript, answer_text=think.answer_text,
+                components=think.components, actions=think.actions, channel="voice",
+            ))
+            # Record cost/performance for this generated voice turn (req F/G).
+            self._spawn(self._record_usage(
+                intent=route.intent, transcript=transcript, ack=route.ack,
+                answer_text=think.answer_text, think=think,
+                served_from_cache=False, t0=t0,
+            ))
+        except asyncio.CancelledError:
+            logger.info("ws[%s]: turn CANCELLED before completion (barge-in or "
+                        "new utterance)", self.session_id[:8])
+            await self.send(Channel.EVENTS, "interrupted", {})
+            raise
+        except Exception as exc:
+            logger.exception("ws[%s]: response failed: %s", self.session_id[:8], exc)
+            await self.send(Channel.EVENTS, "error", {"message": "Something went wrong."})
+        finally:
+            # Never leave the concurrently-started thinker running orphaned (e.g.
+            # a barge-in cancelled us mid-ack).
+            if think_task and not think_task.done():
+                think_task.cancel()
+                try:
+                    await think_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+    async def _think(self, transcript: str, persona, heavy: bool = True,
+                     related=None, probe: bool = False):
+        """Run the chosen reasoning path in its own DB session so it executes
+        concurrently with the spoken ack. ``heavy`` selects the grounded tool
+        loop; otherwise the lean single-shot path answers (Hybrid). ``related``
+        injects cached near-matches as context; ``probe`` asks the model to weave
+        in a qualifying question."""
+        async with session_scope() as db:
+            bridge = self.rt.bridge(db, self.state.site_key)
+            if heavy:
+                return await self.rt.loop.think(
+                    transcript, self.state, bridge, persona,
+                    related=related, probe=probe,
+                )
+            return await self.rt.loop.think_lean(
+                transcript, self.state, bridge, persona, related=related, probe=probe,
+            )
+
+    async def _emit_action(self, action: ClientAction) -> None:
+        if action.type == "navigate":
+            await self.send(Channel.EVENTS, "navigate", {"path": action.path}, _sid("evt"))
+        elif action.type == "scroll_to":
+            await self.send(Channel.EVENTS, "scroll_to",
+                            {"sectionId": action.section_id,
+                             "direction": action.direction}, _sid("evt"))
+        elif action.type == "set_icp":
+            # The Fast Router may already have switched persona this turn; only
+            # emit when it actually changes (silent-switch dedupe, Req 3.6) and
+            # passes the flip-flop guard.
+            if (action.icp and action.icp != self._persona_emitted
+                    and self.rt.loop.apply_persona(
+                        self.state, action.icp, THINKER_SWITCH_CONFIDENCE)):
+                self._persona_emitted = action.icp
+                await self.send(Channel.EVENTS, "set_persona",
+                                {"persona": action.icp}, _sid("evt"))
+
+    async def _speak(self, text: str, sync_id: str, grounding=None) -> None:
+        if not text:
+            return
+        basic = self.state.intelligence == "basic"
+        # Sentence-streamed TTS: synthesise + stream one chunk at a time so the
+        # first chunk plays after ~its own synthesis (~2-3s) rather than blocking
+        # on the entire utterance (which logs showed at ~18s for a long answer).
+        # The FIRST chunk keeps the caller's sync_id so a gated UI component still
+        # gates the speech and the full transcript/grounding surface together;
+        # later chunks get fresh ungated ids and play in FIFO arrival order.
+        for idx, seg_text in enumerate(split_for_tts(text)):
+            seg_id = sync_id if idx == 0 else _sid("utt")
+            start_payload: dict = {}
+            if idx == 0:
+                start_payload["text"] = text
+                if grounding is not None:
+                    start_payload["grounding"] = grounding.to_dict()
+            await self.send(Channel.AUDIO, "start", start_payload, seg_id)
+            # Basic tier is text-only: emit start/end (so the message + grounding
+            # still surface) but skip TTS synthesis — no voice feedback.
+            if not basic:
+                await self._stream_tts(seg_text, seg_id)
+            await self.send(Channel.AUDIO, "end", {}, seg_id)
+
+    async def _stream_tts(self, seg_text: str, seg_id: str) -> None:
+        """Stream one TTS segment, serving byte-exact cached PCM when we've
+        synthesised this exact text + voice before, else synthesising and
+        persisting it for next time (Feature 2 audio cache)."""
+        use_cache = self.rt.settings.audio_cache_enabled
+        if use_cache:
+            cached = await self._audio_cache_get(seg_text)
+            if cached is not None:
+                await self._send_pcm(cached, seg_id)
+                return
+        buf = bytearray()
+        async for chunk in self.rt.engines.tts.synthesize_stream(seg_text):
+            buf.extend(chunk)
+            await self.send(Channel.AUDIO, "chunk",
+                            {"data": base64.b64encode(chunk).decode("ascii")}, seg_id)
+        if use_cache and buf:
+            await self._audio_cache_put(seg_text, bytes(buf))
+
+    async def _send_pcm(self, pcm: bytes, seg_id: str) -> None:
+        """Re-chunk cached PCM into ~0.2s frames so playback ramps like live TTS."""
+        sr = self.rt.settings.tts_sample_rate
+        frame = max(1, int(sr * 0.2)) * 2  # 16-bit mono => 2 bytes/sample
+        for i in range(0, len(pcm), frame):
+            await self.send(Channel.AUDIO, "chunk",
+                            {"data": base64.b64encode(pcm[i:i + frame]).decode("ascii")},
+                            seg_id)
+
+    # ---- conversation cache (Feature 2) ---------------------------------
+    def _spawn(self, coro) -> None:
+        """Run a fire-and-forget side task (recording) without blocking the turn
+        or letting it be garbage-collected mid-flight."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    async def _audio_cache_get(self, seg_text: str):
+        try:
+            async with session_scope() as db:
+                cache = self.rt.audio_cache(db)
+                return await cache.get(cache.key(seg_text))
+        except Exception:
+            return None
+
+    async def _audio_cache_put(self, seg_text: str, pcm: bytes) -> None:
+        try:
+            async with session_scope() as db:
+                cache = self.rt.audio_cache(db)
+                await cache.put(cache.key(seg_text), self.state.site_key, pcm)
+        except Exception:
+            pass
+
+    async def _record_turn(self, *, question, answer_text, components, actions,
+                           channel) -> None:
+        if not self.rt.settings.conversation_cache_enabled or not answer_text:
+            return
+        try:
+            async with session_scope() as db:
+                cache = self.rt.episodic(db, self.state.site_key)
+                await cache.record(
+                    question=question, answer_text=answer_text,
+                    components=[c.to_dict() for c in components],
+                    actions=[a.to_dict() for a in actions],
+                    persona=self.state.persona, page=self.state.page, channel=channel,
+                )
+        except Exception as exc:
+            logger.warning("ws[%s]: record_turn failed: %s", self.session_id[:8], exc)
+
+    async def _record_usage(
+        self, *, intent, transcript, ack="", answer_text="", think=None,
+        served_from_cache=False, t0=None,
+    ) -> None:
+        """Persist one voice-turn usage event for analytics (req F/G). ASR
+        duration is estimated from the transcript length (~15 chars/sec of
+        speech); TTS chars are everything spoken (ack + answer)."""
+        from app.analytics.usage import TurnMetrics, record_turn
+        try:
+            latency = (time.monotonic() - t0) * 1000.0 if t0 else 0.0
+            metrics = TurnMetrics(
+                site_key=self.state.site_key, session_id=self.session_id,
+                channel="voice", intent=intent, persona=self.state.persona,
+                page=self.state.page, served_from_cache=served_from_cache,
+                asr_ms=(len(transcript or "") / 15.0) * 1000.0,
+                tts_chars=len(ack or "") + len(answer_text or ""),
+                latency_ms=latency,
+            )
+            if think is not None and not served_from_cache:
+                metrics.add_llm(
+                    kind=getattr(think, "llm_kind", "thinker"),
+                    input_tokens=getattr(think, "input_tokens", 0),
+                    output_tokens=getattr(think, "output_tokens", 0),
+                    tool_calls=getattr(think, "tool_calls", 0),
+                )
+            async with session_scope() as db:
+                await record_turn(db, metrics)
+        except Exception as exc:
+            logger.debug("ws[%s]: usage record skipped: %s", self.session_id[:8], exc)
+
+    async def _record_tour_stop(self, index, narration) -> None:
+        if not self.rt.settings.conversation_cache_enabled or not narration:
+            return
+        try:
+            async with session_scope() as db:
+                cache = self.rt.episodic(db, self.state.site_key)
+                await cache.record_tour_stop(
+                    index=index, narration=narration, move=None,
+                    persona=self.state.persona, page=self.state.page,
+                )
+        except Exception as exc:
+            logger.warning("ws[%s]: record_tour_stop failed: %s",
+                           self.session_id[:8], exc)
+
+    async def _maybe_replay(self, transcript: str) -> bool:
+        """Hybrid replay decision. Sets ``self._related`` for the context tier and
+        returns True only when it has fully handled the turn by replaying."""
+        self._related = []
+        st = self.rt.settings
+        if not st.conversation_cache_enabled:
+            return False
+        try:
+            async with session_scope() as db:
+                cache = self.rt.episodic(db, self.state.site_key)
+                hits = await cache.query(
+                    transcript=transcript, persona=self.state.persona,
+                    page=self.state.page, top_k=st.episodic_top_k,
+                )
+                total = await cache.count(persona=self.state.persona)
+        except Exception as exc:
+            logger.warning("ws[%s]: replay query failed: %s", self.session_id[:8], exc)
+            return False
+        # Only engage once enough history exists for this persona ("enough data").
+        if not hits or total < st.episodic_min_episodes:
+            return False
+        best = hits[0]
+        if best.score >= st.episodic_replay_threshold:
+            await self._replay(transcript, best)
+            return True
+        if best.score >= st.episodic_context_threshold:
+            self._related = hits  # ride along as context for a fresh answer
+        return False
+
+    async def _replay(self, transcript: str, best) -> None:
+        """Stream a cached answer verbatim: components, then byte-exact audio."""
+        t0 = time.monotonic()
+        logger.info("ws[%s]: REPLAY (score=%.3f, %d components) for %r",
+                    self.session_id[:8], best.score, len(best.components),
+                    transcript[:80])
+        await self.send(Channel.STATE, "transcript", {"text": transcript})
+        primary_sync: str | None = None
+        for comp in best.components:
+            sid = _sid("ui")
+            primary_sync = primary_sync or sid
+            self.state.register_component(
+                sid, comp.get("component_type", ""), comp.get("initial_state", {}))
+            await self.send(Channel.DATA, "render", {**comp, "sync_id": sid}, sid)
+        for action in best.actions:
+            await self._emit_cached_action(action)
+        self._answer_speaking = True
+        try:
+            await self._speak(best.answer_text, primary_sync or _sid("utt"))
+        finally:
+            self._answer_speaking = False
+        self.state.add_turn(transcript, best.answer_text)
+        self._last_utt_text = ""
+        try:
+            async with session_scope() as db:
+                await self.rt.episodic(db, self.state.site_key).mark_hit(
+                    best.question, self.state.persona
+                )
+        except Exception:
+            pass
+        # Cached voice turn: no LLM spend — only TTS (req G shows the saving).
+        self._spawn(self._record_usage(
+            intent="cached", transcript=transcript, answer_text=best.answer_text,
+            served_from_cache=True, t0=t0,
+        ))
+
+    async def _emit_cached_action(self, action: dict) -> None:
+        """Re-emit a stored action dict (ClientAction.to_dict shape) on replay."""
+        t = action.get("type")
+        if t == "navigate" and action.get("path"):
+            await self.send(Channel.EVENTS, "navigate", {"path": action["path"]}, _sid("evt"))
+        elif t == "scroll_to" and (action.get("sectionId") or action.get("direction")):
+            await self.send(Channel.EVENTS, "scroll_to",
+                            {"sectionId": action.get("sectionId"),
+                             "direction": action.get("direction")}, _sid("evt"))
+        elif t == "set_icp" and action.get("icp"):
+            self.state.persona = action["icp"]
+            self._persona_emitted = action["icp"]
+            await self.send(Channel.EVENTS, "set_persona",
+                            {"persona": action["icp"]}, _sid("evt"))
+
+    # ---- live component reactions (Features 3/4 follow-up) ---------------
+    async def _on_component_state(self, cs: dict) -> None:
+        """The visitor changed an interactive component. Merge the new state and
+        (debounced) speak a short reaction — unless we're already talking or
+        mid-turn (never talk over the user or another answer)."""
+        sync_id = cs.get("sync_id")
+        if not sync_id:
+            return
+        patch = {k: v for k, v in cs.items() if k != "sync_id"}
+        if self.state.update_component_state(sync_id, patch) is None:
+            return  # unknown component (e.g. rendered in a previous session)
+        # Debounce: supersede any pending reaction so rapid drags coalesce into a
+        # single comment on the settled values.
+        self._cancel_react()
+        self._react_task = asyncio.create_task(self._react_after_delay(sync_id))
+
+    async def _react_after_delay(self, sync_id: str, delay: float = 0.7) -> None:
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        # Never talk over the agent's own answer, a turn in flight, or a tour —
+        # a genuine question always wins (it cancels this task first).
+        if self._answer_speaking or (self._response_task and not self._response_task.done()):
+            return
+        entry = self.state.components.get(sync_id)
+        if not entry:
+            return
+        try:
+            text = await self.rt.loop.react(entry, self.state.persona, self.state.site_key)
+        except Exception as exc:
+            logger.warning("ws[%s]: react failed: %s", self.session_id[:8], exc)
+            return
+        if not text:
+            return
+        logger.info("ws[%s]: live reaction to %s", self.session_id[:8], sync_id)
+        self._answer_speaking = True
+        try:
+            await self._speak(text, _sid("react"))
+        except asyncio.CancelledError:
+            await self.send(Channel.EVENTS, "interrupted", {})
+        finally:
+            self._answer_speaking = False
+
+    def _cancel_react(self) -> None:
+        task = self._react_task
+        if task and not task.done():
+            task.cancel()
+        self._react_task = None
+
+    # ---- barge-in (Req 3.3.4 / 3.5) -------------------------------------
+    async def _on_barge_in(self, payload: dict) -> None:
+        sid = self.session_id[:8]
+        # Only a barge-in DURING the spoken answer is a real interruption. Speech
+        # while the ack is playing or the thinker is still running is almost
+        # always the visitor finishing their own sentence — ignore it so we don't
+        # kill the turn and leave them with no answer (the cause of the dropped
+        # last query). A genuine new question still arrives via _on_utterance.
+        if not self._answer_speaking:
+            logger.info("ws[%s]: barge-in ignored (answer not yet speaking)", sid)
+            return
+        logger.info("ws[%s]: barge-in — interrupting answer", sid)
+        await self._cancel_response()
+        await self.send(Channel.EVENTS, "recalibrating", {})
+        # The correction itself arrives as the next AUDIO/end or EVENTS/text,
+        # which starts a fresh turn with the reported state in context.
+
+    async def _cancel_response(self) -> None:
+        self._cancel_react()  # a new turn / barge-in supersedes a live reaction
+        task = self._response_task
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._response_task = None
+        self._answer_speaking = False
+
+
+@router.websocket("/ws/voice")
+async def voice_ws(websocket: WebSocket) -> None:
+    runtime = websocket.app.state.runtime
+    site_key = websocket.query_params.get("site", "hirebuddha")
+    intelligence = websocket.query_params.get("intelligence", "advance")
+    session = VoiceSession(
+        websocket, runtime, site_key=site_key, intelligence=intelligence
+    )
+    await session.run()
