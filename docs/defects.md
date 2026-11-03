@@ -158,6 +158,9 @@ Everything below is what went wrong, degraded, or is unsafe.
 ### D-20 · Dependency vulnerabilities, including a critical in the console's Next.js
 `npm audit`: SDK = 2 moderate (`fflate`, `esbuild`); console = **25 (16 moderate, 8 high, 1 critical)** — the critical and several highs are the pinned `next@16.2.7` (multiple RCE/SSRF/cache-poisoning advisories), plus `zod`, `postcss`, `nanoid`, `sharp`. Schedule a dependency bump; the Next.js advisories matter most for any internet-facing console.
 
+**Status (2026-11-03, branch `phase0/foundations`): resolved.** Console on `next@16.4.4` + `eslint-config-next@16.4.4` with transitive fixes: **0 vulnerabilities in production dependencies**, no high/critical anywhere. SDK: `esbuild@0.28`, `@types/three` moved to devDependencies (it was shipping `fflate` to every consumer), `fflate` overridden to 0.8.x: **0 vulnerabilities**. Backend: `pip-audit` reports none. Gates: `npm run audit` in both packages, `pip-audit` in the backend venv.
+*Accepted residual:* 16 moderate advisories in the console's ESLint toolchain, all from `minimatch` < 11.0.1 (GHSA-g3hv-75wg-m249). No patched 3.x/10.x release exists and the ESLint plugins need the 3.x API; it is lint-time only and needs attacker-controlled glob patterns, so it is not exploitable here. Revisit when the plugins move to `minimatch` 11.
+
 ### D-21 · `CORS_ORIGINS=*` in compose becomes allow-all (regex `.*`) with credentials behaviour to double-check
 Compose defaults `CORS_ORIGINS` to `*`, which `main.py` turns into `allow_origin_regex=".*"` ([backend/app/main.py:48](../backend/app/main.py)). For an unauthenticated public widget that's arguably fine, but combined with the admin API on the same app it's too broad. Split widget vs. admin origins, or scope CORS per router.
 

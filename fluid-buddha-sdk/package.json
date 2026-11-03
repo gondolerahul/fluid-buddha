@@ -22,7 +22,8 @@
     "build": "node build.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-vm-modules test/smoke.mjs",
-    "serve:demo": "node build.mjs && python3 -m http.server 4000"
+    "serve:demo": "node build.mjs && python3 -m http.server 4000",
+    "audit": "npm audit"
   },
   "keywords": [
     "voice",
@@ -38,12 +39,15 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "esbuild": "^0.23.0",
+    "@types/three": "^0.160.0",
+    "esbuild": "^0.28.2",
     "jsdom": "^24.1.0",
     "typescript": "^5.5.0"
   },
   "dependencies": {
-    "@types/three": "^0.160.0",
     "three": "^0.160.0"
+  },
+  "overrides": {
+    "fflate": "^0.8.3"
   }
 }
