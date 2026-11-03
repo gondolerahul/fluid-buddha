@@ -166,6 +166,22 @@ l3.shadowRoot.querySelector('.l3-seed').dispatchEvent(new window.MouseEvent('cli
 ok(l3.shadowRoot.querySelector('.l3').classList.contains('summoning'), 'tapping the mote opens the summon');
 ok(l3.shadowRoot.querySelector('.l3').classList.contains('awake'), 'summoning awakens the atmosphere');
 
+// ---- 5c. Grounded answers show their sources in every design level (WS8) ----
+const cited = { found: true, confidence: 0.82, sources: [
+  { label: 'Pricing', route: '/pricing', section: 'Plans' }, { label: 'Security' }] };
+for (const design of ['level1', 'level2', 'level3']) {
+  let opened = null;
+  const w = init({ backend: 'ws://localhost:8080', site: 'hirebuddha', design, hooks: { onNavigate: (p) => (opened = p) } });
+  if (design === 'level1') w.openPanel();
+  w.session.feed({ channel: 'AUDIO', type: 'start', sync_id: 'utt_c1', payload: { text: 'Plans start small.', grounding: cited } });
+  const chips = [...w.shadowRoot.querySelectorAll('.sources .source')];
+  ok(chips.map((c) => c.textContent).join(',') === 'Pricing,Security', `${design}: grounded answer lists its sources`);
+  chips[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  ok(opened === '/pricing' && chips[1].tagName === 'SPAN', `${design}: a source with a route opens that page`);
+  w.session.feed({ channel: 'AUDIO', type: 'start', sync_id: 'utt_c2', payload: { text: 'Not sure.', grounding: { found: false, confidence: 0.1, sources: [] } } });
+  ok(w.shadowRoot.querySelectorAll('.sources').length === 1, `${design}: an ungrounded answer shows no sources`);
+}
+
 // ---- 6. Extreme intelligence mounts a full-page render surface ----
 const ext = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', site: 'fluidbuddha', intelligence: 'extreme', design: 'level1' });
 ok(!!ext.shadowRoot.querySelector('.fbpage'), 'extreme mounts a runtime page surface');

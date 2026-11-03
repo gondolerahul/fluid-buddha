@@ -18,7 +18,7 @@ from typing import Any, Optional, Sequence
 from app.ai.base import ChatMessage, LLMClient
 from app.config import Settings
 from app.cortex.bridge import CortexBridge
-from app.cortex.query import query_cortex
+from app.cortex.query import citations, query_cortex
 from app.orchestrator.components import normalize_component
 from app.orchestrator.pagegen import build_extreme_brief, normalize_page
 from app.orchestrator.personas import valid_personas
@@ -257,11 +257,7 @@ class HeavyThinker:
             result.grounding = Grounding(
                 confidence=res["confidence"],
                 found=res["found"],
-                sources=[
-                    {"document": s.get("document"), "section": s.get("section"),
-                     "score": s.get("score")}
-                    for s in res.get("snippets", [])
-                ],
+                sources=citations(res.get("snippets", [])),
             )
             return res
 

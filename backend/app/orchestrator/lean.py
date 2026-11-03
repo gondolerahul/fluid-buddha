@@ -18,7 +18,7 @@ from typing import Optional, Sequence
 from app.ai.base import ChatMessage, LLMClient
 from app.config import Settings
 from app.cortex.bridge import CortexBridge
-from app.cortex.query import query_cortex
+from app.cortex.query import citations, query_cortex
 from app.orchestrator.prompts import build_lean_system
 from app.orchestrator.result import Grounding
 from app.orchestrator.thinker import ThinkResult
@@ -83,11 +83,7 @@ class LeanResponder:
         grounding = Grounding(
             confidence=res["confidence"],
             found=res["found"],
-            sources=[
-                {"document": s.get("document"), "section": s.get("section"),
-                 "score": s.get("score")}
-                for s in res.get("snippets", [])
-            ],
+            sources=citations(res.get("snippets", [])),
         )
         # 2. One generation, grounded by the injected snippets.
         system = build_lean_system(

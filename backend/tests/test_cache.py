@@ -124,6 +124,8 @@ def test_chat_replay_end_to_end():
         r2 = client.post("/chat", json={"message": q, "site": SITE}).json()
         assert r2["intent"] == "cached"
         assert r2["text"] == r1["text"]
+        # The replay carries the original answer's sources (WS8).
+        assert r2["grounding"] == r1["grounding"]
 
 
 def test_ws_replay_speaks_ack_before_cached_answer():

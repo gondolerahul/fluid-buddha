@@ -120,7 +120,8 @@ async def chat(req: ChatRequest, request: Request) -> dict:
             "persona": state.persona, "actions": replay.actions,
             "components": [{**c, "sync_id": _ui_sid()} for c in replay.components],
             "pages": [], "patches": [],
-            "grounding": {"confidence": 1.0, "found": True, "sources": []},
+            # The original answer's sources (WS8); older rows predate storing them.
+            "grounding": replay.grounding or {"confidence": 1.0, "found": True, "sources": []},
             "session_id": sid,
         }
 
@@ -140,6 +141,7 @@ async def chat(req: ChatRequest, request: Request) -> dict:
                     components=[c.to_dict() for c in result.components],
                     actions=[a.to_dict() for a in result.actions],
                     persona=state.persona, page=state.page, channel="text",
+                    grounding=result.grounding.to_dict(),
                 )
         except Exception as exc:
             logger.warning("chat record failed: %s", exc)

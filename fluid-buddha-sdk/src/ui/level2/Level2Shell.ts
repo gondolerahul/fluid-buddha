@@ -15,6 +15,7 @@
 import { ComponentPayload, Grounding } from '../../protocol';
 import { FluidBuddhaConfig } from '../../core/config';
 import { Canvas } from '../components/canvas';
+import { sourcesEl } from '../citations';
 import { ParticleField } from '../particles/ParticleField';
 import { AuraState } from '../aura/AuraCanvas';
 import { MessageStack } from './MessageStack';
@@ -38,6 +39,8 @@ export interface Level2Controller {
   /** Live 0..1 amplitude of the user's mic and the agent's TTS playback. */
   inputLevel(): number;
   outputLevel(): number;
+  /** Open a cited source page (host navigation). */
+  openSource?(route: string): void;
 }
 
 export class Level2Shell {
@@ -263,8 +266,8 @@ export class Level2Shell {
     this.thinkingUntil = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 6000;
   }
 
-  agentMessage(text: string, _grounding?: Grounding): void {
-    this.stack.push(text, 'agent');
+  agentMessage(text: string, grounding?: Grounding): void {
+    this.stack.push(text, 'agent', sourcesEl(grounding, this.controller.openSource));
     this.agentPulse = Math.max(this.agentPulse, 0.7);
     this.thinking = false;
   }

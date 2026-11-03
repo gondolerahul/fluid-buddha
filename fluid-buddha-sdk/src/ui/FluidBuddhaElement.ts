@@ -13,6 +13,7 @@ import { HostBridge } from '../core/HostBridge';
 import { Session } from '../core/Session';
 import { applyTokens, fetchDesignSystem } from '../core/designSystem';
 import { Canvas } from './components/canvas';
+import { sourcesEl } from './citations';
 import { Level2Shell } from './level2/Level2Shell';
 import { Level3Shell } from './level3/Level3Shell';
 import { PageRenderer, EnquiryPayload } from './page/PageRenderer';
@@ -45,6 +46,7 @@ export class FluidBuddhaElement extends HTMLElement {
   private _options: FluidBuddhaOptions = {};
   private config!: FluidBuddhaConfig;
   private session!: Session;
+  private hostBridge?: HostBridge;
   private canvas!: Canvas;
   private level2?: Level2Shell;
   private level3?: Level3Shell;
@@ -171,6 +173,7 @@ export class FluidBuddhaElement extends HTMLElement {
       reportComponentState: (id, patch) => this.session.reportComponentState(id, patch),
       inputLevel: () => this.session.inputLevel(),
       outputLevel: () => this.session.outputLevel(),
+      openSource: (route) => bridge.navigate(route),
     });
     this.level2 = shell;
 
@@ -201,6 +204,7 @@ export class FluidBuddhaElement extends HTMLElement {
       reportComponentState: (id, patch) => this.session.reportComponentState(id, patch),
       inputLevel: () => this.session.inputLevel(),
       outputLevel: () => this.session.outputLevel(),
+      openSource: (route) => bridge.navigate(route),
     });
     this.level3 = shell;
 
@@ -301,6 +305,7 @@ export class FluidBuddhaElement extends HTMLElement {
 
     // Wire the session
     const bridge = new HostBridge(this.config.hooks);
+    this.hostBridge = bridge;
     this.canvas = new Canvas(
       this.canvasEl,
       (id) => this.session.notifyRendered(id),
@@ -407,9 +412,8 @@ export class FluidBuddhaElement extends HTMLElement {
   private addMessage(sender: 'user' | 'pragya' | 'system', text: string, grounding?: Grounding): void {
     const bubble = h('div', `bubble ${sender}`);
     bubble.append(h('div', undefined, text));
-    if (grounding?.found) {
-      bubble.append(h('span', 'grounding', `grounded · ${(grounding.confidence * 100).toFixed(0)}%`));
-    }
+    const sources = sourcesEl(grounding, (route) => this.hostBridge?.navigate(route));
+    if (sources) bubble.append(sources);
     this.messagesEl.insertBefore(bubble, this.canvasEl);
     this.scrollDown();
   }

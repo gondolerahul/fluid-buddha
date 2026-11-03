@@ -10,11 +10,12 @@ export class MessageStack {
 
   /** Append a turn. The new line becomes the most-opaque bottom entry; older
    *  lines fade as they rise. */
-  push(text: string, who: 'user' | 'agent'): void {
+  push(text: string, who: 'user' | 'agent', extra?: HTMLElement | null): void {
     if (!text.trim()) return;
     const line = document.createElement('div');
     line.className = `l2-msg ${who}`;
     line.textContent = text;
+    if (extra) line.appendChild(extra);  // e.g. the answer's sources
     this.container.appendChild(line);
     while (this.container.childElementCount > MAX_VISIBLE) {
       this.container.firstElementChild?.remove();

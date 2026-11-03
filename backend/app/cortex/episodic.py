@@ -57,6 +57,7 @@ class CachedAnswer:
     page: Optional[str]
     score: float           # 1.0 for an exact-question match, else cosine
     match: str             # 'exact' | 'semantic'
+    grounding: Optional[dict] = None   # the original answer's sources (WS8)
 
 
 @dataclass
@@ -92,7 +93,7 @@ class EpisodicCache:
         self.company_id = settings.cortex_company_id
         self.dim = settings.embed_dim
 
-    # ---- schema ---------------------------------------------------------
+    # ---- embeddings -----------------------------------------------------
     async def _embed(self, q: str) -> Optional[list[float]]:
         try:
             return await embed_query(self.providers.embedding, q)
@@ -112,6 +113,7 @@ class EpisodicCache:
         page: Optional[str] = None,
         channel: str = "voice",
         kind: str = "turn",
+        grounding: Optional[dict] = None,
     ) -> None:
         if not (question and answer_text):
             return
@@ -120,9 +122,9 @@ class EpisodicCache:
             sql = (
                 "INSERT INTO conversation_cache "
                 "(id, site_key, persona, page, kind, q_norm, question, answer_text, "
-                " components, actions, channel, embedding) VALUES "
+                " components, actions, channel, grounding, embedding) VALUES "
                 "(:id, :s, :p, :pg, :k, :qn, :q, :a, CAST(:c AS jsonb), "
-                "CAST(:ac AS jsonb), :ch, "
+                "CAST(:ac AS jsonb), :ch, CAST(:g AS jsonb), "
                 + ("CAST(:emb AS vector)" if vec is not None else "NULL") + ")"
             )
             await self.db.execute(text(sql), {
@@ -137,6 +139,7 @@ class EpisodicCache:
                 "c": json.dumps(components or []),
                 "ac": json.dumps(actions or []),
                 "ch": channel,
+                "g": json.dumps(grounding) if grounding else None,
                 "emb": json.dumps(vec) if vec is not None else None,
             })
             await self.db.commit()
@@ -216,8 +219,8 @@ class EpisodicCache:
         # 1. Exact normalised-question match (deterministic, mock-safe).
         try:
             res = await self.db.execute(text(
-                "SELECT id, question, answer_text, components, actions, persona, page "
-                "FROM conversation_cache "
+                "SELECT id, question, answer_text, components, actions, persona, page, "
+                "grounding FROM conversation_cache "
                 "WHERE site_key=:s AND kind='turn' AND q_norm=:qn "
                 "AND (persona IS NULL OR CAST(:p AS text) IS NULL OR persona=CAST(:p AS text)) "
                 "ORDER BY (persona IS NOT DISTINCT FROM CAST(:p AS text)) DESC, "
@@ -225,7 +228,7 @@ class EpisodicCache:
             ), {"s": self.site_key, "qn": normalize_question(transcript), "p": persona})
             row = res.first()
             if row is not None:
-                out.append(self._row_to_answer(row, 1.0, "exact"))
+                out.append(self._row_to_answer(row, 1.0, "exact", row[7]))
                 seen.add(row[0])
         except Exception as exc:
             logger.warning("episodic exact query failed: %s", exc)
@@ -236,7 +239,7 @@ class EpisodicCache:
             try:
                 res = await self.db.execute(text(
                     "SELECT id, question, answer_text, components, actions, persona, "
-                    "page, 1 - (embedding <=> CAST(:vec AS vector)) AS score "
+                    "page, 1 - (embedding <=> CAST(:vec AS vector)) AS score, grounding "
                     "FROM conversation_cache "
                     "WHERE site_key=:s AND kind='turn' AND embedding IS NOT NULL "
                     "AND (persona IS NULL OR CAST(:p AS text) IS NULL OR persona=CAST(:p AS text)) "
@@ -245,7 +248,7 @@ class EpisodicCache:
                 for r in res.fetchall():
                     if r[0] in seen:
                         continue
-                    out.append(self._row_to_answer(r, float(r[7]), "semantic"))
+                    out.append(self._row_to_answer(r, float(r[7]), "semantic", r[8]))
                     seen.add(r[0])
             except Exception as exc:
                 logger.warning("episodic semantic query failed: %s", exc)
@@ -367,7 +370,8 @@ class EpisodicCache:
         return (res.rowcount or 0) > 0
 
     @staticmethod
-    def _row_to_answer(row: Any, score: float, match: str) -> CachedAnswer:
+    def _row_to_answer(row: Any, score: float, match: str,
+                       grounding: Any = None) -> CachedAnswer:
         def _as_list(v: Any) -> list:
             if v is None:
                 return []
@@ -384,4 +388,5 @@ class EpisodicCache:
             question=row[1], answer_text=row[2],
             components=_as_list(row[3]), actions=_as_list(row[4]),
             persona=row[5], page=row[6], score=score, match=match,
+            grounding=grounding if isinstance(grounding, dict) else None,
         )

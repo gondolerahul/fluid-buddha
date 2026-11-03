@@ -24,7 +24,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.db import session_scope
 from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFIDENCE
-from app.orchestrator.result import ClientAction
+from app.orchestrator.result import ClientAction, Grounding
 from app.orchestrator.profile import ensure_profile
 from app.orchestrator.tour_store import load_plan
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
@@ -435,7 +435,7 @@ class VoiceSession:
                 self._spawn(self._record_turn(
                     question=transcript, answer_text=think.answer_text,
                     components=think.components, actions=think.actions,
-                    channel="voice",
+                    channel="voice", grounding=think.grounding,
                 ))
             # Record cost/performance for this generated voice turn (req F/G).
             self._spawn(self._record_usage(
@@ -573,7 +573,7 @@ class VoiceSession:
             pass
 
     async def _record_turn(self, *, question, answer_text, components, actions,
-                           channel) -> None:
+                           channel, grounding=None) -> None:
         if not self.rt.settings.conversation_cache_enabled or not answer_text:
             return
         try:
@@ -584,6 +584,7 @@ class VoiceSession:
                     components=[c.to_dict() for c in components],
                     actions=[a.to_dict() for a in actions],
                     persona=self.state.persona, page=self.state.page, channel=channel,
+                    grounding=grounding.to_dict() if grounding is not None else None,
                 )
         except Exception as exc:
             logger.warning("ws[%s]: record_turn failed: %s", self.session_id[:8], exc)
@@ -682,7 +683,10 @@ class VoiceSession:
                 await self._emit_cached_action(action)
             self._answer_speaking = True
             try:
-                await self._speak(best.answer_text, primary_sync or _sid("utt"))
+                # The original answer's sources travel with the replay (WS8).
+                g = best.grounding
+                await self._speak(best.answer_text, primary_sync or _sid("utt"),
+                                  grounding=Grounding(**g) if g else None)
             finally:
                 self._answer_speaking = False
         except asyncio.CancelledError:

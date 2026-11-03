@@ -110,7 +110,9 @@ export interface PageSpec {
 export interface Grounding {
   confidence: number;
   found: boolean;
-  sources: Array<{ document?: string; section?: string; score?: number }>;
+  /** One entry per source document; `label` is display-ready, `route` is the
+   *  site page it came from (when known). */
+  sources: Array<{ document?: string; section?: string; score?: number; label?: string; route?: string }>;
 }
 
 export const base64ToBytes = (b64: string): Uint8Array => {

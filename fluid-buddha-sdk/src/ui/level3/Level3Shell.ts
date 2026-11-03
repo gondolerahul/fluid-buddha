@@ -14,6 +14,7 @@
 import { ComponentPayload, Grounding } from '../../protocol';
 import { FluidBuddhaConfig } from '../../core/config';
 import { Canvas } from '../components/canvas';
+import { sourcesEl } from '../citations';
 import { AuraCanvas, AuraState } from '../aura/AuraCanvas';
 
 const ICONS = {
@@ -30,6 +31,8 @@ export interface Level3Controller {
   reportComponentState?(syncId: string, patch: Record<string, unknown>): void;
   inputLevel(): number;
   outputLevel(): number;
+  /** Open a cited source page (host navigation). */
+  openSource?(route: string): void;
 }
 
 const MAX_CAPTIONS = 4;
@@ -290,12 +293,8 @@ export class Level3Shell {
     const cap = document.createElement('div');
     cap.className = `l3-cap fb-glass ${who}`;
     cap.append(this.div2(undefined, text));
-    if (grounding?.found) {
-      const g = document.createElement('span');
-      g.className = 'grounding';
-      g.textContent = `grounded · ${(grounding.confidence * 100).toFixed(0)}%`;
-      cap.appendChild(g);
-    }
+    const sources = sourcesEl(grounding, this.controller.openSource);
+    if (sources) cap.appendChild(sources);
     this.capsEl.appendChild(cap);
     while (this.capsEl.childElementCount > MAX_CAPTIONS) {
       this.capsEl.firstElementChild?.remove();

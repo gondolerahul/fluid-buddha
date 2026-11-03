@@ -260,12 +260,23 @@ export const STYLES = `
   align-self: center; background: transparent; color: var(--fb-neg);
   font-size: 12px; text-align: center; border: none; padding: 0;
 }
-.grounding {
-  display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
-  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--fb-pos); opacity: .9;
+/* answer citations (trust layer) */
+.sources {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px;
+  font-size: 11px; color: var(--fb-fg); opacity: .9;
 }
-.grounding::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.sources-lead {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--fb-pos);
+}
+.sources-lead::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.source {
+  font: inherit; color: inherit; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--fb-fg) 18%, transparent);
+  background: color-mix(in srgb, var(--fb-fg) 5%, transparent);
+}
+button.source { cursor: pointer; }
+button.source:hover, button.source:focus-visible { border-color: var(--fb-pos); outline: none; }
 @keyframes fb-rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* "thinking" — three motes of light drifting upward */
@@ -635,7 +646,7 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
   transition: opacity .6s var(--fb-ease), transform .6s var(--fb-ease);
 }
 .l3-cap.user { color: var(--fb-silver-bright); font-size: 14px; }
-.l3-cap .grounding { margin-top: 8px; }
+.l3-cap .sources { margin-top: 8px; }
 
 /* the summon — a centred Aura with a prompt; appears on ⌘K / long-press */
 .l3-seed {
