@@ -193,3 +193,35 @@ Compose defaults `CORS_ORIGINS` to `*`, which `main.py` turns into `allow_origin
 | D-21 | S4 | `CORS *` → allow-all on the admin app too | backend |
 
 **Headline:** the engine is real and demos beautifully end to end, but it is **single-tenant in disguise** (D-4, D-9, D-10, D-14), **open to the public with no guard rails** (D-1, D-2, D-3, D-5), **doesn't truly delete** (D-6), and its **own test gate can't be trusted to run** (D-7). These are the gates to a credible second customer.
+
+---
+
+## Resolution status (branch `phase0/foundations`, 2026-11-03)
+
+| ID | Status | How |
+|---|---|---|
+| D-1 | ✅ fixed | Per-website public widget key; `/chat` + `/ws/voice` resolve site and tier server-side; Origin checked against the site's domain |
+| D-2 | ✅ fixed | Startup refuses the default/empty `JWT_SECRET` outside dev envs |
+| D-3 | ✅ fixed | Per-site rate limit + daily spend cap on public turns |
+| D-4 | ✅ fixed | Built-in site keys reserved; registered sites unreachable without their key |
+| D-5 | ✅ fixed | SSRF-safe fetch (global IPs only, re-checked redirects, size/type caps); `call_site_api` path params URL-encoded; `tour_say` speaks stored narration only. Residual: DNS rebinding between check and connect |
+| D-6 | ✅ fixed | Source delete removes its CORTEX nodes; website delete purges tree, tour, profile, caches, usage |
+| D-7 | ✅ fixed | Per-test settings restore + cache truncation; `pytest-timeout`; green on reruns and on an empty DB |
+| D-8 | ✅ fixed | Replays speak a short, audio-cacheable `ack_*` segment before the cached answer |
+| D-9 | ✅ fixed | Per-site agent profile: name, personas, brand voice, routes (ingested URLs become routes) |
+| D-10 | ✅ fixed | Re-ingest deletes a source's prior nodes first; a hand-edited tour is flagged and never overwritten by re-ingestion (only an explicit "Generate" replaces it) |
+| D-11 | ✅ fixed | Thinker sees on-screen components; `patch_component` emits `DATA/patch` to a live `sync_id` (unknown ids refused); corrections route to the heavy path; patched turns aren't cached |
+| D-12 | ✅ fixed | SDK smoke runs on Node ≥ 20 |
+| D-13 | ✅ fixed | One port map: backend 8080, console 3001, demos 4000 |
+| D-14 | ✅ fixed | Content paths configurable (`HIREBUDDHA_DOCS`, `BCL_DOCS`, `FLUIDBUDDHA_DOCS`) with defaults that match the real sibling layout; fluidbuddha copy comes from this repo; design-system/OpenAPI optional. Local discovery verified (46 HireBuddha docs); a full `docker compose up` was not run here (host port 8080 is reserved on this machine) |
+| D-15 | ⏳ open (M1) | SPA-friendly `pushState` navigation — WS5 |
+| D-16 | ✅ fixed | Console Install tab (snippet + connection test) and Settings tab (site, tiers incl. Level 3, agent profile, delete) |
+| D-17 | ✅ fixed | Placeholder GCP project id |
+| D-18 | ✅ fixed | Model ids reconciled |
+| D-19 | ✅ fixed | Console lint clean (ESLint 9 flat config, no setState-in-effect) |
+| D-20 | ✅ fixed | See status note under D-20 |
+| D-21 | ✅ fixed | Path-scoped CORS: `CORS_ORIGINS` for the widget surface, `ADMIN_CORS_ORIGINS` (console only) for `/auth` + `/tenant` |
+
+**Gate:** `.github/workflows/ci.yml` runs backend pytest (twice, against an ephemeral pgvector) + `pip-audit`, SDK typecheck/build/smoke + `npm audit --audit-level=high`, console lint/tsc/build + audit, on every push to `main` and every PR.
+
+**Still open from Phase 0 (needs a decision, not code):** the claims policy is applied to `docs/product-docs/marketing_brief.md`, but `docs/website-copies/*` (the fluidbuddha site copy, which carries most of the 2.4× / 74 % / "0 % hallucination" claims) is deleted in the working tree and was left untouched — restore and rewrite it, or remove it from the repo. Product-name unification (Fluid-Buddha / fluid-buddha / FluidBuddha) is a brand call. Alembic migrations, Redis sessions and observability (F-3) remain, ahead of the M1 billing/conversation tables.

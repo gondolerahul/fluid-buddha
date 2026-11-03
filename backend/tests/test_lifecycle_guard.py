@@ -12,7 +12,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import get_settings, site_entity_id
@@ -120,3 +120,47 @@ def test_ws_turn_refused_when_rate_limited(monkeypatch):
             msg = ws.receive_json()
             assert msg["channel"] == "EVENTS" and msg["type"] == "error"
             assert msg["payload"]["reason"] == guard.RATE_LIMITED
+
+
+# ---- D-10: re-ingestion never clobbers a hand-edited tour ---------------------
+
+def _auto_replan(site_key: str, narration: str) -> bool:
+    """What re-ingestion does: save a generated plan, keeping hand edits."""
+    from app.orchestrator.tour import TourPlan, TourStop
+    from app.orchestrator.tour_store import save_plan
+
+    async def run() -> bool:
+        engine = create_async_engine(get_settings().cortex_db_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(engine) as db:
+                return await save_plan(db, TourPlan(site_key=site_key, stops=[
+                    TourStop(narration=narration), TourStop(narration="The end."),
+                ]), keep_edited=True)
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(run())
+
+
+def test_reingestion_keeps_hand_edited_tour():
+    with TestClient(app) as client:
+        tok = client.post("/auth/register", json={
+            "email": f"lt_{uuid.uuid4().hex[:10]}@example.com", "password": "supersecret1",
+        }).json()["access_token"]
+        h = {"Authorization": f"Bearer {tok}"}
+        site = client.post("/tenant/websites", json={"name": "Tour Co"}, headers=h).json()
+        url = f"/tenant/websites/{site['id']}/tour"
+
+        # Before any hand edit, a re-plan is written.
+        assert _auto_replan(site["site_key"], "Generated intro.") is True
+        assert client.get(url, headers=h).json()["edited"] is False
+
+        stops = [{"narration": "My own intro."}, {"narration": "My own outro."}]
+        saved = client.put(url, json={"stops": stops}, headers=h).json()
+        assert saved["edited"] is True
+
+        # A later re-ingestion leaves the hand-edited tour untouched.
+        assert _auto_replan(site["site_key"], "Generated again.") is False
+        tour = client.get(url, headers=h).json()
+        assert tour["edited"] is True
+        assert [s["narration"] for s in tour["stops"]] == ["My own intro.", "My own outro."]

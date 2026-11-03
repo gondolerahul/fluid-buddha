@@ -23,12 +23,13 @@ export default function TourPage() {
   const toast = useToast();
   const [stops, setStops] = useState<EditStop[] | null>(null);
   const [exists, setExists] = useState(false);
+  const [edited, setEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [gen, setGen] = useState(false);
 
   useEffect(() => {
     Api.getTour(id)
-      .then((t) => { setStops(t.stops.map(toEdit)); setExists(t.exists); })
+      .then((t) => { setStops(t.stops.map(toEdit)); setExists(t.exists); setEdited(t.edited); })
       .catch(() => setStops([]));
   }, [id]);
 
@@ -49,7 +50,7 @@ export default function TourPage() {
     setBusy(true);
     try {
       await Api.saveTour(id, clean.map(toStop));
-      setExists(true);
+      setExists(true); setEdited(true);
       toast("Tour saved");
     } catch (e) {
       toast(e instanceof ApiError ? e.message : "Could not save tour", "err");
@@ -62,7 +63,7 @@ export default function TourPage() {
     setGen(true);
     try {
       const t = await Api.generateTour(id);
-      setStops(t.stops.map(toEdit)); setExists(true);
+      setStops(t.stops.map(toEdit)); setExists(true); setEdited(false);
       toast("Tour generated from your content");
     } catch (e) {
       toast(e instanceof ApiError ? e.message : "Generate failed — ingest content first", "err");
@@ -81,6 +82,7 @@ export default function TourPage() {
           <p className="muted" style={{ fontSize: "0.88rem" }}>
             What the agent says and where it moves on a visitor&apos;s first walkthrough.
             {!exists && " No tour yet — generate one or build it by hand."}
+            {edited && " You've edited this tour, so re-ingesting content won't replace it — use Generate to start over."}
           </p>
         </div>
         <div className="row" style={{ gap: 8 }}>

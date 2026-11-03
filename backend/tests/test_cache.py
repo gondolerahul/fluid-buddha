@@ -124,3 +124,36 @@ def test_chat_replay_end_to_end():
         r2 = client.post("/chat", json={"message": q, "site": SITE}).json()
         assert r2["intent"] == "cached"
         assert r2["text"] == r1["text"]
+
+
+def test_ws_replay_speaks_ack_before_cached_answer():
+    """D-8: a cache hit sounds like a fresh turn — an ack_* segment, then the answer."""
+    from app.main import app
+
+    site = f"replayack-{uuid.uuid4().hex[:8]}"
+    q = "Replay ack probe " + uuid.uuid4().hex + "?"
+
+    async def seed():
+        await init_db()
+        settings = get_settings()
+        async with session_scope() as db:
+            cache = EpisodicCache(db, settings, build_cortex_providers(settings), site_key=site)
+            await cache.record(question=q, answer_text="The cached answer.",
+                               components=[], actions=[], persona=None, page="/",
+                               channel="voice")
+    _run(seed())
+
+    with TestClient(app) as client:
+        app.state.runtime.settings.episodic_min_episodes = 1
+        with client.websocket_connect(f"/ws/voice?site={site}") as ws:
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_json({"channel": "EVENTS", "type": "text", "payload": {"text": q}})
+            starts = []
+            for _ in range(300):
+                env = ws.receive_json()
+                if env["channel"] == "AUDIO" and env["type"] == "start":
+                    starts.append((env["sync_id"], env["payload"].get("text", "")))
+                    if len(starts) == 2:
+                        break
+            assert starts[0][0].startswith("ack_")
+            assert starts[1][1] == "The cached answer."

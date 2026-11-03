@@ -1,5 +1,5 @@
 """
-The ``query_cortex`` retrieval tool + zero-hallucination guardrail (Req 3.4.3).
+The ``query_cortex`` retrieval tool + grounding guardrail (Req 3.4.3).
 
 Returns the top grounded snippets and a ``confidence`` = best cosine similarity.
 The Heavy Thinker's system prompt forbids answering capability/pricing/integration

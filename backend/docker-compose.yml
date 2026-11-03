@@ -39,7 +39,10 @@ services:
       EMBED_MODEL: ${EMBED_MODEL:-text-embedding-004}
       TTS_MODEL: ${TTS_MODEL:-gemini-3.1-flash-tts-preview}
       TTS_GEMINI_VOICE: ${TTS_GEMINI_VOICE:-Aoede}
+      # Public widget origins ("*" is fine: each request is also checked against
+      # the website's domain) vs. the admin API, which only the console calls.
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://localhost:3001,http://127.0.0.1:3001}
       # Seed the knowledge base from the mounted website docs on first boot.
       INGEST_ON_START: "true"
       INGEST_SITE: hirebuddha
@@ -47,24 +50,30 @@ services:
       # buddha-cognitive-lab docs (mounted below). Ingest manually after boot:
       #   docker exec a2ui-backend python -m ingestion.ingest --site buddha-cognitive-lab
       BUDDHA_COGNITIVE_LAB_CONTENT_DIR: /content-bcl
-      # fluidbuddha — the Extreme "container app" (copy + design system + APIs).
-      # Ingest manually after boot:
+      # fluidbuddha — the Extreme "container app". Its copy ships in this repo
+      # (docs/website-copies). Ingest manually after boot:
       #   docker exec a2ui-backend python -m ingestion.ingest --site fluidbuddha
       FLUIDBUDDHA_CONTENT_DIR: /fluidbuddha/docs
-      FLUIDBUDDHA_DESIGN_SYSTEM: /fluidbuddha/design/design-system.json
-      FLUIDBUDDHA_OPENAPI: /fluidbuddha/apis/openapi.json
+      # Optional design system + OpenAPI for the Extreme tier (missing = defaults
+      # / simulated APIs). Mount a folder at /fluidbuddha/assets to provide them.
+      FLUIDBUDDHA_DESIGN_SYSTEM: /fluidbuddha/assets/design/design-system.json
+      FLUIDBUDDHA_OPENAPI: /fluidbuddha/assets/apis/openapi.json
       # Optional live API for call_site_api (omit to simulate enquiries/data):
       # FLUIDBUDDHA_API_BASE_URL: https://api.fluidbuddha.example
       # FLUIDBUDDHA_API_AUTH: "Bearer ..."
     ports:
       - "8080:8080"
     volumes:
-      # HireBuddha's authored page copy, read-only, for ingestion.
-      - ../../hirebuddha-website/docs:/content:ro
-      # Buddha Cognitive Lab's authored page copy, read-only, for ingestion.
-      - ../../buddha-cognitive-lab-website/docs:/content-bcl:ro
-      # fluidbuddha container app: copy + design system + OpenAPI, read-only.
-      - ../fluidbuddha-website:/fluidbuddha:ro
+      # Content folders, read-only, for ingestion. Defaults assume the sibling
+      # website repos sit next to this one (<workspace>/hire-buddha-website);
+      # override any path via backend/.env (docs/defects.md D-14).
+      # HireBuddha's page copy + product docs (website-copies/, product-docs/).
+      - ${HIREBUDDHA_DOCS:-../../hire-buddha-website/docs/phase1}:/content:ro
+      # Buddha Cognitive Lab's page copy (website-copies/).
+      - ${BCL_DOCS:-../../buddha-cognitive-lab-website/docs}:/content-bcl:ro
+      # fluidbuddha's own copy, from this repo (docs/website-copies/).
+      - ${FLUIDBUDDHA_DOCS:-../docs}:/fluidbuddha/docs:ro
+      # - /path/to/fluidbuddha-assets:/fluidbuddha/assets:ro   # design/ + apis/
       # For Vertex (MOCK_AI=false): mount ADC and set the env var below.
       # - ~/.config/gcloud:/root/.config/gcloud:ro
     # environment GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json

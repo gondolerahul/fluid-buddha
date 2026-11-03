@@ -36,9 +36,20 @@ _HEAVY_KW = re.compile(
 )
 
 
-def needs_heavy(transcript: str, intent: str = "general") -> bool:
+# A correction while a component is on screen ("actually we have 50 seats")
+# needs the Heavy Thinker's patch_component tool (D-11).
+_CORRECTION_KW = re.compile(
+    r"\b(actually|instead|change|update|make it|correct|adjust|set it|not \d+)\b",
+    re.IGNORECASE,
+)
+
+
+def needs_heavy(transcript: str, intent: str = "general", *,
+                has_components: bool = False) -> bool:
     """Decide whether a turn must use the Heavy Thinker (tools/diagrams/nav)."""
     if intent in _HEAVY_INTENTS:
+        return True
+    if has_components and _CORRECTION_KW.search(transcript or ""):
         return True
     return bool(_HEAVY_KW.search(transcript or ""))
 

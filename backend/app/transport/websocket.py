@@ -17,6 +17,7 @@ import logging
 import re
 import time
 import uuid
+import zlib
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -42,6 +43,15 @@ router = APIRouter()
 # response is still in flight) is treated as a CONTINUATION of the same question
 # and coalesced — handles ASR/VAD splitting one spoken thought into fragments.
 _COALESCE_WINDOW_S = 10.0
+
+# Spoken before a replayed (cached) answer so a cache hit sounds like a fresh
+# turn: ack first, then the answer (D-8). Few, fixed phrases so their audio is
+# itself served from the audio cache after the first synthesis.
+_REPLAY_ACKS = ("Sure.", "Good question.", "Happy to explain.")
+
+
+def _replay_ack(transcript: str) -> str:
+    return _REPLAY_ACKS[zlib.crc32(transcript.encode("utf-8")) % len(_REPLAY_ACKS)]
 
 
 def _sid(prefix: str) -> str:
@@ -369,7 +379,7 @@ class VoiceSession:
             #    so reasoning runs *while* the ack is spoken — overlapping the two
             #    removes the dead air between ack and answer. (Req 3 / 3.3.2) A
             #    cached near-match (below the replay bar) rides along as context.
-            heavy = self.rt.loop.needs_heavy(transcript, route.intent)
+            heavy = self.rt.loop.needs_heavy(transcript, route.intent, self.state)
             think_task = asyncio.create_task(
                 self._think(transcript, persona, heavy,
                             related=self._related, probe=probe)
@@ -396,6 +406,10 @@ class VoiceSession:
             for page in think.pages:
                 primary_sync = primary_sync or page.sync_id
                 await self.send(Channel.DATA, "render_page", page.to_dict(), page.sync_id)
+            # In-place updates of components already on screen (D-11).
+            for p in think.patches:
+                if self.state.update_component_state(p.target_sync_id, p.patch) is not None:
+                    await self.send(Channel.DATA, "patch", p.to_dict(), p.target_sync_id)
 
             # 4. Emit EVENTS (DOM commands)
             for action in think.actions:
@@ -416,10 +430,13 @@ class VoiceSession:
                 len(think.actions), len(think.components),
             )
             # Record the full multimodal turn for future replay (fire-and-forget).
-            self._spawn(self._record_turn(
-                question=transcript, answer_text=think.answer_text,
-                components=think.components, actions=think.actions, channel="voice",
-            ))
+            # A patch targets this session's components, so it can't be replayed.
+            if not think.patches:
+                self._spawn(self._record_turn(
+                    question=transcript, answer_text=think.answer_text,
+                    components=think.components, actions=think.actions,
+                    channel="voice",
+                ))
             # Record cost/performance for this generated voice turn (req F/G).
             self._spawn(self._record_usage(
                 intent=route.intent, transcript=transcript, ack=route.ack,
@@ -650,21 +667,27 @@ class VoiceSession:
         logger.info("ws[%s]: REPLAY (score=%.3f, %d components) for %r",
                     self.session_id[:8], best.score, len(best.components),
                     transcript[:80])
-        await self.send(Channel.STATE, "transcript", {"text": transcript})
-        primary_sync: str | None = None
-        for comp in best.components:
-            sid = _sid("ui")
-            primary_sync = primary_sync or sid
-            self.state.register_component(
-                sid, comp.get("component_type", ""), comp.get("initial_state", {}))
-            await self.send(Channel.DATA, "render", {**comp, "sync_id": sid}, sid)
-        for action in best.actions:
-            await self._emit_cached_action(action)
-        self._answer_speaking = True
+        ack = _replay_ack(transcript)
         try:
-            await self._speak(best.answer_text, primary_sync or _sid("utt"))
-        finally:
-            self._answer_speaking = False
+            await self.send(Channel.STATE, "transcript", {"text": transcript})
+            await self._speak(ack, _sid("ack"))
+            primary_sync: str | None = None
+            for comp in best.components:
+                sid = _sid("ui")
+                primary_sync = primary_sync or sid
+                self.state.register_component(
+                    sid, comp.get("component_type", ""), comp.get("initial_state", {}))
+                await self.send(Channel.DATA, "render", {**comp, "sync_id": sid}, sid)
+            for action in best.actions:
+                await self._emit_cached_action(action)
+            self._answer_speaking = True
+            try:
+                await self._speak(best.answer_text, primary_sync or _sid("utt"))
+            finally:
+                self._answer_speaking = False
+        except asyncio.CancelledError:
+            await self.send(Channel.EVENTS, "interrupted", {})
+            raise
         self.state.add_turn(transcript, best.answer_text)
         self._last_utt_text = ""
         try:
@@ -676,7 +699,7 @@ class VoiceSession:
             pass
         # Cached voice turn: no LLM spend — only TTS (req G shows the saving).
         self._spawn(self._record_usage(
-            intent="cached", transcript=transcript, answer_text=best.answer_text,
+            intent="cached", transcript=transcript, ack=ack, answer_text=best.answer_text,
             served_from_cache=True, t0=t0,
         ))
 

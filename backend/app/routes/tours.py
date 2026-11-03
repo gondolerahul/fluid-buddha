@@ -32,10 +32,10 @@ class TourPlanIn(BaseModel):
     stops: list[TourStopIn] = Field(default_factory=list)
 
 
-def _plan_payload(plan: TourPlan | None, site_key: str) -> dict:
+def _plan_payload(plan: TourPlan | None, site_key: str, edited: bool = False) -> dict:
     if plan is None:
-        return {"site_key": site_key, "stops": [], "exists": False}
-    return {**plan.to_dict(), "exists": True}
+        return {"site_key": site_key, "stops": [], "exists": False, "edited": False}
+    return {**plan.to_dict(), "exists": True, "edited": edited}
 
 
 @router.get("/tour")
@@ -44,7 +44,8 @@ async def get_tour(
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     plan = await tour_store.load_plan(db, site.site_key)
-    return _plan_payload(plan, site.site_key)
+    edited = plan is not None and await tour_store.is_edited(db, site.site_key)
+    return _plan_payload(plan, site.site_key, edited)
 
 
 @router.put("/tour")
@@ -60,8 +61,9 @@ async def save_tour(
     if not [s for s in plan.stops if s.narration]:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "A tour needs at least one stop with narration.")
-    await tour_store.save_plan(db, plan)
-    return _plan_payload(plan, site.site_key)
+    # Hand-edited: re-ingesting sources will no longer overwrite it (D-10).
+    await tour_store.save_plan(db, plan, edited=True)
+    return _plan_payload(plan, site.site_key, edited=True)
 
 
 @router.post("/tour/generate")
@@ -70,7 +72,8 @@ async def generate_tour(
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     """Author a fresh tour from the site's ingested sources (or legacy file copy)
-    and persist it. Lets a tenant bootstrap a tour they can then edit."""
+    and persist it. Lets a tenant bootstrap a tour they can then edit. This is the
+    explicit "regenerate", so it replaces a hand-edited tour too."""
     from app.ai.factory import build_engines
     from app.config import get_settings
     from app.orchestrator.profile import ensure_profile

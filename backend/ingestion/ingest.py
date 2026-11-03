@@ -89,7 +89,7 @@ async def plan_and_save_tour(site_key: str, documents: list[SourceDocument]) -> 
             site_key=site_key, documents=documents, llm=engines.llm, settings=settings
         )
         async with SessionLocal() as db:
-            await save_plan(db, plan)
+            await save_plan(db, plan, keep_edited=True)
     except Exception as exc:
         logger.warning("tour planning skipped for site=%s: %s", site_key, exc)
 

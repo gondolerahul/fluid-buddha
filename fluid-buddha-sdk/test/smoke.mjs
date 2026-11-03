@@ -48,7 +48,7 @@ const bridge = {
   navigate: (p) => (calls.navigate = p),
   scrollTo: (s) => (calls.scroll = s),
 };
-const events = { component: null, agent: null, transcript: null, page: null };
+const events = { component: null, agent: null, transcript: null, page: null, patch: null };
 const session = new Session(
   { backend: 'ws://x', api: 'http://x', site: 'hirebuddha', intelligence: 'extreme', design: 'level1', position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
   bridge,
@@ -57,7 +57,7 @@ const session = new Session(
     onUserTranscript: (t) => (events.transcript = t),
     onAgentMessage: (t, g) => (events.agent = { t, g }),
     onComponent: (c) => (events.component = c),
-    onPatch() {},
+    onPatch: (id, p) => (events.patch = { id, p }),
     onSystem() {},
     onPage: (p) => (events.page = p),
   },
@@ -77,6 +77,8 @@ session.feed({ channel: 'AUDIO', type: 'start', sync_id: 'ack_1', payload: { tex
 ok(events.agent.t === 'Here is the flow', 'AUDIO/start(ack) is NOT surfaced as a message');
 session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_1', payload: { sync_id: 'page_1', title: 'Welcome', sections: [{ type: 'hero', props: { title: 'Hi' } }] } });
 ok(events.page && events.page.title === 'Welcome' && events.page.sections.length === 1, 'DATA/render_page -> onPage');
+session.feed({ channel: 'DATA', type: 'patch', sync_id: 'ui_1', payload: { target_sync_id: 'ui_1', patch: { seats: 50 }, animation: 'count_up' } });
+ok(events.patch && events.patch.id === 'ui_1' && events.patch.p.seats === 50, 'DATA/patch -> onPatch(target, patch)');
 
 // ---- 3. Canvas renders components ----
 const container = document.createElement('div');

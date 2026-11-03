@@ -158,7 +158,7 @@ The Python backend uses FastAPI to route requests. It processes tasks through a 
 
 ### 4.1 Fast Router (`app/orchestrator/router.py`)
 * **Model**: powered by `gemini-2.5-flash`.
-* **Latency**: ~150-300ms.
+* **Latency target**: a sub-second spoken ack (not yet instrumented — time-to-first-audio is a Phase 1 metric).
 * **Role**: Parses user inputs, generates immediate spoken acknowledgments (e.g., "Sure, let me fetch that layout for you..."), classifies user intent, and determines target visitor personas.
 
 ### 4.2 Heavy Thinker (`app/orchestrator/thinker.py`)

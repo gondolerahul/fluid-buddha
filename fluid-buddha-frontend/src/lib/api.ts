@@ -154,7 +154,7 @@ export type IngestionStatus = {
 };
 
 export type TourStop = { narration: string; move?: Record<string, unknown> | null; label?: string };
-export type TourPlan = { site_key: string; stops: TourStop[]; exists: boolean };
+export type TourPlan = { site_key: string; stops: TourStop[]; exists: boolean; edited: boolean };
 
 export type CacheEntry = {
   id: string;

@@ -24,7 +24,13 @@ from app.orchestrator.pagegen import build_extreme_brief, normalize_page
 from app.orchestrator.personas import valid_personas
 from app.orchestrator.profile import profile_for
 from app.orchestrator.prompts import build_reaction_system, build_thinker_system
-from app.orchestrator.result import ClientAction, ComponentPayload, Grounding, PageSpec
+from app.orchestrator.result import (
+    ClientAction,
+    ComponentPatch,
+    ComponentPayload,
+    Grounding,
+    PageSpec,
+)
 from app.orchestrator.sitemap import resolve_route
 from app.orchestrator.tools import ACTION_TOOLS, COMPONENT_TOOLS, tools_for
 
@@ -59,12 +65,30 @@ def _account(result: "ThinkResult", resp, system: str = "", messages=()) -> None
     result.tool_calls += len(resp.tool_calls or [])
 
 
+def _on_screen_block(on_screen: dict[str, dict]) -> str:
+    """Tell the model which components are live so a correction can patch one
+    in place (``patch_component``) instead of rendering a duplicate (D-11)."""
+    import json
+    lines = []
+    for sid, entry in on_screen.items():
+        state = json.dumps(entry.get("state", {}), default=str)
+        if len(state) > 300:
+            state = state[:300] + "…"
+        lines.append(f"- sync_id {sid}: {entry.get('component_type', '')} state={state}")
+    return (
+        "\n\nON-SCREEN COMPONENTS (the visitor can see these now; to change one "
+        "after a correction call patch_component with its sync_id and only the "
+        "changed fields — do not re-render it):\n" + "\n".join(lines)
+    )
+
+
 @dataclass
 class ThinkResult:
     answer_text: str = ""
     actions: list[ClientAction] = field(default_factory=list)
     components: list[ComponentPayload] = field(default_factory=list)
     pages: list[PageSpec] = field(default_factory=list)
+    patches: list[ComponentPatch] = field(default_factory=list)
     grounding: Grounding = field(default_factory=Grounding)
     # Cost analytics (req F): which LLM tier ran + the tokens/tool-calls it spent.
     llm_kind: str = "thinker"        # 'fast' (lean) | 'thinker' (heavy)
@@ -92,6 +116,7 @@ class HeavyThinker:
         sections: Optional[list[dict]] = None,
         related: Optional[list] = None,
         probe: bool = False,
+        on_screen: Optional[dict[str, dict]] = None,
     ) -> ThinkResult:
         extreme_brief = build_extreme_brief(site_key) if intelligence == "extreme" else None
         system = build_thinker_system(
@@ -99,6 +124,10 @@ class HeavyThinker:
             page=page, section=section, sections=sections,
             extreme_brief=extreme_brief, related=related, probe=probe,
         )
+        gated_tools = tools_for(intelligence, site_key)
+        on_screen = dict(on_screen or {})
+        if on_screen and any(t.name == "patch_component" for t in gated_tools):
+            system += _on_screen_block(on_screen)
         messages: list[ChatMessage] = list(history) + [
             ChatMessage(role="user", text=user_text)
         ]
@@ -110,7 +139,6 @@ class HeavyThinker:
         # Tools are gated by the configured intelligence tier. The no-cortex
         # variant (offered once the search budget is spent) is derived from the
         # SAME gated set so a lower tier never gets a higher-tier tool back.
-        gated_tools = tools_for(intelligence, site_key)
         no_cortex_tools = [t for t in gated_tools if t.name != "query_cortex"]
 
         for _ in range(_MAX_TURNS):
@@ -161,7 +189,7 @@ class HeavyThinker:
                     if call.name == "query_cortex":
                         cortex_calls += 1
                     tool_result = await self._handle_tool_call(
-                        call, bridge, result, site_key
+                        call, bridge, result, site_key, on_screen
                     )
                     productive = True
                 messages.append(ChatMessage(
@@ -213,7 +241,8 @@ class HeavyThinker:
         return result
 
     async def _handle_tool_call(
-        self, call, bridge: CortexBridge, result: ThinkResult, site_key: str
+        self, call, bridge: CortexBridge, result: ThinkResult, site_key: str,
+        on_screen: Optional[dict[str, dict]] = None,
     ):
         name = call.name
         args = call.args or {}
@@ -261,8 +290,21 @@ class HeavyThinker:
                     explanation_text=args.get("explanation_text", "") or "",
                 ))
                 return {"ok": True, "sync_id": sync_id}
-            # patch_component
-            return {"ok": True, "target_sync_id": args.get("target_sync_id")}
+            # patch_component — only a component the visitor can see right now.
+            target = str(args.get("target_sync_id") or "")
+            patch = args.get("patch")
+            if target not in (on_screen or {}):
+                return {"ok": False, "error": "unknown_sync_id",
+                        "hint": "Patch only a sync_id listed under ON-SCREEN "
+                                "COMPONENTS, or render a new component."}
+            if not isinstance(patch, dict) or not patch:
+                return {"ok": False, "error": "empty_patch"}
+            animation = args.get("animation")
+            result.patches.append(ComponentPatch(
+                target_sync_id=target, patch=patch,
+                animation=animation if animation in ("fade", "count_up", "highlight") else None,
+            ))
+            return {"ok": True, "target_sync_id": target}
 
         if name in ACTION_TOOLS:
             action = self._to_action(name, args, site_key)

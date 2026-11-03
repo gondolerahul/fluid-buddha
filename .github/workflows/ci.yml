@@ -1,0 +1,91 @@
+# Quality gate for every push and pull request (docs/implementation-plan.md F-1,
+# F-4): backend tests against an ephemeral pgvector, SDK typecheck/build/smoke,
+# console lint/typecheck/build, and dependency audits that fail on high+.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: cortex
+          POSTGRES_PASSWORD: cortex
+          POSTGRES_DB: cortex
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U cortex -d cortex"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      APP_ENV: ci
+      MOCK_AI: "true"
+      CORTEX_DB_URL: postgresql+asyncpg://cortex:cortex@localhost:5434/cortex
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements-dev.txt
+      - name: Tests
+        run: python -m pytest -q
+      - name: Tests again (reruns must be deterministic on a non-empty DB)
+        run: python -m pytest -q
+      - name: Dependency audit
+        run: pip-audit
+
+  sdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fluid-buddha-sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: fluid-buddha-sdk/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  console:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fluid-buddha-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: fluid-buddha-frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - name: Dependency audit
+        run: npm run audit

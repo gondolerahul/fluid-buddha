@@ -17,20 +17,25 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-# Repo layout: <root>/backend/ and <root>/hirebuddha-website/
+# Layout: <workspace>/fluid-buddha/backend/ (this repo) next to the sibling
+# website repos, e.g. <workspace>/hire-buddha-website/. fluidbuddha's own copy
+# ships in this repo (docs/website-copies). Docker mounts each base instead and
+# sets the *_CONTENT_DIR env vars below (docs/defects.md D-14).
 _BACKEND_DIR = Path(__file__).resolve().parents[1]
 _ROOT = _BACKEND_DIR.parent
+_WORKSPACE = _ROOT.parent
+_HIREBUDDHA_DOCS = _WORKSPACE / "hire-buddha-website" / "docs" / "phase1"
 
 SITE_CONTENT_DIRS: dict[str, list[Path]] = {
     "hirebuddha": [
-        _ROOT / "hirebuddha-website" / "docs" / "website-copies",
-        _ROOT / "hirebuddha-website" / "docs" / "product-docs",
+        _HIREBUDDHA_DOCS / "website-copies",
+        _HIREBUDDHA_DOCS / "product-docs",
     ],
     "buddha-cognitive-lab": [
-        _ROOT / "buddha-cognitive-lab-website" / "docs" / "website-copies",
+        _WORKSPACE / "buddha-cognitive-lab-website" / "docs" / "website-copies",
     ],
     "fluidbuddha": [
-        _ROOT / "fluidbuddha-website" / "docs" / "website-copies",
+        _ROOT / "docs" / "website-copies",
     ],
 }
 
@@ -126,6 +131,10 @@ def load_site_documents(site_key: str) -> list[SourceDocument]:
         if not d.exists():
             continue
         for path in sorted(d.glob("*.md")):
+            # ALL-CAPS files (README, WEBSITE_AUDIT, ...) are notes about the
+            # site, not page copy — keep them out of the knowledge base.
+            if path.stem.isupper():
+                continue
             text = path.read_text(encoding="utf-8").strip()
             if not text:
                 continue

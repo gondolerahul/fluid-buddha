@@ -67,6 +67,20 @@ class Grounding:
 
 
 @dataclass
+class ComponentPatch:
+    """A mutation of an already-rendered component (``DATA/patch``)."""
+    target_sync_id: str
+    patch: dict[str, Any]
+    animation: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"target_sync_id": self.target_sync_id, "patch": self.patch}
+        if self.animation:
+            d["animation"] = self.animation
+        return d
+
+
+@dataclass
 class TurnResult:
     intent: str = "general"
     persona: Optional[str] = None
@@ -75,6 +89,7 @@ class TurnResult:
     actions: list[ClientAction] = field(default_factory=list)
     components: list[ComponentPayload] = field(default_factory=list)
     pages: list[PageSpec] = field(default_factory=list)
+    patches: list[ComponentPatch] = field(default_factory=list)
     grounding: Grounding = field(default_factory=Grounding)
     # Cost analytics (req F): LLM tier + tokens/tool-calls this turn spent.
     llm_kind: str = "thinker"
@@ -92,5 +107,6 @@ class TurnResult:
             "actions": [a.to_dict() for a in self.actions],
             "components": [c.to_dict() for c in self.components],
             "pages": [p.to_dict() for p in self.pages],
+            "patches": [p.to_dict() for p in self.patches],
             "grounding": self.grounding.to_dict(),
         }

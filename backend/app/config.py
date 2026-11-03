@@ -36,11 +36,17 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     log_level: str = "INFO"
-    # :3000 = hirebuddha marketing site; :3001 = fluid-buddha-frontend admin app.
+    # Public widget surface (/chat, /widget, ...): the sites embedding the widget.
+    # :3000 = hirebuddha marketing site, :4000 = SDK demos, :3001 = the console
+    # (its Install tab tests /widget/config). "*" is fine here — each request is
+    # also checked against the website's own domain.
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,"
-        "http://localhost:3001,http://127.0.0.1:3001"
+        "http://localhost:3001,http://127.0.0.1:3001,"
+        "http://localhost:4000,http://127.0.0.1:4000"
     )
+    # Admin API (/auth, /tenant): the console only (docs/defects.md D-21).
+    admin_cors_origins: str = "http://localhost:3001,http://127.0.0.1:3001"
 
     # ---- Database ----
     # Host port 5434 matches docker-compose.yml, so a local `uvicorn` with no
@@ -108,6 +114,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def admin_cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.admin_cors_origins.split(",") if o.strip()]
 
     @property
     def is_dev_env(self) -> bool:

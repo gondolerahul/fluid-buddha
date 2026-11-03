@@ -59,10 +59,12 @@ class CognitiveLoop:
         return await self.router.route(user_text, state.history, state.site_key)
 
     @staticmethod
-    def needs_heavy(transcript: str, intent: str = "general") -> bool:
+    def needs_heavy(transcript: str, intent: str = "general",
+                    state: ConversationState | None = None) -> bool:
         """Hybrid router: does this turn need the Heavy Thinker (tools/diagram/
-        navigation/page) or can the lean single-shot path handle it?"""
-        return needs_heavy(transcript, intent)
+        navigation/page/patch) or can the lean single-shot path handle it?"""
+        return needs_heavy(transcript, intent,
+                           has_components=bool(state and state.components))
 
     @staticmethod
     def apply_persona(
@@ -121,6 +123,7 @@ class CognitiveLoop:
             sections=state.sections,
             related=related,
             probe=probe,
+            on_screen=state.components,
         )
 
     async def react(self, entry: dict, persona, site_key: str) -> str:
@@ -161,7 +164,7 @@ class CognitiveLoop:
         bump_probe(state, probe)
         persona = state.persona
 
-        if self.needs_heavy(user_text, route.intent):
+        if self.needs_heavy(user_text, route.intent, state):
             think = await self.thinker.think(
                 user_text=user_text,
                 persona=persona,
@@ -174,6 +177,7 @@ class CognitiveLoop:
                 sections=state.sections,
                 related=related,
                 probe=probe,
+                on_screen=state.components,
             )
         else:
             think = await self.lean.respond(
@@ -189,7 +193,12 @@ class CognitiveLoop:
             )
         result.answer_text = think.answer_text
         result.components.extend(think.components)
+        for c in think.components:  # so a later correction can patch it (D-11)
+            state.register_component(c.sync_id, c.component_type, c.initial_state)
         result.pages.extend(think.pages)
+        result.patches.extend(think.patches)
+        for p in think.patches:
+            state.update_component_state(p.target_sync_id, p.patch)
         result.grounding = think.grounding
         result.llm_kind = think.llm_kind
         result.input_tokens = think.input_tokens

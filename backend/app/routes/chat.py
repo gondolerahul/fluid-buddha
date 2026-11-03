@@ -119,7 +119,7 @@ async def chat(req: ChatRequest, request: Request) -> dict:
             "text": replay.answer_text, "ack": "", "intent": "cached",
             "persona": state.persona, "actions": replay.actions,
             "components": [{**c, "sync_id": _ui_sid()} for c in replay.components],
-            "pages": [],
+            "pages": [], "patches": [],
             "grounding": {"confidence": 1.0, "found": True, "sources": []},
             "session_id": sid,
         }
@@ -131,7 +131,8 @@ async def chat(req: ChatRequest, request: Request) -> dict:
         )
 
     # Record the turn for future replay (best-effort, own session).
-    if settings.conversation_cache_enabled and result.answer_text:
+    # A patch targets this session's components, so such a turn isn't replayable.
+    if settings.conversation_cache_enabled and result.answer_text and not result.patches:
         try:
             async with session_scope() as db:
                 await rt.episodic(db, state.site_key).record(

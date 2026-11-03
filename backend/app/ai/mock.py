@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import struct
 from collections.abc import AsyncIterator, Sequence
 from typing import Optional
@@ -43,6 +44,10 @@ _PERSONA_KEYWORDS = {
 
 _DEV_KEYWORDS = ["api", "integrat", "architecture", "webhook", "sdk", "technical", "deploy"]
 _EXEC_KEYWORDS = ["roi", "cost", "pricing", "budget", "savings", "business case"]
+
+# Correction of an on-screen component: "actually we have 50 seats" → patch it.
+_ON_SCREEN_RE = re.compile(r"- sync_id (\S+): (\w+)")
+_SEATS_RE = re.compile(r"(\d+)\s*(?:seats|people|employees|users)", re.IGNORECASE)
 
 
 def _last_user_text(messages: Sequence[ChatMessage]) -> str:
@@ -135,12 +140,28 @@ class MockLLMClient(LLMClient):
 
         # --- Heavy Thinker turn 2: client actions ----------------------------
         if has_cortex and not has_action:
-            calls = self._decide_actions(low, tool_names)
+            calls = self._patch_on_screen(user_text, tool_names, system) \
+                or self._decide_actions(low, tool_names)
             if calls:
                 return LLMResponse(tool_calls=calls, model=used_model)
 
         # --- Final spoken answer (grounded) ----------------------------------
         return LLMResponse(text=self._compose_answer(user_text, messages), model=used_model)
+
+    @staticmethod
+    def _patch_on_screen(user_text: str, tool_names: set[str], system: str) -> list[ToolCall]:
+        """A seat-count correction updates the latest on-screen ROI calculator."""
+        if "patch_component" not in tool_names:
+            return []
+        seats = _SEATS_RE.search(user_text)
+        calcs = [sid for sid, ctype in _ON_SCREEN_RE.findall(system)
+                 if ctype == "roi_calculator"]
+        if not seats or not calcs:
+            return []
+        return [ToolCall("patch_component", {
+            "target_sync_id": calcs[-1], "patch": {"seats": int(seats.group(1))},
+            "animation": "count_up",
+        })]
 
     def _decide_actions(self, low: str, tool_names: set[str]) -> list[ToolCall]:
         calls: list[ToolCall] = []

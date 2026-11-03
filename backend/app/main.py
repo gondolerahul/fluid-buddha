@@ -5,9 +5,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.cors import ScopedCORSMiddleware
 from app.db import dispose_engine, init_db
 from app.logging_config import configure_logging
 from app.routes import (
@@ -42,23 +42,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="A2UI Orchestrator", version="0.1.0", lifespan=lifespan)
 
-# A credentialed request cannot use a wildcard origin (CORS spec), and an
-# allow-all origin is too broad for the admin API that shares this app. The
-# console authenticates with a Bearer token (not cookies), so when origins are
-# left wide open we allow any origin but turn credentials off. Set an explicit
-# CORS_ORIGINS list in any deployed environment. See docs/defects.md D-21.
-wildcard = "*" in settings.cors_origin_list or settings.cors_origins.strip() == "*"
-cors_kwargs = {
-    "allow_methods": ["*"],
-    "allow_headers": ["*"],
-    "allow_credentials": not wildcard,
-}
-if wildcard:
-    cors_kwargs["allow_origin_regex"] = r".*"
-else:
-    cors_kwargs["allow_origins"] = settings.cors_origin_list
-
-app.add_middleware(CORSMiddleware, **cors_kwargs)
+# The public widget and the admin API share this app but not a CORS policy:
+# CORS_ORIGINS covers the widget surface, ADMIN_CORS_ORIGINS the console-only
+# /auth + /tenant routes (docs/defects.md D-21).
+app.add_middleware(
+    ScopedCORSMiddleware,
+    public_origins=settings.cors_origin_list,
+    admin_origins=settings.admin_cors_origin_list,
+)
 
 app.include_router(health.router)
 app.include_router(chat.router)

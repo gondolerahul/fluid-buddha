@@ -48,12 +48,12 @@ Fluid-Buddha automatically detects and adjusts its voice tone and messaging focu
 ### 3.3 The Mid-Market Executive (Growing Companies)
 * **Tone**: Confident, operational, ROI-focused.
 * **Value Focus**: Process standardizing, removing team silos, reducing churn.
-* **Marketing Message**: *"Streamline operations and scale lead capture. Integrate voice widgets across your products to sync interactions directly to CRMs."*
+* **Marketing Message**: *"Streamline operations and qualify more of your visitors. Put a voice agent on every product page that answers from your own content."* (CRM sync is on the roadmap, not shipped — don't promise it yet.)
 
 ### 3.4 The Enterprise Buyer
 * **Tone**: Precise, highly technical, structured.
 * **Value Focus**: Data privacy, API access, SOC2/security compliance, deployment scale.
-* **Marketing Message**: *"Deploy secure, zero-dependency voice overlays. Grounded in CORTEX memory engines to guarantee zero LLM hallucinations."*
+* **Marketing Message**: *"Deploy secure, zero-dependency voice overlays. Grounded answers with sources from your own content — and it says so when it doesn't know."*
 
 ---
 
@@ -77,7 +77,7 @@ Fluid-Buddha automatically detects and adjusts its voice tone and messaging focu
 
 ### 4.5 Dual-Model Efficiency & Cost Routing
 * **What it is**: High-performance backend orchestrator.
-* **How to pitch it**: By fast-routing routine questions through lightweight models and serving repeated queries from the Episodic Replay database cache, the system cuts standard LLM execution costs by up to 80% without sacrificing response quality.
+* **How to pitch it**: By fast-routing routine questions through lightweight models and serving repeated queries from the Episodic Replay database cache, the system avoids most repeat LLM spend: a replayed answer costs no model tokens, and the console's analytics page shows each site's generated-vs-cached cost split. Quote a saving only from a customer's own analytics.
 
 ---
 
@@ -87,19 +87,23 @@ Fluid-Buddha automatically detects and adjusts its voice tone and messaging focu
    ┌─────────────────────────────────────────────────────────┐
    │                  Sales & Revenue Impact                 │
    ├────────────────────────────┬────────────────────────────┤
-   │ Increase Conversion        │ Drive 2.4x more conversions│
-   │                            │ by replacing web forms with│
-   │                            │ voice consultative steps.  │
+   │ Increase Conversion        │ Replace static forms with  │
+   │                            │ a consultative voice guide │
+   │                            │ that qualifies as it talks.│
    ├────────────────────────────┼────────────────────────────┤
-   │ Cut Operational Costs      │ Automate up to 74% of B2B  │
-   │                            │ customer inquiries without │
-   │                            │ expanding support teams.   │
+   │ Cut Operational Costs      │ Answer routine questions   │
+   │                            │ from your own content, day │
+   │                            │ and night.                 │
    ├────────────────────────────┼────────────────────────────┤
-   │ CRM Data Integration       │ Map user intent and inputs │
-   │                            │ directly to pipeline, CRM, │
-   │                            │ and sales systems.         │
+   │ Know Your Visitors         │ See what visitors ask, by  │
+   │                            │ persona and page, in the   │
+   │                            │ console. (CRM sync: later.)│
    └────────────────────────────┴────────────────────────────┘
 ```
+
+> **Claims policy** (docs/roadmap.md §2.4): no number appears in public copy unless our
+> own instrumentation measures it. Conversion-lift figures wait for the holdout A/B
+> results; cost savings come from a customer's own analytics page.
 
 ---
 

@@ -5,6 +5,7 @@ ingested:  docker compose up -d  &&  python -m ingestion.ingest --site hirebuddh
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 from fastapi.testclient import TestClient
 
@@ -265,3 +266,37 @@ def test_ws_tour_plan_and_say():
                     saw_done = True
                     break
             assert saw_audio and saw_done
+
+
+def test_ws_correction_patches_component_in_place():
+    """D-11: a correction updates the rendered component via DATA/patch."""
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/voice?site=hirebuddha") as ws:
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_json({"channel": "EVENTS", "type": "text",
+                          "payload": {"text": "show me the roi for my team " + uuid.uuid4().hex}})
+            sync_id, ends = None, 0
+            for _ in range(400):
+                env = ws.receive_json()
+                if env["channel"] == "DATA" and env["type"] == "render":
+                    sync_id = env["payload"]["sync_id"]
+                if env["channel"] == "AUDIO" and env["type"] == "end":
+                    ends += 1
+                if sync_id and ends >= 2:
+                    break
+            assert sync_id, "agent should have rendered the ROI calculator"
+
+            ws.send_json({"channel": "EVENTS", "type": "text",
+                          "payload": {"text": "Actually we have 50 seats"}})
+            patch = None
+            for _ in range(400):
+                env = ws.receive_json()
+                assert not (env["channel"] == "DATA" and env["type"] == "render"), \
+                    "a correction must patch, not re-render"
+                if env["channel"] == "DATA" and env["type"] == "patch":
+                    patch = env
+                    break
+            assert patch is not None
+            assert patch["sync_id"] == sync_id
+            assert patch["payload"]["target_sync_id"] == sync_id
+            assert patch["payload"]["patch"] == {"seats": 50}

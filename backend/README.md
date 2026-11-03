@@ -80,7 +80,7 @@ frontend jitter buffer holds audio until its UI renders (Req 3.2.3/3.2.4).
 |---|---|
 | Fast Router (intent/persona/ack) | `app/orchestrator/router.py` |
 | Heavy Thinker (grounded reasoning + tools) | `app/orchestrator/thinker.py` |
-| `query_cortex` + zero-hallucination guardrail | `app/cortex/query.py` |
+| `query_cortex` + grounding guardrail (says so when it does not know) | `app/cortex/query.py` |
 | CORTEX bridge (ingest + cosine retrieval) | `app/cortex/bridge.py` |
 | Gemini ↔ cortex provider adapters | `app/cortex/providers.py` |
 | Vertex LLM / ASR / TTS engines | `app/ai/vertex.py` |
