@@ -25,6 +25,7 @@ from app.db import session_scope
 from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFIDENCE
 from app.orchestrator.result import ClientAction
 from app.orchestrator.tour_store import load_plan
+from app.tenancy.public_access import PublicAccessError, resolve_public_site
 from app.orchestrator.state import (
     ConversationState,
     normalize_intelligence,
@@ -78,11 +79,14 @@ def split_for_tts(text: str, min_chars: int = 24) -> list[str]:
 class VoiceSession:
     def __init__(
         self, ws: WebSocket, runtime, site_key: str = "hirebuddha",
-        intelligence: str = "advance",
+        intelligence: str = "advance", tier_locked: bool = False,
     ) -> None:
         self.ws = ws
         self.rt = runtime
         self.session_id = uuid.uuid4().hex
+        # When the tier is server-resolved from a widget key, the client may not
+        # change it mid-session via STATE/sync (docs/defects.md D-1).
+        self._tier_locked = tier_locked
         self.state = ConversationState(
             site_key=site_key, intelligence=normalize_intelligence(intelligence)
         )
@@ -169,7 +173,7 @@ class VoiceSession:
             self.state.sections = normalize_sections(payload["sections"])
         if payload.get("persona"):
             self.state.persona = payload["persona"]
-        if payload.get("intelligence"):
+        if payload.get("intelligence") and not self._tier_locked:
             self.state.intelligence = normalize_intelligence(payload["intelligence"])
 
     # ---- ASR over buffered audio (real engines) -------------------------
@@ -736,9 +740,26 @@ class VoiceSession:
 @router.websocket("/ws/voice")
 async def voice_ws(websocket: WebSocket) -> None:
     runtime = websocket.app.state.runtime
-    site_key = websocket.query_params.get("site", "hirebuddha")
-    intelligence = websocket.query_params.get("intelligence", "advance")
+    # Resolve site + tier server-side (docs/defects.md D-1). A widget key pins
+    # the site and its configured tier; a registered tenant site may not be
+    # reached by raw site_key without one.
+    try:
+        async with session_scope() as rdb:
+            resolved = await resolve_public_site(
+                rdb,
+                key=websocket.query_params.get("key"),
+                site=websocket.query_params.get("site"),
+                intelligence=websocket.query_params.get("intelligence"),
+                origin=websocket.headers.get("origin"),
+            )
+    except PublicAccessError as exc:
+        await websocket.accept()
+        await websocket.send_json(make(Channel.EVENTS, "error", {"reason": exc.reason}))
+        await websocket.close(code=4403)
+        return
+
     session = VoiceSession(
-        websocket, runtime, site_key=site_key, intelligence=intelligence
+        websocket, runtime, site_key=resolved.site_key,
+        intelligence=resolved.intelligence, tier_locked=resolved.tier_locked,
     )
     await session.run()

@@ -11,14 +11,15 @@ import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from typing import Any
 
 from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
-from app.orchestrator.state import normalize_intelligence, normalize_sections
+from app.orchestrator.state import normalize_sections
+from app.tenancy.public_access import PublicAccessError, resolve_public_site
 from app.transport.session_store import store
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,9 @@ def _ui_sid() -> str:
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str | None = None
+    # Widget key (preferred): resolves the site + tier server-side. `site` and
+    # `intelligence` are honoured only for built-in demo sites (docs/defects.md D-1).
+    key: str | None = None
     site: str = "hirebuddha"
     intelligence: str | None = None  # basic|high|advance|extreme — capability tier
     icp: str | None = None          # current persona reported by the frontend
@@ -44,9 +48,21 @@ class ChatRequest(BaseModel):
 async def chat(req: ChatRequest, request: Request) -> dict:
     rt = request.app.state.runtime
     t0 = time.monotonic()
-    sid, state = store.get_or_create(req.session_id, site_key=req.site)
-    if req.intelligence:
-        state.intelligence = normalize_intelligence(req.intelligence)
+
+    # Resolve site + tier server-side so the client can't pick another tenant's
+    # knowledge base or escalate its own tier (docs/defects.md D-1).
+    try:
+        async with session_scope() as rdb:
+            resolved = await resolve_public_site(
+                rdb, key=req.key, site=req.site, intelligence=req.intelligence,
+                origin=request.headers.get("origin"),
+            )
+    except PublicAccessError as exc:
+        raise HTTPException(status_code=403, detail=exc.reason)
+
+    sid, state = store.get_or_create(req.session_id, site_key=resolved.site_key)
+    state.site_key = resolved.site_key
+    state.intelligence = resolved.intelligence
     if req.icp:
         state.persona = req.icp
     if req.page:

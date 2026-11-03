@@ -33,17 +33,19 @@ def test_analytics_breakdown_and_cache_split():
         }).json()["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         site = client.post("/tenant/websites", json={"name": "Analytics Co"}, headers=h).json()
-        wid, sk = site["id"], site["site_key"]
+        wid, key = site["id"], site["public_key"]
 
         # Make a repeated question replay from cache after one prior turn.
         app.state.runtime.settings.episodic_min_episodes = 1
 
+        # Drive the public path with the widget key (a registered tenant site
+        # can no longer be reached by raw site_key — docs/defects.md D-1).
         for m in ["Tell me about your product",
                   "What does pricing look like for a startup?",
                   "Show me an integration diagram",
                   "How do I get started today?"]:
-            client.post("/chat", json={"message": m, "site": sk})
-        cached = client.post("/chat", json={"message": "Tell me about your product", "site": sk}).json()
+            client.post("/chat", json={"message": m, "key": key})
+        cached = client.post("/chat", json={"message": "Tell me about your product", "key": key}).json()
         assert cached["intent"] == "cached"
 
         a = client.get(f"/tenant/websites/{wid}/analytics?group_by=day", headers=h).json()
