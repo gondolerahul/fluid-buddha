@@ -20,7 +20,7 @@ BACKEND = pathlib.Path(__file__).resolve().parents[1]
 TABLES = {
     "cortex_trees", "cortex_nodes", "cortex_edges", "tenants", "tenant_websites",
     "tenant_sources", "site_profiles", "site_tours", "conversation_cache",
-    "answer_audio_cache", "usage_events",
+    "answer_audio_cache", "usage_events", "conversations", "conversation_turns",
 }
 
 

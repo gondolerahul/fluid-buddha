@@ -19,6 +19,7 @@ from app.routes import (
     design,
     health,
     ingestion,
+    insights,
     tours,
     websites,
     widget,
@@ -65,3 +66,4 @@ app.include_router(tours.router)
 app.include_router(cache.router)
 app.include_router(analytics.router)
 app.include_router(agent_profile.router)
+app.include_router(insights.router)

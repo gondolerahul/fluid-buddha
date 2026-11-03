@@ -32,6 +32,22 @@ def _ui_sid() -> str:
     return f"ui_{uuid.uuid4().hex[:10]}"
 
 
+async def _record_conversation(state, sid: str, question: str, answer: str, intent,
+                               grounding, *, served_from_cache: bool) -> None:
+    """Append the turn to this session's transcript (Insights, WS10; best-effort)."""
+    from app.insights.store import record_turn as record_conversation_turn
+    try:
+        async with session_scope() as db:
+            await record_conversation_turn(
+                db, site_key=state.site_key, session_id=sid, channel="text",
+                question=question, answer=answer, intent=intent,
+                persona=state.persona, page=state.page,
+                grounding=grounding, served_from_cache=served_from_cache,
+            )
+    except Exception as exc:
+        logger.warning("conversation record failed: %s", exc)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str | None = None
@@ -115,6 +131,8 @@ async def chat(req: ChatRequest, request: Request) -> dict:
                 ))
         except Exception as exc:
             logger.debug("usage record (cached) skipped: %s", exc)
+        await _record_conversation(state, sid, req.message, replay.answer_text, "cached",
+                                   replay.grounding, served_from_cache=True)
         return {
             "text": replay.answer_text, "ack": "", "intent": "cached",
             "persona": state.persona, "actions": replay.actions,
@@ -162,6 +180,8 @@ async def chat(req: ChatRequest, request: Request) -> dict:
             await record_turn(adb, metrics)
     except Exception as exc:
         logger.debug("usage record skipped: %s", exc)
+    await _record_conversation(state, sid, req.message, result.answer_text, result.intent,
+                               result.grounding.to_dict(), served_from_cache=False)
 
     payload = result.to_message_dict()
     payload["session_id"] = sid

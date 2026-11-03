@@ -443,6 +443,10 @@ class VoiceSession:
                 answer_text=think.answer_text, think=think,
                 served_from_cache=False, t0=t0,
             ))
+            self._spawn(self._record_conversation(
+                question=transcript, answer=think.answer_text, intent=route.intent,
+                grounding=think.grounding.to_dict(), served_from_cache=False,
+            ))
         except asyncio.CancelledError:
             logger.info("ws[%s]: turn CANCELLED before completion (barge-in or "
                         "new utterance)", self.session_id[:8])
@@ -589,6 +593,22 @@ class VoiceSession:
         except Exception as exc:
             logger.warning("ws[%s]: record_turn failed: %s", self.session_id[:8], exc)
 
+    async def _record_conversation(self, *, question, answer, intent, grounding,
+                                   served_from_cache) -> None:
+        """Append the turn to this session's transcript (Insights, WS10)."""
+        from app.insights.store import record_turn as record_conversation_turn
+        try:
+            async with session_scope() as db:
+                await record_conversation_turn(
+                    db, site_key=self.state.site_key, session_id=self.session_id,
+                    channel="voice", question=question, answer=answer, intent=intent,
+                    persona=self.state.persona, page=self.state.page,
+                    grounding=grounding, served_from_cache=served_from_cache,
+                )
+        except Exception as exc:
+            logger.warning("ws[%s]: conversation record failed: %s",
+                           self.session_id[:8], exc)
+
     async def _record_usage(
         self, *, intent, transcript, ack="", answer_text="", think=None,
         served_from_cache=False, t0=None,
@@ -705,6 +725,10 @@ class VoiceSession:
         self._spawn(self._record_usage(
             intent="cached", transcript=transcript, ack=ack, answer_text=best.answer_text,
             served_from_cache=True, t0=t0,
+        ))
+        self._spawn(self._record_conversation(
+            question=transcript, answer=best.answer_text, intent="cached",
+            grounding=best.grounding, served_from_cache=True,
         ))
 
     async def _emit_cached_action(self, action: dict) -> None:

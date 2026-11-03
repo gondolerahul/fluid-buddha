@@ -38,6 +38,7 @@ const TABS = [
   { key: "install", label: "Install" },
   { key: "ingestion", label: "Ingestion" },
   { key: "tour", label: "Tour" },
+  { key: "insights", label: "Insights" },
   { key: "cache", label: "Responses" },
   { key: "analytics", label: "Analytics" },
   { key: "settings", label: "Settings" },

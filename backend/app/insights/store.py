@@ -1,0 +1,182 @@
+"""
+Conversation store + Insights queries (WS10).
+
+Every answered visitor question (voice or text, fresh or replayed) appends one
+``conversation_turns`` row to its session's ``conversations`` row. On top of
+that the console gets: a transcript viewer, the most-asked questions, the
+knowledge gaps (questions the agent could not ground in the site's content —
+each one a source worth adding), and the visitor → engaged funnel.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import uuid
+from typing import Any, Optional
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.cortex.episodic import normalize_question
+
+logger = logging.getLogger(__name__)
+
+# A conversation with at least this many questions counts as "engaged".
+ENGAGED_TURNS = 2
+# Small talk ("hi") is ungrounded by nature, not a gap in the content, so it
+# never counts as unanswered.
+SMALL_TALK = "greeting"
+
+
+async def record_turn(
+    db: AsyncSession, *, site_key: str, session_id: str, channel: str,
+    question: str, answer: str, intent: Optional[str] = None,
+    persona: Optional[str] = None, page: Optional[str] = None,
+    grounding: Optional[dict] = None, served_from_cache: bool = False,
+) -> None:
+    """Append one turn to the session's conversation (created on first turn).
+    The caller owns the transaction."""
+    if not (question or "").strip():
+        return
+    g = grounding or {}
+    found = bool(g.get("found"))
+    unanswered = not found and intent != SMALL_TALK
+    conv_id = (await db.execute(text(
+        "INSERT INTO conversations "
+        "(id, site_key, session_id, channel, persona, first_page, turns, ungrounded) "
+        "VALUES (:id, :s, :sid, :ch, :p, :pg, 1, :ug) "
+        "ON CONFLICT (site_key, session_id) DO UPDATE SET "
+        "turns = conversations.turns + 1, "
+        "ungrounded = conversations.ungrounded + EXCLUDED.ungrounded, "
+        "persona = COALESCE(EXCLUDED.persona, conversations.persona), "
+        "last_at = now() "
+        "RETURNING id"
+    ), {
+        "id": uuid.uuid4(), "s": site_key, "sid": session_id, "ch": channel,
+        "p": persona, "pg": page, "ug": 1 if unanswered else 0,
+    })).scalar_one()
+    await db.execute(text(
+        "INSERT INTO conversation_turns "
+        "(id, conversation_id, site_key, question, q_norm, answer, intent, persona, "
+        " page, found, confidence, sources, served_from_cache) VALUES "
+        "(:id, :c, :s, :q, :qn, :a, :i, :p, :pg, :f, :conf, CAST(:src AS jsonb), :cached)"
+    ), {
+        "id": uuid.uuid4(), "c": conv_id, "s": site_key, "q": question[:2000],
+        "qn": normalize_question(question), "a": answer or "", "i": intent,
+        "p": persona, "pg": page, "f": found,
+        "conf": float(g.get("confidence") or 0.0),
+        "src": json.dumps(g.get("sources") or []), "cached": served_from_cache,
+    })
+
+
+async def summary(db: AsyncSession, site_key: str, days: int = 30) -> dict[str, Any]:
+    """Headline numbers, top questions, knowledge gaps and the funnel."""
+    params = {"s": site_key, "d": days, "eng": ENGAGED_TURNS}
+    since = "now() - make_interval(days => :d)"
+    params["talk"] = SMALL_TALK
+    head = (await db.execute(text(
+        "SELECT count(*) AS conversations, "
+        "count(*) FILTER (WHERE turns >= :eng) AS engaged, "
+        "coalesce(sum(turns), 0) AS turns "
+        f"FROM conversations WHERE site_key = :s AND started_at >= {since}"
+    ), params)).mappings().one()
+    # Share of real questions (not small talk) answered from the site's content.
+    asked = (await db.execute(text(
+        "SELECT count(*) FILTER (WHERE coalesce(intent, '') <> :talk) AS asked, "
+        "count(*) FILTER (WHERE found) AS grounded FROM conversation_turns "
+        f"WHERE site_key = :s AND created_at >= {since}"
+    ), params)).mappings().one()
+
+    def grouped(where: str, having: str, limit: int) -> str:
+        return (
+            "SELECT (array_agg(question ORDER BY created_at DESC))[1] AS question, "
+            "q_norm, count(*) AS count, max(created_at) AS last_asked, "
+            "max(confidence) AS best_confidence "
+            f"FROM conversation_turns WHERE site_key = :s AND created_at >= {since} {where} "
+            f"GROUP BY q_norm {having} "
+            f"ORDER BY count(*) DESC, max(created_at) DESC LIMIT {limit}"
+        )
+
+    top = (await db.execute(text(grouped("", "", 10)), params)).mappings().all()
+    # A gap closes once the latest time it was asked got a grounded answer
+    # (e.g. after the tenant answered it from this page).
+    gaps = (await db.execute(text(grouped(
+        "AND coalesce(intent, '') <> :talk",
+        "HAVING NOT (array_agg(found ORDER BY created_at DESC))[1]", 20)), params)).mappings().all()
+
+    n_asked, n_grounded = int(asked["asked"]), int(asked["grounded"])
+    return {
+        "days": days,
+        "conversations": int(head["conversations"]),
+        "engaged": int(head["engaged"]),
+        "turns": int(head["turns"]),
+        "grounded_rate": round(min(n_grounded, n_asked) / n_asked, 4) if n_asked else None,
+        "top_questions": [_question_row(r) for r in top],
+        "gaps": [_question_row(r) for r in gaps],
+        "funnel": [
+            {"stage": "visitors", "label": "Started a conversation",
+             "count": int(head["conversations"])},
+            {"stage": "engaged", "label": f"Asked {ENGAGED_TURNS}+ questions",
+             "count": int(head["engaged"])},
+        ],
+    }
+
+
+def _question_row(r: Any) -> dict[str, Any]:
+    return {
+        "question": r["question"], "count": int(r["count"]),
+        "last_asked": r["last_asked"].isoformat() if r["last_asked"] else None,
+        "best_confidence": round(float(r["best_confidence"] or 0.0), 4),
+    }
+
+
+async def list_conversations(
+    db: AsyncSession, site_key: str, *, limit: int = 25, offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    total = (await db.execute(text(
+        "SELECT count(*) FROM conversations WHERE site_key = :s"), {"s": site_key})).scalar() or 0
+    rows = (await db.execute(text(
+        "SELECT c.id, c.channel, c.persona, c.first_page, c.turns, c.ungrounded, "
+        "c.started_at, c.last_at, "
+        "(SELECT question FROM conversation_turns t WHERE t.conversation_id = c.id "
+        " ORDER BY t.created_at LIMIT 1) AS first_question "
+        "FROM conversations c WHERE c.site_key = :s "
+        "ORDER BY c.last_at DESC LIMIT :lim OFFSET :off"
+    ), {"s": site_key, "lim": limit, "off": offset})).mappings().all()
+    return [_conversation_row(r) for r in rows], int(total)
+
+
+async def get_conversation(
+    db: AsyncSession, site_key: str, conversation_id: uuid.UUID,
+) -> Optional[dict[str, Any]]:
+    conv = (await db.execute(text(
+        "SELECT id, channel, persona, first_page, turns, ungrounded, started_at, last_at, "
+        "NULL AS first_question FROM conversations WHERE id = :id AND site_key = :s"
+    ), {"id": conversation_id, "s": site_key})).mappings().first()
+    if conv is None:
+        return None
+    turns = (await db.execute(text(
+        "SELECT question, answer, intent, persona, page, found, confidence, sources, "
+        "served_from_cache, created_at FROM conversation_turns "
+        "WHERE conversation_id = :id ORDER BY created_at"
+    ), {"id": conversation_id})).mappings().all()
+    return {**_conversation_row(conv), "transcript": [
+        {
+            "question": t["question"], "answer": t["answer"], "intent": t["intent"],
+            "persona": t["persona"], "page": t["page"], "found": t["found"],
+            "confidence": round(float(t["confidence"] or 0.0), 4),
+            "sources": t["sources"] if isinstance(t["sources"], list) else [],
+            "served_from_cache": t["served_from_cache"],
+            "unanswered": not t["found"] and t["intent"] != SMALL_TALK,
+            "at": t["created_at"].isoformat(),
+        } for t in turns
+    ]}
+
+
+def _conversation_row(r: Any) -> dict[str, Any]:
+    return {
+        "id": str(r["id"]), "channel": r["channel"], "persona": r["persona"],
+        "first_page": r["first_page"], "turns": r["turns"], "ungrounded": r["ungrounded"],
+        "first_question": r["first_question"],
+        "started_at": r["started_at"].isoformat(), "last_at": r["last_at"].isoformat(),
+    }

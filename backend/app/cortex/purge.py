@@ -19,9 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import site_entity_id
 
-# Per-site tables keyed by site_key. Created lazily, so each is skipped if absent.
+# Per-site tables keyed by site_key (conversation_turns go with their
+# conversation via ON DELETE CASCADE).
 _SITE_TABLES = (
     "site_tours", "site_profiles", "conversation_cache", "answer_audio_cache", "usage_events",
+    "conversations",
 )
 
 

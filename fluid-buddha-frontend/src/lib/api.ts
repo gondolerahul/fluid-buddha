@@ -202,6 +202,49 @@ export type Analytics = {
   pricing: Record<string, number>;
 };
 
+export type QuestionStat = {
+  question: string;
+  count: number;
+  last_asked: string | null;
+  best_confidence: number;
+};
+export type Insights = {
+  days: number;
+  conversations: number;
+  engaged: number;
+  turns: number;
+  grounded_rate: number | null;
+  top_questions: QuestionStat[];
+  gaps: QuestionStat[];
+  funnel: { stage: string; label: string; count: number }[];
+};
+export type ConversationSummary = {
+  id: string;
+  channel: string;
+  persona: string | null;
+  first_page: string | null;
+  turns: number;
+  ungrounded: number;
+  first_question: string | null;
+  started_at: string;
+  last_at: string;
+};
+export type ConversationTurn = {
+  question: string;
+  answer: string;
+  intent: string | null;
+  persona: string | null;
+  page: string | null;
+  found: boolean;
+  confidence: number;
+  sources: { label?: string; route?: string; document?: string }[];
+  served_from_cache: boolean;
+  /** A real question the content didn't cover (small talk never counts). */
+  unanswered: boolean;
+  at: string;
+};
+export type Conversation = ConversationSummary & { transcript: ConversationTurn[] };
+
 // ---- endpoint helpers ------------------------------------------------------
 export const Api = {
   register: (email: string, password: string, name?: string) =>
@@ -267,4 +310,12 @@ export const Api = {
 
   analytics: (id: string, groupBy: "day" | "hour" | "session") =>
     api<Analytics>(`/tenant/websites/${id}/analytics?group_by=${groupBy}`),
+
+  insights: (id: string, days = 30) =>
+    api<Insights>(`/tenant/websites/${id}/insights?days=${days}`),
+  conversations: (id: string, offset = 0, limit = 25) =>
+    api<{ items: ConversationSummary[]; total: number; limit: number; offset: number }>(
+      `/tenant/websites/${id}/conversations?limit=${limit}&offset=${offset}`),
+  conversation: (id: string, cid: string) =>
+    api<Conversation>(`/tenant/websites/${id}/conversations/${cid}`),
 };

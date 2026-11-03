@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Api, ApiError, IngestionStatus } from "@/lib/api";
-import { Modal, Spinner, StatusBadge, fmtDate, useToast } from "@/components/ui";
+import { Spinner, StatusBadge, fmtDate, useToast } from "@/components/ui";
+import { AddSourceModal } from "@/components/AddSourceModal";
 
 export default function IngestionPage() {
   const id = String(useParams().id);
@@ -133,65 +134,5 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
       <div className="metric" style={{ marginTop: 8 }}>{value}</div>
       {hint && <div className="faint" style={{ fontSize: "0.8rem", marginTop: 4 }}>{hint}</div>}
     </div>
-  );
-}
-
-function AddSourceModal({
-  id, open, onClose, onAdded, onError,
-}: {
-  id: string; open: boolean; onClose: () => void; onAdded: () => void; onError: (m: string) => void;
-}) {
-  const [kind, setKind] = useState<"text" | "url">("text");
-  const [name, setName] = useState("");
-  const [content, setContent] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await Api.addSource(id, { kind, name, content });
-      setName(""); setContent("");
-      onAdded();
-    } catch (e) {
-      onError(e instanceof ApiError ? e.message : "Could not add source.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title="Add a data source">
-      <form onSubmit={submit} className="stack">
-        <div className="field">
-          <label className="label">Type</label>
-          <select className="select" value={kind} onChange={(e) => setKind(e.target.value as "text" | "url")}>
-            <option value="text">Pasted text</option>
-            <option value="url">URL to crawl</option>
-          </select>
-        </div>
-        <div className="field">
-          <label className="label">Name</label>
-          <input className="input" required value={name} onChange={(e) => setName(e.target.value)}
-            placeholder={kind === "url" ? "Pricing page" : "FAQ snippet"} />
-        </div>
-        <div className="field">
-          <label className="label">{kind === "url" ? "URL" : "Content"}</label>
-          {kind === "url" ? (
-            <input className="input" required value={content} onChange={(e) => setContent(e.target.value)}
-              placeholder="https://example.com/pricing" />
-          ) : (
-            <textarea className="textarea" required value={content} onChange={(e) => setContent(e.target.value)}
-              placeholder="Paste the information the agent should know…" rows={6} />
-          )}
-        </div>
-        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy || !name || !content}>
-            {busy ? <Spinner /> : "Add source"}
-          </button>
-        </div>
-      </form>
-    </Modal>
   );
 }
