@@ -13,6 +13,8 @@ RUN pip install -r requirements.txt
 COPY app ./app
 COPY ingestion ./ingestion
 COPY scripts ./scripts
+COPY migrations ./migrations
+COPY alembic.ini ./alembic.ini
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
 

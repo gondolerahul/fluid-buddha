@@ -1,27 +1,21 @@
 """
-Async database engine + schema bootstrap for the CORTEX memory engine.
+Async database engine + schema bootstrap.
 
-CORTEX owns its SQLAlchemy ``Base`` (``cortex_memory.db.Base``). Importing
-``cortex_memory.models`` registers the ORM classes onto that metadata, which is
-all ``create_all`` needs. The ``vector`` extension must exist before the tables
-(the node embedding column is ``vector(768)``).
+The schema (CORTEX's ORM tables, pgvector, and every app table) is owned by the
+Alembic migrations in ``migrations/``; ``init_db`` applies them at startup.
 """
 from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-
-# Importing models registers CortexTree/CortexNode/CortexEdge on Base.metadata.
-import cortex_memory.models  # noqa: F401
-from cortex_memory.db import Base
 
 from app.config import get_settings
 
@@ -42,12 +36,24 @@ SessionLocal = async_sessionmaker(
 )
 
 
+_ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
+
+
+def _upgrade(sync_conn) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config(str(_ALEMBIC_INI))
+    cfg.attributes["connection"] = sync_conn
+    command.upgrade(cfg, "head")
+
+
 async def init_db() -> None:
-    """Create the pgvector extension and all CORTEX tables (idempotent)."""
+    """Bring the schema to the latest migration (migrations/, F-3). Idempotent
+    and safe to run from several replicas at once (advisory-locked)."""
     async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("CORTEX schema ready (pgvector + tables ensured)")
+        await conn.run_sync(_upgrade)
+    logger.info("schema ready (migrations at head)")
 
 
 @asynccontextmanager

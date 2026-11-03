@@ -32,49 +32,6 @@ logger = logging.getLogger(__name__)
 # a website under one of these keys (see docs/defects.md D-4).
 _RESERVED_SITE_KEYS = set(SITE_KEYS)
 
-_DDL_TENANTS = """
-CREATE TABLE IF NOT EXISTS tenants (
-    id            uuid PRIMARY KEY,
-    email         text UNIQUE NOT NULL,
-    password_hash text NOT NULL,
-    name          text,
-    created_at    timestamptz NOT NULL DEFAULT now()
-)
-"""
-
-_DDL_WEBSITES = """
-CREATE TABLE IF NOT EXISTS tenant_websites (
-    id           uuid PRIMARY KEY,
-    tenant_id    uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    site_key     text UNIQUE NOT NULL,
-    public_key   text,
-    name         text NOT NULL,
-    domain       text,
-    intelligence text NOT NULL DEFAULT 'advance',
-    design       text NOT NULL DEFAULT 'level1',
-    accent       text,
-    status       text NOT NULL DEFAULT 'active',
-    created_at   timestamptz NOT NULL DEFAULT now()
-)
-"""
-
-# Bridge until Alembic (F-3): add the widget public_key to pre-existing tables and
-# enforce its uniqueness (Postgres allows many NULLs in a UNIQUE index, so older
-# rows without a key are fine). Each step runs only if its catalog check says it
-# is missing — see _migrate_websites for why.
-_WEBSITES_MIGRATIONS = (
-    (
-        "SELECT 1 FROM information_schema.columns "
-        "WHERE table_name = 'tenant_websites' AND column_name = 'public_key'",
-        "ALTER TABLE tenant_websites ADD COLUMN public_key text",
-    ),
-    (
-        "SELECT 1 FROM pg_indexes WHERE indexname = 'ux_tenant_websites_public_key'",
-        "CREATE UNIQUE INDEX ux_tenant_websites_public_key ON tenant_websites(public_key)",
-    ),
-)
-_websites_migrated = False
-
 
 @dataclass
 class Tenant:
@@ -123,35 +80,6 @@ class Website:
         }
 
 
-async def ensure_tables(db: AsyncSession) -> None:
-    await db.execute(text(_DDL_TENANTS))
-    await db.execute(text(_DDL_WEBSITES))
-    await _migrate_websites(db)
-
-
-async def _migrate_websites(db: AsyncSession) -> None:
-    """Apply the tenant_websites migrations that are actually missing.
-
-    ``ALTER TABLE ... IF NOT EXISTS`` still takes an ACCESS EXCLUSIVE lock (and
-    ``CREATE INDEX IF NOT EXISTS`` a SHARE lock) held to the end of the caller's
-    transaction, which serialised every request touching websites and deadlocked
-    a request that waited on work in a second session. Checking the catalog
-    first takes no table lock. Once everything is present, the check is skipped
-    for the rest of the process.
-    """
-    global _websites_migrated
-    if _websites_migrated:
-        return
-    applied = False
-    for check, ddl in _WEBSITES_MIGRATIONS:
-        if not (await db.execute(text(check))).first():
-            await db.execute(text(ddl))
-            applied = True
-    # Only trust the flag once a pass found nothing to do, so a rolled-back
-    # migration is re-checked rather than assumed.
-    _websites_migrated = not applied
-
-
 def slugify(name: str) -> str:
     """A url/site-key-safe slug from a website name."""
     s = re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
@@ -167,7 +95,6 @@ def generate_public_key() -> str:
 async def create_tenant(
     db: AsyncSession, *, email: str, password_hash: str, name: Optional[str] = None
 ) -> Tenant:
-    await ensure_tables(db)
     tid = uuid.uuid4()
     await db.execute(
         text(
@@ -182,7 +109,6 @@ async def create_tenant(
 
 async def get_tenant_by_email(db: AsyncSession, email: str) -> Optional[dict]:
     """Returns the full row incl. password_hash (for login verification)."""
-    await ensure_tables(db)
     res = await db.execute(
         text("SELECT id, email, password_hash, name, created_at FROM tenants "
              "WHERE email = :email"),
@@ -193,7 +119,6 @@ async def get_tenant_by_email(db: AsyncSession, email: str) -> Optional[dict]:
 
 
 async def get_tenant(db: AsyncSession, tenant_id: uuid.UUID) -> Optional[Tenant]:
-    await ensure_tables(db)
     res = await db.execute(
         text("SELECT id, email, name, created_at FROM tenants WHERE id = :id"),
         {"id": tenant_id},
@@ -207,7 +132,6 @@ async def get_tenant(db: AsyncSession, tenant_id: uuid.UUID) -> Optional[Tenant]
 
 # ---- websites -------------------------------------------------------------
 async def site_key_exists(db: AsyncSession, site_key: str) -> bool:
-    await ensure_tables(db)
     res = await db.execute(
         text("SELECT 1 FROM tenant_websites WHERE site_key = :k"), {"k": site_key}
     )
@@ -238,7 +162,6 @@ async def create_website(
     design: str = "level1",
     accent: Optional[str] = None,
 ) -> Website:
-    await ensure_tables(db)
     wid = uuid.uuid4()
     site_key = await _unique_site_key(db, slugify(name))
     public_key = generate_public_key()
@@ -277,7 +200,6 @@ _WEBSITE_COLS = (
 
 
 async def list_websites(db: AsyncSession, tenant_id: uuid.UUID) -> list[Website]:
-    await ensure_tables(db)
     res = await db.execute(
         text(f"SELECT {_WEBSITE_COLS} FROM tenant_websites WHERE tenant_id = :tid "
              "ORDER BY created_at DESC"),
@@ -290,7 +212,6 @@ async def get_website(
     db: AsyncSession, website_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> Optional[Website]:
     """Tenant-scoped fetch: returns None if the site isn't owned by this tenant."""
-    await ensure_tables(db)
     res = await db.execute(
         text(f"SELECT {_WEBSITE_COLS} FROM tenant_websites "
              "WHERE id = :id AND tenant_id = :tid"),
@@ -306,7 +227,6 @@ async def get_website_by_public_key(
     """Resolve a website from its widget key (the public, unauthenticated path)."""
     if not public_key:
         return None
-    await ensure_tables(db)
     res = await db.execute(
         text(f"SELECT {_WEBSITE_COLS} FROM tenant_websites WHERE public_key = :pk"),
         {"pk": public_key},
@@ -319,7 +239,6 @@ async def rotate_public_key(
     db: AsyncSession, website_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> Optional[Website]:
     """Replace a website's widget key. The previous key stops resolving at once."""
-    await ensure_tables(db)
     await db.execute(
         text("UPDATE tenant_websites SET public_key = :pk WHERE id = :id AND tenant_id = :tid"),
         {"pk": generate_public_key(), "id": website_id, "tid": tenant_id},
@@ -362,7 +281,6 @@ async def delete_website(
     from app.cortex.purge import purge_site
     from app.orchestrator.profile import invalidate
 
-    await ensure_tables(db)
     res = await db.execute(
         text("DELETE FROM tenant_websites WHERE id = :id AND tenant_id = :tid"),
         {"id": website_id, "tid": tenant_id},

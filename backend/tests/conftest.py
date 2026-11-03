@@ -13,6 +13,8 @@ first (see ``docs/defects.md`` D-7):
 
 The autouse fixtures below restore the settings and clear the caches around
 every test, so each test is independent of order and of what ran before it.
+The schema comes from the migrations, applied once before the first test, so a
+test may touch any table even on an empty database (as in CI).
 """
 from __future__ import annotations
 
@@ -27,6 +29,23 @@ from app.config import get_settings
 
 # Per-site replay state that must not leak between tests.
 _CACHE_TABLES = ("conversation_cache", "answer_audio_cache")
+
+
+async def _migrate() -> None:
+    from app.db import _upgrade
+
+    engine = create_async_engine(get_settings().cortex_db_url, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(_upgrade)
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def migrated_schema():
+    """Bring the test database to the latest migration before any test runs."""
+    asyncio.run(_migrate())
 
 
 @pytest.fixture(autouse=True)
@@ -55,13 +74,7 @@ async def _truncate_caches() -> None:
     engine = create_async_engine(get_settings().cortex_db_url, poolclass=NullPool)
     try:
         async with engine.begin() as conn:
-            for table in _CACHE_TABLES:
-                # Tables are created lazily on first use; skip ones not there yet.
-                exists = (
-                    await conn.execute(text("SELECT to_regclass(:t)"), {"t": table})
-                ).scalar()
-                if exists:
-                    await conn.execute(text(f"TRUNCATE {table}"))
+            await conn.execute(text(f"TRUNCATE {', '.join(_CACHE_TABLES)}"))
     finally:
         await engine.dispose()
 

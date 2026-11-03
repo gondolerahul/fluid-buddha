@@ -22,36 +22,6 @@ from app.analytics.pricing import Pricing, get_pricing
 
 logger = logging.getLogger(__name__)
 
-_DDL = """
-CREATE TABLE IF NOT EXISTS usage_events (
-    id               uuid PRIMARY KEY,
-    site_key         text NOT NULL,
-    session_id       text,
-    channel          text NOT NULL DEFAULT 'text',
-    intent           text,
-    persona          text,
-    page             text,
-    served_from_cache boolean NOT NULL DEFAULT false,
-    asr_ms           double precision NOT NULL DEFAULT 0,
-    tts_chars        integer NOT NULL DEFAULT 0,
-    fast_in_tok      integer NOT NULL DEFAULT 0,
-    fast_out_tok     integer NOT NULL DEFAULT 0,
-    thinker_in_tok   integer NOT NULL DEFAULT 0,
-    thinker_out_tok  integer NOT NULL DEFAULT 0,
-    tool_calls       integer NOT NULL DEFAULT 0,
-    asr_cost         double precision NOT NULL DEFAULT 0,
-    tts_cost         double precision NOT NULL DEFAULT 0,
-    fast_cost        double precision NOT NULL DEFAULT 0,
-    thinker_cost     double precision NOT NULL DEFAULT 0,
-    tool_cost        double precision NOT NULL DEFAULT 0,
-    total_cost       double precision NOT NULL DEFAULT 0,
-    latency_ms       double precision NOT NULL DEFAULT 0,
-    created_at       timestamptz NOT NULL DEFAULT now()
-)
-"""
-_INDEX = ("CREATE INDEX IF NOT EXISTS usage_events_site_time "
-          "ON usage_events (site_key, created_at)")
-
 
 @dataclass
 class TurnMetrics:
@@ -84,11 +54,6 @@ class TurnMetrics:
         self.tool_calls += int(tool_calls)
 
 
-async def ensure_table(db: AsyncSession) -> None:
-    await db.execute(text(_DDL))
-    await db.execute(text(_INDEX))
-
-
 def _costs(m: TurnMetrics, p: Pricing) -> dict:
     asr = p.cost_asr(m.asr_ms)
     tts = p.cost_tts(m.tts_chars)
@@ -107,7 +72,6 @@ async def record_turn(db: AsyncSession, metrics: TurnMetrics,
     """Persist one usage event. Best-effort: analytics must never break a turn."""
     pricing = pricing or get_pricing()
     try:
-        await ensure_table(db)
         costs = _costs(metrics, pricing)
         await db.execute(text(
             "INSERT INTO usage_events (id, site_key, session_id, channel, intent, "
@@ -172,7 +136,6 @@ async def analytics(
     frm: Optional[datetime] = None, to: Optional[datetime] = None,
 ) -> dict:
     """Cost/performance rollup for one site. ``group_by`` ∈ {day, hour, session}."""
-    await ensure_table(db)
     bucket = _BUCKET_SQL.get(group_by, _BUCKET_SQL["day"])
     where = "site_key = :sk"
     params: dict = {"sk": site_key}

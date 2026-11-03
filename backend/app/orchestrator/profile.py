@@ -44,13 +44,6 @@ DEFAULT_BRAND_VOICE = (
     "not a brochure"
 )
 
-_DDL = """
-CREATE TABLE IF NOT EXISTS site_profiles (
-    site_key   text PRIMARY KEY,
-    profile    jsonb NOT NULL,
-    updated_at timestamptz NOT NULL DEFAULT now()
-)
-"""
 
 _TTL_S = 30.0
 
@@ -157,10 +150,6 @@ def default_profile(site_key: str, company_name: Optional[str] = None) -> SitePr
 
 # ---- storage ---------------------------------------------------------------
 
-async def ensure_table(db: AsyncSession) -> None:
-    await db.execute(text(_DDL))
-
-
 async def _tenant_site_name(db: AsyncSession, site_key: str) -> Optional[str]:
     if not (await db.execute(text("SELECT to_regclass('tenant_websites')"))).scalar():
         return None
@@ -174,7 +163,6 @@ async def load_profile(db: AsyncSession, site_key: str) -> SiteProfile:
     """The stored profile overlaid on the default, or the default if none is stored.
 
     A tenant site's default company name is its website name."""
-    await ensure_table(db)
     base = default_profile(site_key, await _tenant_site_name(db, site_key))
     row = (await db.execute(
         text("SELECT profile FROM site_profiles WHERE site_key = :k"), {"k": site_key}
@@ -186,7 +174,6 @@ async def load_profile(db: AsyncSession, site_key: str) -> SiteProfile:
 
 
 async def save_profile(db: AsyncSession, profile: SiteProfile) -> SiteProfile:
-    await ensure_table(db)
     payload = profile.to_dict()
     payload.pop("site_key", None)
     await db.execute(

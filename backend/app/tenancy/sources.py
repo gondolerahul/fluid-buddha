@@ -24,21 +24,6 @@ logger = logging.getLogger(__name__)
 KINDS = ("text", "url", "file")
 STATUSES = ("pending", "ingested", "failed")
 
-_DDL = """
-CREATE TABLE IF NOT EXISTS tenant_sources (
-    id          uuid PRIMARY KEY,
-    website_id  uuid NOT NULL REFERENCES tenant_websites(id) ON DELETE CASCADE,
-    kind        text NOT NULL,
-    name        text NOT NULL,
-    content     text NOT NULL DEFAULT '',
-    status      text NOT NULL DEFAULT 'pending',
-    error       text,
-    nodes       integer NOT NULL DEFAULT 0,
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    ingested_at timestamptz
-)
-"""
-
 
 @dataclass
 class Source:
@@ -71,10 +56,6 @@ class Source:
         return d
 
 
-async def ensure_table(db: AsyncSession) -> None:
-    await db.execute(text(_DDL))
-
-
 _COLS = "id, website_id, kind, name, content, status, error, nodes, created_at, ingested_at"
 
 
@@ -89,7 +70,6 @@ def _row(r) -> Source:
 async def add_source(
     db: AsyncSession, *, website_id: uuid.UUID, kind: str, name: str, content: str
 ) -> Source:
-    await ensure_table(db)
     if kind not in KINDS:
         raise ValueError(f"kind must be one of {KINDS}")
     sid = uuid.uuid4()
@@ -103,7 +83,6 @@ async def add_source(
 
 
 async def list_sources(db: AsyncSession, website_id: uuid.UUID) -> list[Source]:
-    await ensure_table(db)
     res = await db.execute(
         text(f"SELECT {_COLS} FROM tenant_sources WHERE website_id = :wid "
              "ORDER BY created_at DESC"),
@@ -115,7 +94,6 @@ async def list_sources(db: AsyncSession, website_id: uuid.UUID) -> list[Source]:
 async def get_source(
     db: AsyncSession, source_id: uuid.UUID, website_id: uuid.UUID
 ) -> Optional[Source]:
-    await ensure_table(db)
     res = await db.execute(
         text(f"SELECT {_COLS} FROM tenant_sources WHERE id = :id AND website_id = :wid"),
         {"id": source_id, "wid": website_id},
@@ -130,7 +108,6 @@ async def delete_source(
     """Delete a source AND the knowledge built from it (docs/defects.md D-6)."""
     from app.cortex.purge import delete_document_nodes, invalidate_site_caches
 
-    await ensure_table(db)
     res = await db.execute(
         text("DELETE FROM tenant_sources WHERE id = :id AND website_id = :wid"),
         {"id": source_id, "wid": website_id},
@@ -145,7 +122,6 @@ async def delete_source(
 
 
 async def pending_sources(db: AsyncSession, website_id: uuid.UUID) -> list[Source]:
-    await ensure_table(db)
     res = await db.execute(
         text(f"SELECT {_COLS} FROM tenant_sources "
              "WHERE website_id = :wid AND status = 'pending' ORDER BY created_at"),
@@ -158,7 +134,6 @@ async def mark_status(
     db: AsyncSession, source_id: uuid.UUID, status: str,
     *, nodes: int = 0, error: Optional[str] = None,
 ) -> None:
-    await ensure_table(db)
     ingested = "now()" if status == "ingested" else "ingested_at"
     await db.execute(
         text(f"UPDATE tenant_sources SET status = :s, nodes = :n, error = :e, "

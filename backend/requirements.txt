@@ -18,6 +18,7 @@ email-validator>=2.0  # pydantic EmailStr
 SQLAlchemy[asyncio]>=2.0
 asyncpg>=0.29
 pgvector>=0.2.0
+alembic>=1.13   # schema migrations (migrations/), applied at startup by init_db
 
 # ---- CORTEX memory engine (the host injects Gemini providers) ----
 hb-cortex-memory==0.1.0

@@ -50,6 +50,18 @@ docker compose up -d postgres        # just the DB on :5434
 .venv/bin/python -m pytest -q
 ```
 
+### Schema migrations
+
+The schema lives in Alembic migrations (`migrations/versions/`). The app applies
+them on startup (`init_db`, advisory-locked so several replicas can boot at
+once), and so do ingestion and the test suite. To change the schema, add a
+revision — never DDL in application code (a test enforces this):
+
+```bash
+.venv/bin/alembic revision -m "add leads table"   # then edit the new file
+.venv/bin/alembic upgrade head
+```
+
 ## Going live on Vertex AI
 
 1. `gcloud auth application-default login` (or set `GOOGLE_APPLICATION_CREDENTIALS`).

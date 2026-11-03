@@ -26,16 +26,6 @@ from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
-_DDL = """
-CREATE TABLE IF NOT EXISTS answer_audio_cache (
-    text_hash   text PRIMARY KEY,
-    site_key    text NOT NULL,
-    sample_rate integer NOT NULL,
-    pcm         bytea NOT NULL,
-    created_at  timestamptz NOT NULL DEFAULT now()
-)
-"""
-
 
 def audio_key(seg_text: str, *, voice: str, sample_rate: int) -> str:
     """Stable cache key for one TTS segment under a given voice + sample rate."""
@@ -51,15 +41,11 @@ class AnswerAudioCache:
         self.sample_rate = settings.tts_sample_rate
         self.voice = settings.tts_gemini_voice
 
-    async def ensure_table(self) -> None:
-        await self.db.execute(text(_DDL))
-
     def key(self, seg_text: str) -> str:
         return audio_key(seg_text, voice=self.voice, sample_rate=self.sample_rate)
 
     async def get(self, text_hash: str) -> Optional[bytes]:
         try:
-            await self.ensure_table()
             res = await self.db.execute(
                 text("SELECT pcm FROM answer_audio_cache WHERE text_hash = :h"),
                 {"h": text_hash},
@@ -76,7 +62,6 @@ class AnswerAudioCache:
         if not pcm:
             return
         try:
-            await self.ensure_table()
             await self.db.execute(
                 text(
                     "INSERT INTO answer_audio_cache (text_hash, site_key, sample_rate, pcm) "

@@ -93,31 +93,6 @@ class EpisodicCache:
         self.dim = settings.embed_dim
 
     # ---- schema ---------------------------------------------------------
-    async def ensure_table(self) -> None:
-        ddl = (
-            "CREATE TABLE IF NOT EXISTS conversation_cache ("
-            "  id uuid PRIMARY KEY,"
-            "  site_key text NOT NULL,"
-            "  persona text,"
-            "  page text,"
-            "  kind text NOT NULL DEFAULT 'turn',"
-            "  q_norm text NOT NULL,"
-            "  question text NOT NULL,"
-            "  answer_text text NOT NULL,"
-            "  components jsonb NOT NULL DEFAULT '[]'::jsonb,"
-            "  actions jsonb NOT NULL DEFAULT '[]'::jsonb,"
-            "  channel text,"
-            f"  embedding vector({self.dim}),"
-            "  hit_count integer NOT NULL DEFAULT 0,"
-            "  created_at timestamptz NOT NULL DEFAULT now()"
-            ")"
-        )
-        await self.db.execute(text(ddl))
-        await self.db.execute(text(
-            "CREATE INDEX IF NOT EXISTS conversation_cache_lookup "
-            "ON conversation_cache (site_key, kind, q_norm)"
-        ))
-
     async def _embed(self, q: str) -> Optional[list[float]]:
         try:
             return await embed_query(self.providers.embedding, q)
@@ -141,7 +116,6 @@ class EpisodicCache:
         if not (question and answer_text):
             return
         try:
-            await self.ensure_table()
             vec = await self._embed(question)
             sql = (
                 "INSERT INTO conversation_cache "
@@ -219,7 +193,6 @@ class EpisodicCache:
     async def count(self, *, persona: Optional[str] = None) -> int:
         """How many turns are cached (the 'enough data' replay gate)."""
         try:
-            await self.ensure_table()
             sql = ("SELECT count(*) FROM conversation_cache "
                    "WHERE site_key=:s AND kind='turn'")
             params: dict[str, Any] = {"s": self.site_key}
@@ -237,11 +210,6 @@ class EpisodicCache:
     ) -> list[CachedAnswer]:
         """Ranked replay candidates: exact-question match first (score 1.0), then
         persona-compatible cosine neighbours."""
-        try:
-            await self.ensure_table()
-        except Exception as exc:
-            logger.warning("conversation_cache unavailable: %s", exc)
-            return []
         out: list[CachedAnswer] = []
         seen: set = set()
 
@@ -331,7 +299,6 @@ class EpisodicCache:
         search: Optional[str] = None,
     ) -> tuple[list[dict], int]:
         """Page through cached turns for the admin cache editor."""
-        await self.ensure_table()
         where = "site_key=:s AND kind=:k"
         params: dict[str, Any] = {"s": self.site_key, "k": kind}
         if search:
@@ -349,7 +316,6 @@ class EpisodicCache:
         return [self._entry_dict(r) for r in res.mappings().all()], int(total)
 
     async def get_entry(self, entry_id: uuid.UUID) -> Optional[dict]:
-        await self.ensure_table()
         res = await self.db.execute(
             text("SELECT id, question, answer_text, components, actions, persona, page, "
                  "channel, hit_count, created_at FROM conversation_cache "
@@ -368,7 +334,6 @@ class EpisodicCache:
     ) -> Optional[dict]:
         """Edit a cached response/actions in place (req E). Editing the question
         also refreshes its normalised key + embedding so replay stays correct."""
-        await self.ensure_table()
         sets: list[str] = []
         params: dict[str, Any] = {"id": entry_id, "s": self.site_key}
         if answer_text is not None:
@@ -394,7 +359,6 @@ class EpisodicCache:
         return await self.get_entry(entry_id)
 
     async def delete_entry(self, entry_id: uuid.UUID) -> bool:
-        await self.ensure_table()
         res = await self.db.execute(
             text("DELETE FROM conversation_cache WHERE id=:id AND site_key=:s"),
             {"id": entry_id, "s": self.site_key},
