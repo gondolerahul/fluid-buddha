@@ -26,6 +26,7 @@ from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFI
 from app.orchestrator.result import ClientAction
 from app.orchestrator.tour_store import load_plan
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
+from app.transport.guard import check_public_budget
 from app.orchestrator.state import (
     ConversationState,
     normalize_intelligence,
@@ -195,7 +196,25 @@ class VoiceSession:
         return final
 
     # ---- turn handling --------------------------------------------------
+    async def _budget_blocked(self) -> bool:
+        """Apply the per-site rate limit + daily spend cap before a spoken turn
+        (docs/defects.md D-3). Tells the client why when it refuses. Fails open
+        if the guard itself errors, so a DB hiccup doesn't silence the agent."""
+        try:
+            async with session_scope() as db:
+                reason = await check_public_budget(db, self.state.site_key, self.rt.settings)
+        except Exception as exc:
+            logger.warning("ws[%s]: budget check failed: %s", self.session_id[:8], exc)
+            return False
+        if reason:
+            logger.info("ws[%s]: turn refused (%s)", self.session_id[:8], reason)
+            await self.send(Channel.EVENTS, "error", {"reason": reason})
+            return True
+        return False
+
     async def _on_utterance(self, transcript: str) -> None:
+        if await self._budget_blocked():
+            return
         sid = self.session_id[:8]
         now = time.monotonic()
         in_flight = bool(self._response_task and not self._response_task.done())
@@ -251,7 +270,7 @@ class VoiceSession:
         has finished — the exact speak/scroll sync the tour requires (Req 5)."""
         text = (payload.get("text") or "").strip()
         index = payload.get("index")
-        if not text:
+        if not text or await self._budget_blocked():
             return
         await self._cancel_response()
         self._response_task = asyncio.create_task(self._tour_say(text, index))

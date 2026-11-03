@@ -308,12 +308,25 @@ async def update_website(
 
 
 async def delete_website(
-    db: AsyncSession, website_id: uuid.UUID, tenant_id: uuid.UUID
+    db: AsyncSession, website_id: uuid.UUID, tenant_id: uuid.UUID, site_key: str
 ) -> bool:
+    """Delete a website and everything built for it (docs/defects.md D-6).
+
+    The row delete cascades to ``tenant_sources``; the knowledge tree, tour,
+    replay caches and usage rows are purged in the same transaction so a later
+    site that reuses the slug can never inherit them.
+    """
+    from app.cortex.purge import purge_site
+
     await ensure_tables(db)
     res = await db.execute(
         text("DELETE FROM tenant_websites WHERE id = :id AND tenant_id = :tid"),
         {"id": website_id, "tid": tenant_id},
     )
+    if not (res.rowcount or 0):
+        await db.rollback()
+        return False
+    removed = await purge_site(db, site_key)
     await db.commit()
-    return (res.rowcount or 0) > 0
+    logger.info("deleted website site=%s purged=%s", site_key, removed)
+    return True

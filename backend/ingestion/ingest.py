@@ -70,7 +70,7 @@ async def ingest_documents(site_key: str, documents: list[SourceDocument]) -> in
         bridge = CortexBridge(db, settings, providers, site_key=site_key)
         await bridge.ensure_tree()
         for doc in documents:
-            n = await bridge.ingest(doc.content, doc.filename)
+            n = await bridge.ingest(doc.content, doc.filename, doc.document_id)
             total_nodes += n
             logger.info("  ingested %-44s route=%-26s nodes=%d",
                         doc.filename, doc.route, n)

@@ -109,4 +109,4 @@ async def delete_website(
     db: AsyncSession = Depends(get_session),
 ) -> None:
     site = await _owned(db, website_id, tenant)
-    await store.delete_website(db, site.id, tenant.id)
+    await store.delete_website(db, site.id, tenant.id, site.site_key)

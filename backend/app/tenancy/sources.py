@@ -125,15 +125,23 @@ async def get_source(
 
 
 async def delete_source(
-    db: AsyncSession, source_id: uuid.UUID, website_id: uuid.UUID
+    db: AsyncSession, source_id: uuid.UUID, website_id: uuid.UUID, site_key: str
 ) -> bool:
+    """Delete a source AND the knowledge built from it (docs/defects.md D-6)."""
+    from app.cortex.purge import delete_document_nodes, invalidate_site_caches
+
     await ensure_table(db)
     res = await db.execute(
         text("DELETE FROM tenant_sources WHERE id = :id AND website_id = :wid"),
         {"id": source_id, "wid": website_id},
     )
+    if not (res.rowcount or 0):
+        await db.rollback()
+        return False
+    await delete_document_nodes(db, site_key, source_id)
+    await invalidate_site_caches(db, site_key)
     await db.commit()
-    return (res.rowcount or 0) > 0
+    return True
 
 
 async def pending_sources(db: AsyncSession, website_id: uuid.UUID) -> list[Source]:
@@ -179,6 +187,7 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
     import httpx
 
     from app.db import SessionLocal
+    from app.cortex.purge import delete_document_nodes, invalidate_site_caches
     from ingestion.ingest import ingest_documents, plan_and_save_tour
     from ingestion.scraper import SourceDocument
 
@@ -199,12 +208,19 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
                 body = strip_html(resp.text)
                 if not body:
                     raise ValueError("no readable text at URL")
-                doc = SourceDocument(filename=s.name or s.content, route=None, content=body)
+                doc = SourceDocument(filename=s.name or s.content, route=None, content=body,
+                                     document_id=s.id)
             else:  # text | file — content is already plain text
                 if not (s.content or "").strip():
                     raise ValueError("source has no content")
-                doc = SourceDocument(filename=s.name, route=None, content=s.content)
+                doc = SourceDocument(filename=s.name, route=None, content=s.content,
+                                     document_id=s.id)
 
+            # Re-ingesting a source replaces its knowledge instead of
+            # duplicating it (docs/defects.md D-10).
+            async with SessionLocal() as db:
+                await delete_document_nodes(db, site_key, s.id)
+                await db.commit()
             n = await ingest_documents(site_key, [doc])
             total_nodes += n
             ingested += 1
@@ -218,6 +234,10 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
                 await mark_status(db, s.id, "failed", error=str(exc)[:500])
 
     if good_docs:
+        # New knowledge makes cached answers stale.
+        async with SessionLocal() as db:
+            await invalidate_site_caches(db, site_key)
+            await db.commit()
         await plan_and_save_tour(site_key, good_docs)
 
     logger.info("website ingestion site=%s ingested=%d failed=%d nodes=%d",

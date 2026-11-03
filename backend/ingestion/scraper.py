@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,6 +66,10 @@ class SourceDocument:
     filename: str
     route: str | None
     content: str
+    # Stable id stamped on every CORTEX node built from this document
+    # (``source_ref.document_id``), so the document can later be deleted or
+    # re-ingested without leaving orphans. Tenant sources pass their own id.
+    document_id: uuid.UUID | None = None
 
 
 # filename-stem (after the leading NN-) -> route on the site.

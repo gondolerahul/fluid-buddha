@@ -98,7 +98,7 @@ async def delete_source(
         sid = uuid.UUID(source_id)
     except ValueError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Source not found")
-    if not await src_store.delete_source(db, sid, site.id):
+    if not await src_store.delete_source(db, sid, site.id, site.site_key):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Source not found")
 
 

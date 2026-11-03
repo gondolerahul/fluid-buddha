@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     episodic_min_episodes: int = 20           # need this many cached turns before replay
     episodic_top_k: int = 3
 
+    # ---- Public-path abuse guard (docs/defects.md D-3) ----
+    # Per-site limits on the unauthenticated /chat and /ws/voice turns, so a
+    # loop against the public widget can't run up unbounded model/TTS spend.
+    public_rate_limit_per_min: int = 120      # turns per site per minute; 0 = off
+    public_daily_spend_cap_usd: float = 0.0   # USD per site per UTC day; 0 = off
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

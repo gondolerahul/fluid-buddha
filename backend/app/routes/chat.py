@@ -20,6 +20,7 @@ from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
 from app.orchestrator.state import normalize_sections
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
+from app.transport.guard import check_public_budget
 from app.transport.session_store import store
 
 logger = logging.getLogger(__name__)
@@ -57,8 +58,12 @@ async def chat(req: ChatRequest, request: Request) -> dict:
                 rdb, key=req.key, site=req.site, intelligence=req.intelligence,
                 origin=request.headers.get("origin"),
             )
+            # Per-site rate limit + daily spend cap (docs/defects.md D-3).
+            blocked = await check_public_budget(rdb, resolved.site_key, rt.settings)
     except PublicAccessError as exc:
         raise HTTPException(status_code=403, detail=exc.reason)
+    if blocked:
+        raise HTTPException(status_code=429, detail=blocked)
 
     sid, state = store.get_or_create(req.session_id, site_key=resolved.site_key)
     state.site_key = resolved.site_key
