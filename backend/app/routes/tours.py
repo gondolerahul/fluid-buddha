@@ -73,13 +73,17 @@ async def generate_tour(
     and persist it. Lets a tenant bootstrap a tour they can then edit."""
     from app.ai.factory import build_engines
     from app.config import get_settings
+    from app.orchestrator.profile import ensure_profile
+    from app.orchestrator.sitemap import route_from_url
     from app.orchestrator.tour import plan_tour
     from app.tenancy import sources as src_store
     from ingestion.scraper import SourceDocument, load_site_documents
 
     rows = await src_store.list_sources(db, site.id)
     documents = [
-        SourceDocument(filename=r.name, route=None, content=r.content)
+        SourceDocument(filename=r.name,
+                       route=route_from_url(r.content) if r.kind == "url" else None,
+                       content=r.content)
         for r in rows if r.status == "ingested" and (r.content or "").strip()
     ]
     if not documents:  # legacy sites whose content is on disk, not in tenant_sources
@@ -90,6 +94,7 @@ async def generate_tour(
 
     settings = get_settings()
     engines = build_engines(settings)
+    await ensure_profile(site.site_key)
     plan = await plan_tour(site_key=site.site_key, documents=documents,
                            llm=engines.llm, settings=settings)
     await tour_store.save_plan(db, plan)

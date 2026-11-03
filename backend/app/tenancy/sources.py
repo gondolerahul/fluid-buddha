@@ -186,6 +186,8 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
     so it can run as a FastAPI ``BackgroundTask``."""
     from app.db import SessionLocal
     from app.cortex.purge import delete_document_nodes, invalidate_site_caches
+    from app.orchestrator.profile import merge_routes
+    from app.orchestrator.sitemap import route_from_url
     from app.tenancy.url_fetch import fetch_public_text
     from ingestion.ingest import ingest_documents, plan_and_save_tour
     from ingestion.scraper import SourceDocument
@@ -206,8 +208,11 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
                 body = strip_html(await fetch_public_text(s.content))
                 if not body:
                     raise ValueError("no readable text at URL")
-                doc = SourceDocument(filename=s.name or s.content, route=None, content=body,
-                                     document_id=s.id)
+                # The URL's path is a real page on the site: it becomes a
+                # navigable route and lets the tour visit it (D-9).
+                doc = SourceDocument(filename=s.name or s.content,
+                                     route=route_from_url(s.content) or None,
+                                     content=body, document_id=s.id)
             else:  # text | file — content is already plain text
                 if not (s.content or "").strip():
                     raise ValueError("source has no content")
@@ -236,6 +241,11 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
         async with SessionLocal() as db:
             await invalidate_site_caches(db, site_key)
             await db.commit()
+        # Add crawled pages to the site's sitemap so the agent can navigate there.
+        routes = [d.route for d in good_docs if d.route]
+        if routes:
+            async with SessionLocal() as db:
+                await merge_routes(db, site_key, routes)
         await plan_and_save_tour(site_key, good_docs)
 
     logger.info("website ingestion site=%s ingested=%d failed=%d nodes=%d",

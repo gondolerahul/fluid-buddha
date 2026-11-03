@@ -1,6 +1,10 @@
 """
 Valid site routes per target site (Req 3.5 navigation grounding).
 
+Each site's routes live in its agent profile (app/orchestrator/profile.py):
+HireBuddha's built-in profile uses the static list below; tenant sites get
+routes from ingested URL sources or the console (docs/defects.md D-9).
+
 The Heavy Thinker chooses ``navigate(path=...)`` targets. Without a constraint it
 guesses paths that 404 (e.g. ``/tools`` instead of ``/product/tools``). We give
 the model the real sitemap in its prompt AND validate/snap its choice
@@ -9,9 +13,10 @@ server-side so a bad guess never reaches the browser.
 from __future__ import annotations
 
 from difflib import get_close_matches
+from urllib.parse import urlsplit
 
 # Authoritative static routes, mirrored from hirebuddha-website/src/app.
-_HIREBUDDHA_ROUTES: list[str] = [
+HIREBUDDHA_ROUTES: list[str] = [
     "/",
     "/about",
     "/contact",
@@ -47,15 +52,18 @@ _HIREBUDDHA_ROUTES: list[str] = [
 ]
 
 # Dynamic segments: any path under these prefixes is allowed (e.g. /solutions/growth).
-_HIREBUDDHA_DYNAMIC_PREFIXES = ("/solutions/", "/use-cases/", "/blog/", "/stories/")
-
-_SITEMAPS: dict[str, list[str]] = {"hirebuddha": _HIREBUDDHA_ROUTES}
-_DYNAMIC_PREFIXES: dict[str, tuple[str, ...]] = {
-    "hirebuddha": _HIREBUDDHA_DYNAMIC_PREFIXES
-}
+HIREBUDDHA_DYNAMIC_PREFIXES = ("/solutions/", "/use-cases/", "/blog/", "/stories/")
 
 
-def _normalize(path: str) -> str:
+def _site_routes(site_key: str) -> tuple[list[str], list[str]]:
+    """(routes, dynamic prefixes) from the site's profile."""
+    from app.orchestrator.profile import profile_for  # avoid an import cycle
+
+    profile = profile_for(site_key)
+    return profile.routes, profile.dynamic_prefixes
+
+
+def normalize_route(path: str) -> str:
     if not path:
         return ""
     path = path.strip().split("#", 1)[0].split("?", 1)[0]
@@ -67,12 +75,13 @@ def _normalize(path: str) -> str:
 
 
 def is_valid_route(site_key: str, path: str) -> bool:
-    path = _normalize(path)
-    if path in _SITEMAPS.get(site_key, []):
+    path = normalize_route(path)
+    routes, prefixes = _site_routes(site_key)
+    if path in routes:
         return True
     return any(
         path.startswith(p) and len(path) > len(p)
-        for p in _DYNAMIC_PREFIXES.get(site_key, ())
+        for p in prefixes
     )
 
 
@@ -82,12 +91,12 @@ def resolve_route(site_key: str, path: str) -> str | None:
     Returns ``None`` when the guess is too far from anything real, so the caller
     can drop the navigation instead of sending the visitor to a 404.
     """
-    path = _normalize(path)
+    path = normalize_route(path)
     if not path:
         return None
     if is_valid_route(site_key, path):
         return path
-    candidates = _SITEMAPS.get(site_key, [])
+    candidates, _ = _site_routes(site_key)
     # 1) Fuzzy match on the whole path (handles typos / case / trailing-slash;
     #    cutoff kept high so unrelated garbage drops to None instead of snapping).
     match = get_close_matches(path, candidates, n=1, cutoff=0.82)
@@ -105,13 +114,12 @@ def resolve_route(site_key: str, path: str) -> str | None:
 
 def sitemap_prompt(site_key: str) -> str:
     """Compact, model-friendly list of valid routes for the system prompt."""
-    routes = _SITEMAPS.get(site_key)
+    routes, dyn = _site_routes(site_key)
     if not routes:
         return ""
     listed = ", ".join(routes)
-    dyn = _DYNAMIC_PREFIXES.get(site_key, ())
     dyn_note = (
-        f" Dynamic sections also exist under {', '.join(dyn)} (e.g. /solutions/growth)."
+        f" Dynamic sections also exist under {', '.join(dyn)} (any sub-path there is valid)."
         if dyn
         else ""
     )
@@ -119,3 +127,12 @@ def sitemap_prompt(site_key: str) -> str:
         "VALID ROUTES (use `navigate` ONLY with one of these exact paths; never "
         f"invent a path): {listed}.{dyn_note}"
     )
+
+
+def route_from_url(url: str) -> str:
+    """The site route a crawled URL represents (``https://x.com/pricing/?a=1`` → ``/pricing``)."""
+    try:
+        path = urlsplit(url or "").path
+    except ValueError:
+        return ""
+    return normalize_route(path or "/")

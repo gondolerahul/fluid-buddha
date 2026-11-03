@@ -58,14 +58,22 @@ CREATE TABLE IF NOT EXISTS tenant_websites (
 )
 """
 
-# Idempotent bridge until Alembic (F-3): add the widget public_key to pre-existing
-# tables and enforce its uniqueness. Postgres allows multiple NULLs in a UNIQUE
-# index, so older rows without a key are fine.
-_DDL_WEBSITES_MIGRATE = (
-    "ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS public_key text",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_tenant_websites_public_key "
-    "ON tenant_websites(public_key)",
+# Bridge until Alembic (F-3): add the widget public_key to pre-existing tables and
+# enforce its uniqueness (Postgres allows many NULLs in a UNIQUE index, so older
+# rows without a key are fine). Each step runs only if its catalog check says it
+# is missing — see _migrate_websites for why.
+_WEBSITES_MIGRATIONS = (
+    (
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'tenant_websites' AND column_name = 'public_key'",
+        "ALTER TABLE tenant_websites ADD COLUMN public_key text",
+    ),
+    (
+        "SELECT 1 FROM pg_indexes WHERE indexname = 'ux_tenant_websites_public_key'",
+        "CREATE UNIQUE INDEX ux_tenant_websites_public_key ON tenant_websites(public_key)",
+    ),
 )
+_websites_migrated = False
 
 
 @dataclass
@@ -118,8 +126,30 @@ class Website:
 async def ensure_tables(db: AsyncSession) -> None:
     await db.execute(text(_DDL_TENANTS))
     await db.execute(text(_DDL_WEBSITES))
-    for stmt in _DDL_WEBSITES_MIGRATE:
-        await db.execute(text(stmt))
+    await _migrate_websites(db)
+
+
+async def _migrate_websites(db: AsyncSession) -> None:
+    """Apply the tenant_websites migrations that are actually missing.
+
+    ``ALTER TABLE ... IF NOT EXISTS`` still takes an ACCESS EXCLUSIVE lock (and
+    ``CREATE INDEX IF NOT EXISTS`` a SHARE lock) held to the end of the caller's
+    transaction, which serialised every request touching websites and deadlocked
+    a request that waited on work in a second session. Checking the catalog
+    first takes no table lock. Once everything is present, the check is skipped
+    for the rest of the process.
+    """
+    global _websites_migrated
+    if _websites_migrated:
+        return
+    applied = False
+    for check, ddl in _WEBSITES_MIGRATIONS:
+        if not (await db.execute(text(check))).first():
+            await db.execute(text(ddl))
+            applied = True
+    # Only trust the flag once a pass found nothing to do, so a rolled-back
+    # migration is re-checked rather than assumed.
+    _websites_migrated = not applied
 
 
 def slugify(name: str) -> str:
@@ -317,6 +347,7 @@ async def delete_website(
     site that reuses the slug can never inherit them.
     """
     from app.cortex.purge import purge_site
+    from app.orchestrator.profile import invalidate
 
     await ensure_tables(db)
     res = await db.execute(
@@ -328,5 +359,6 @@ async def delete_website(
         return False
     removed = await purge_site(db, site_key)
     await db.commit()
+    invalidate(site_key)
     logger.info("deleted website site=%s purged=%s", site_key, removed)
     return True

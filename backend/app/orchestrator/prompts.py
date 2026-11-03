@@ -1,21 +1,25 @@
-"""System prompts for the dual-model cognitive loop."""
+"""System prompts for the dual-model cognitive loop.
+
+The agent's name, company, voice and personas come from the site's profile
+(app/orchestrator/profile.py), so the same prompts serve every tenant.
+"""
 from __future__ import annotations
 
 import json
 
 from app.orchestrator.personas import persona_fragment
+from app.orchestrator.profile import profile_for
 from app.orchestrator.sitemap import sitemap_prompt
 
-ROUTER_SYSTEM = """You are the Fast Router for Pragya, the voice SDR agent on the \
-HireBuddha website. You react in well under a second.
+_ROUTER_TEMPLATE = """You are the Fast Router for {agent}, the voice SDR agent on the \
+{company} website. You react in well under a second.
 
 Given the visitor's latest utterance, respond with ONLY a compact JSON object:
 {"intent": "...", "persona": "..."|null, "persona_confidence": 0.0,
  "persona_explicit": false, "ack": "..."}
 
 - intent: one of greeting | capability | pricing_roi | integration | navigation | general
-- persona: infer the visitor segment if there is a signal, else null.
-  Allowed: "startups" | "solopreneurs" | "medium-enterprise" | "enterprise".
+{persona_rule}
 - persona_confidence: 0.0–1.0, how strongly THIS utterance signals that persona
   (0 if persona is null; ~0.9+ only when they essentially state it).
 - persona_explicit: true only if the visitor stated their segment/role/size
@@ -27,9 +31,36 @@ Given the visitor's latest utterance, respond with ONLY a compact JSON object:
 Output JSON only. No markdown, no prose."""
 
 
-THINKER_BASE = """You are Pragya, an elite, voice-first Sales Development \
-Representative embedded on the HireBuddha website. You are warm, sharp, and \
-concise — you speak like a senior solutions engineer, not a brochure.
+def build_router_system(site_key: str = "hirebuddha") -> str:
+    profile = profile_for(site_key)
+    slugs = profile.persona_slugs
+    if slugs:
+        persona_rule = (
+            "- persona: infer the visitor segment if there is a signal, else null.\n"
+            "  Allowed: " + " | ".join(f'"{s}"' for s in slugs) + "."
+        )
+    else:
+        persona_rule = "- persona: always null (this site defines no visitor segments)."
+    return (
+        _ROUTER_TEMPLATE
+        .replace("{agent}", profile.agent_name)
+        .replace("{company}", profile.company_name)
+        .replace("{persona_rule}", persona_rule)
+    )
+
+
+def _fill(template: str, site_key: str) -> str:
+    """Substitute the site's agent name, company and voice into a base prompt."""
+    profile = profile_for(site_key)
+    return (
+        template.replace("{agent}", profile.agent_name)
+        .replace("{company}", profile.company_name)
+        .replace("{voice}", profile.brand_voice)
+    )
+
+
+_THINKER_TEMPLATE = """You are {agent}, an elite, voice-first Sales Development \
+Representative embedded on the {company} website. You are {voice}.
 
 GROUNDING RULES (non-negotiable):
 1. You MUST call `query_cortex` before making ANY claim about capabilities, \
@@ -160,7 +191,7 @@ def _sections_fragment(sections: list[dict] | None) -> str:
     )
 
 
-LEAN_BASE = """You are Pragya, a warm, sharp, voice-first guide on the {site} \
+_LEAN_TEMPLATE = """You are {agent}, a warm, sharp, voice-first guide on the {company} \
 website. Reply conversationally in 2-4 short spoken sentences — this is voice, so \
 be concise and natural; the visitor can always ask for more.
 
@@ -189,8 +220,8 @@ def build_lean_system(
         if (s.get("text") or "").strip()
     ) or "(no grounded context was found for this question)"
     parts = [
-        LEAN_BASE.format(site=site_key),
-        f"CONTEXT: {persona_fragment(persona)}",
+        _fill(_LEAN_TEMPLATE, site_key),
+        f"CONTEXT: {persona_fragment(persona, site_key)}",
         _page_fragment(page, section),
         _related_fragment(related),
         _PROBE_DIRECTIVE if probe else "",
@@ -206,15 +237,16 @@ def build_reaction_system(
     component (slider/toggle/tab). One short spoken sentence, or empty if there's
     nothing genuinely useful to add."""
     snapshot = json.dumps(state or {}, default=str)[:500]
+    profile = profile_for(site_key)
     return (
-        "You are Pragya, a warm, sharp voice guide on the "
-        f"{site_key} site. The visitor is interacting with a {component_type} "
+        f"You are {profile.agent_name}, a warm, sharp voice guide on the "
+        f"{profile.company_name} site. The visitor is interacting with a {component_type} "
         f"you put on screen; its current state is: {snapshot}. "
         "In ONE short, natural spoken sentence, react to what they just changed — "
         "surface a useful insight or implication of those values. Do NOT read the "
         "numbers back, don't greet, don't ask a question, don't mention tools. If "
         "there's nothing genuinely useful to add, reply with an empty string. "
-        + persona_fragment(persona)
+        + persona_fragment(persona, site_key)
     )
 
 
@@ -231,8 +263,8 @@ def build_thinker_system(
     probe: bool = False,
 ) -> str:
     parts = [
-        THINKER_BASE,
-        f"CONTEXT: site={site_key}. {persona_fragment(persona)}",
+        _fill(_THINKER_TEMPLATE, site_key),
+        f"CONTEXT: site={site_key}. {persona_fragment(persona, site_key)}",
         _capability_fragment(intelligence),
         _page_fragment(page, section),
         _sections_fragment(sections),

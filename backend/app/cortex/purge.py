@@ -20,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import site_entity_id
 
 # Per-site tables keyed by site_key. Created lazily, so each is skipped if absent.
-_SITE_TABLES = ("site_tours", "conversation_cache", "answer_audio_cache", "usage_events")
+_SITE_TABLES = (
+    "site_tours", "site_profiles", "conversation_cache", "answer_audio_cache", "usage_events",
+)
 
 
 async def _table_exists(db: AsyncSession, table: str) -> bool:

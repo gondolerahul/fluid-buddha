@@ -8,9 +8,10 @@ authored at ingestion time, runtime playback needs no LLM at all — it's just
 "speak → wait until done speaking → move → next", which is what makes the
 speak/scroll sync exact (the frontend gates each move on audio completion).
 
-The plan deliberately ends on a concrete use-case: how the HireBuddha platform
-would automate it, the time-to-automate, the monthly/yearly time + money saved,
-and the new capabilities it unlocks.
+The plan deliberately ends on a concrete use-case: how the site's platform would
+automate it, the time-to-automate, the monthly/yearly time + money saved, and the
+new capabilities it unlocks. The agent's name, the company and the fallback
+closing example come from the site's profile (app/orchestrator/profile.py).
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from typing import Any, Optional, Sequence
 
 from app.ai.base import ChatMessage, LLMClient
 from app.config import Settings
+from app.orchestrator.profile import profile_for
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +80,9 @@ class TourPlan:
 # Planning
 # ---------------------------------------------------------------------------
 
-_PLANNER_SYSTEM = """You are the tour director for Pragya, a voice guide embedded \
-on a website. From the catalogue of pages you are given, design a SHORT guided \
-tour (about 6-9 stops) that a first-time visitor hears and sees.
+_PLANNER_TEMPLATE = """You are the tour director for {agent}, a voice guide embedded \
+on the {company} website. From the catalogue of pages you are given, design a SHORT \
+guided tour (about 6-9 stops) that a first-time visitor hears and sees.
 
 The tour must:
 - Open with a one-sentence warm welcome that says what the site/company does.
@@ -90,7 +92,7 @@ features, prices, or names), then MOVES on.
 - Use `scroll` (target "down") to progress DOWN a long page as you explain it, \
 and `navigate` (with a real route from the catalogue) to move between pages.
 - END with a concrete USE-CASE stop: pick a realistic task this visitor's \
-business does manually, and explain how the HireBuddha platform would automate \
+business does manually, and explain how the {company} platform would automate \
 it — roughly how long it takes to set up, how much TIME and MONEY it saves per \
 month and per year, and what NEW capabilities it unlocks. Keep numbers plausible \
 and clearly framed as an illustrative estimate.
@@ -101,6 +103,15 @@ object of this exact shape (no markdown, no prose):
 {"narration":"...","move":{"type":"scroll","target":"down"}},\
 {"narration":"...","label":"use-case"}]}
 The final stop has no move. A stop's `move` runs AFTER its narration is spoken."""
+
+
+def _planner_system(site_key: str) -> str:
+    profile = profile_for(site_key)
+    return (
+        _PLANNER_TEMPLATE.replace("{agent}", profile.agent_name)
+        .replace("{company}", profile.company_name)
+    )
+
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -132,10 +143,11 @@ def _fallback_plan(site_key: str, catalog: list[dict[str, str]]) -> TourPlan:
     Walks the homepage + a couple of key pages with a scroll-through, then a
     generic illustrative use-case so the runtime + sync can always be exercised.
     """
+    profile = profile_for(site_key)
     stops: list[TourStop] = [
         TourStop(
-            narration="Welcome! I'm Pragya — let me give you a quick guided tour of "
-            "what we do here. Sit back, I'll walk you through it.",
+            narration=f"Welcome! I'm {profile.agent_name} — let me give you a quick "
+            "guided tour of what we do here. Sit back, I'll walk you through it.",
             move={"type": "scroll", "target": "top"},
             label="intro",
         )
@@ -158,14 +170,7 @@ def _fallback_plan(site_key: str, catalog: list[dict[str, str]]) -> TourPlan:
             if len(ordered) > 1 else None,
             label=f"{c['route']}#more",
         ))
-    stops.append(TourStop(
-        narration="Here's a concrete example: say your team spends about ten hours a "
-        "week screening and scheduling candidates. HireBuddha can automate that in "
-        "roughly a day of setup — saving on the order of 40 hours and a few thousand "
-        "dollars a month, while giving you faster, more consistent hiring. That's the "
-        "kind of outcome we'd map out together.",
-        label="use-case",
-    ))
+    stops.append(TourStop(narration=profile.closing_narration(), label="use-case"))
     return TourPlan(site_key=site_key, stops=stops)
 
 
@@ -205,7 +210,7 @@ async def plan_tour(
     )
     try:
         resp = await llm.generate(
-            system=_PLANNER_SYSTEM,
+            system=_planner_system(site_key),
             messages=[ChatMessage(role="user", text=prompt)],
             model=settings.heavy_model,
             temperature=0.6,

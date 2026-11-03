@@ -231,7 +231,7 @@ def tools_for(level: str, site_key: str | None = None) -> list[ToolSpec]:
     if level == "basic":
         return list(_BASIC)
     if level == "high":
-        return list(_HIGH)
+        return _with_site_personas(_HIGH, site_key)
     if level == "extreme":
         extra: list[ToolSpec] = [GENERATE_PAGE]
         if site_key:
@@ -239,5 +239,29 @@ def tools_for(level: str, site_key: str | None = None) -> list[ToolSpec]:
             from app.apis.registry import get_site_apis
             if get_site_apis(site_key).operations():
                 extra.append(CALL_SITE_API)
-        return list(_ADVANCE) + extra
-    return list(_ADVANCE)  # advance (default)
+        return _with_site_personas(_ADVANCE, site_key) + extra
+    return _with_site_personas(_ADVANCE, site_key)  # advance (default)
+
+
+def _with_site_personas(tools: list[ToolSpec], site_key: str | None) -> list[ToolSpec]:
+    """Swap the generic ``set_persona`` for one whose enum is this site's personas,
+    or drop it when the site defines none (the model can't pick a persona the site
+    doesn't have). ``site_key=None`` means the HireBuddha default."""
+    from app.orchestrator.personas import valid_personas  # avoid an import cycle
+
+    slugs = valid_personas(site_key or "hirebuddha")
+    out: list[ToolSpec] = []
+    for tool in tools:
+        if tool.name != SET_PERSONA.name:
+            out.append(tool)
+        elif slugs:
+            out.append(ToolSpec(
+                name=SET_PERSONA.name,
+                description=SET_PERSONA.description,
+                parameters={
+                    "type": "object",
+                    "properties": {"persona": {"type": "string", "enum": list(slugs)}},
+                    "required": ["persona"],
+                },
+            ))
+    return out

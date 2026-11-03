@@ -15,8 +15,8 @@ from typing import Optional, Sequence
 
 from app.ai.base import ChatMessage, LLMClient
 from app.config import Settings
-from app.orchestrator.personas import VALID_PERSONAS
-from app.orchestrator.prompts import ROUTER_SYSTEM
+from app.orchestrator.personas import valid_personas
+from app.orchestrator.prompts import build_router_system
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +52,13 @@ class FastRouter:
         self._settings = settings
 
     async def route(
-        self, user_text: str, history: Sequence[ChatMessage] = ()
+        self, user_text: str, history: Sequence[ChatMessage] = (),
+        site_key: str = "hirebuddha",
     ) -> RouterResult:
         messages = list(history) + [ChatMessage(role="user", text=user_text)]
         try:
             resp = await self._llm.generate(
-                system=ROUTER_SYSTEM,
+                system=build_router_system(site_key),
                 messages=messages,
                 tools=None,
                 model=self._settings.fast_model,
@@ -70,7 +71,7 @@ class FastRouter:
             data = {}
 
         persona = data.get("persona")
-        if persona not in VALID_PERSONAS:
+        if persona not in valid_personas(site_key):
             persona = None
         try:
             confidence = float(data.get("persona_confidence", 0.0) or 0.0)

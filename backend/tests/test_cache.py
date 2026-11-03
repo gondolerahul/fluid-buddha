@@ -101,9 +101,11 @@ def test_chat_persona_switch_on_explicit_signal():
     from app.main import app
 
     with TestClient(app) as client:
+        # Personas are per-site now: HireBuddha's profile defines "startups";
+        # an ad-hoc site like SITE has none (see test_agent_profile.py).
         r = client.post("/chat", json={
             "message": f"I'm a solo founder just getting started, ref {uuid.uuid4().hex}",
-            "site": SITE,
+            "site": "hirebuddha",
         }).json()
         assert r["persona"] == "startups"  # mock infers from "founder"
         assert any(a.get("type") == "set_icp" for a in r["actions"])

@@ -22,6 +22,7 @@ from app.cortex.bridge import CortexBridge
 from app.cortex.providers import build_cortex_providers
 from app.db import SessionLocal, init_db
 from app.logging_config import configure_logging
+from app.orchestrator.profile import ensure_profile
 from app.orchestrator.tour import plan_tour
 from app.orchestrator.tour_store import save_plan
 from ingestion.scraper import SourceDocument, load_site_documents
@@ -82,6 +83,7 @@ async def plan_and_save_tour(site_key: str, documents: list[SourceDocument]) -> 
     """Author + persist the guided tour from a site's documents (best-effort)."""
     settings = get_settings()
     try:
+        await ensure_profile(site_key)  # agent name / company / closing example
         engines = build_engines(settings)
         plan = await plan_tour(
             site_key=site_key, documents=documents, llm=engines.llm, settings=settings

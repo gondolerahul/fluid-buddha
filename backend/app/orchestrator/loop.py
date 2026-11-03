@@ -13,7 +13,7 @@ from app.ai.factory import AIEngines
 from app.config import Settings
 from app.cortex.bridge import CortexBridge
 from app.orchestrator.lean import LeanResponder, needs_heavy
-from app.orchestrator.personas import VALID_PERSONAS
+from app.orchestrator.personas import valid_personas
 from app.orchestrator.result import ClientAction, TurnResult
 from app.orchestrator.router import FastRouter
 from app.orchestrator.state import ConversationState
@@ -56,7 +56,7 @@ class CognitiveLoop:
 
     async def route(self, user_text: str, state: ConversationState):
         """Fast path only — returns the ack/persona for immediate TTS."""
-        return await self.router.route(user_text, state.history)
+        return await self.router.route(user_text, state.history, state.site_key)
 
     @staticmethod
     def needs_heavy(transcript: str, intent: str = "general") -> bool:
@@ -73,7 +73,7 @@ class CognitiveLoop:
         switch should be surfaced to the client. Guards against flip-flop: a weak
         signal never switches, and a self-identified persona is only overridden by
         an equally explicit/strong later signal."""
-        if persona not in VALID_PERSONAS:
+        if persona not in valid_personas(state.site_key):
             return False
         if explicit:
             state.persona_locked = True
@@ -148,7 +148,7 @@ class CognitiveLoop:
         related=None,
     ) -> TurnResult:
         """Full synchronous turn (used by the HTTP /chat path)."""
-        route = await self.router.route(user_text, state.history)
+        route = await self.router.route(user_text, state.history, state.site_key)
         result = TurnResult(intent=route.intent, ack=route.ack)
 
         # Adaptive persona switch — only on a confident, changed read (Req 3.6.2).

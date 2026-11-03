@@ -21,7 +21,8 @@ from app.cortex.bridge import CortexBridge
 from app.cortex.query import query_cortex
 from app.orchestrator.components import normalize_component
 from app.orchestrator.pagegen import build_extreme_brief, normalize_page
-from app.orchestrator.personas import VALID_PERSONAS
+from app.orchestrator.personas import valid_personas
+from app.orchestrator.profile import profile_for
 from app.orchestrator.prompts import build_reaction_system, build_thinker_system
 from app.orchestrator.result import ClientAction, ComponentPayload, Grounding, PageSpec
 from app.orchestrator.sitemap import resolve_route
@@ -302,7 +303,7 @@ class HeavyThinker:
             )
         if name == "set_persona":
             persona = args.get("persona")
-            if persona in VALID_PERSONAS:
+            if persona in valid_personas(site_key):
                 return ClientAction(type="set_icp", icp=persona)
         return None
 
@@ -347,7 +348,8 @@ class HeavyThinker:
         directive = (
             "The visitor just arrived"
             + (f" on {page}" if page else "")
-            + ". Greet them warmly by name as Pragya in ONE or TWO short sentences, "
+            + f". Greet them warmly by name as {profile_for(site_key).agent_name} "
+            "in ONE or TWO short sentences, "
             "briefly say what this page is about (ground it with query_cortex), and "
             "invite them to ask a question or have you show them around. Do not "
             "navigate or render components yet."

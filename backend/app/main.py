@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.db import dispose_engine, init_db
 from app.logging_config import configure_logging
 from app.routes import (
+    agent_profile,
     analytics,
     auth,
     cache,
@@ -70,3 +71,4 @@ app.include_router(ingestion.router)
 app.include_router(tours.router)
 app.include_router(cache.router)
 app.include_router(analytics.router)
+app.include_router(agent_profile.router)
