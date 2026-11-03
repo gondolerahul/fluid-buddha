@@ -80,6 +80,14 @@ ok(events.page && events.page.title === 'Welcome' && events.page.sections.length
 session.feed({ channel: 'DATA', type: 'patch', sync_id: 'ui_1', payload: { target_sync_id: 'ui_1', patch: { seats: 50 }, animation: 'count_up' } });
 ok(events.patch && events.patch.id === 'ui_1' && events.patch.p.seats === 50, 'DATA/patch -> onPatch(target, patch)');
 
+// ---- 2b. The enquiry form posts a lead straight to /leads (no LLM) ----
+const posted = [];
+globalThis.fetch = async (url, init) => { posted.push({ url, body: JSON.parse(init.body) }); return { ok: true, json: async () => ({ ok: true }) }; };
+session.feed({ channel: 'EVENTS', type: 'ready', payload: { session_id: 'ws-123', config: {} } });
+const leadOk = await session.submitLead({ email: 'ana@acme.io', name: 'Ana' });
+ok(leadOk && posted.length === 1 && posted[0].url === 'http://x/leads', 'submitLead posts to /leads');
+ok(posted[0].body.session_id === 'ws-123' && posted[0].body.values.email === 'ana@acme.io' && !('message' in posted[0].body), 'lead carries the voice session id and raw form values, not a chat message');
+
 // ---- 3. Canvas renders components ----
 const container = document.createElement('div');
 let rendered = null;

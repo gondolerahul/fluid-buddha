@@ -430,8 +430,9 @@ class VoiceSession:
                 len(think.actions), len(think.components),
             )
             # Record the full multimodal turn for future replay (fire-and-forget).
-            # A patch targets this session's components, so it can't be replayed.
-            if not think.patches:
+            # A patch targets this session's components, and a captured lead holds
+            # one visitor's contact details, so neither turn may be replayed.
+            if not think.patches and not think.leads:
                 self._spawn(self._record_turn(
                     question=transcript, answer_text=think.answer_text,
                     components=think.components, actions=think.actions,
@@ -446,6 +447,7 @@ class VoiceSession:
             self._spawn(self._record_conversation(
                 question=transcript, answer=think.answer_text, intent=route.intent,
                 grounding=think.grounding.to_dict(), served_from_cache=False,
+                leads=think.leads,
             ))
         except asyncio.CancelledError:
             logger.info("ws[%s]: turn CANCELLED before completion (barge-in or "
@@ -594,8 +596,9 @@ class VoiceSession:
             logger.warning("ws[%s]: record_turn failed: %s", self.session_id[:8], exc)
 
     async def _record_conversation(self, *, question, answer, intent, grounding,
-                                   served_from_cache) -> None:
-        """Append the turn to this session's transcript (Insights, WS10)."""
+                                   served_from_cache, leads=()) -> None:
+        """Append the turn to this session's transcript (Insights, WS10), then
+        save any lead the agent captured in it (WS7)."""
         from app.insights.store import record_turn as record_conversation_turn
         try:
             async with session_scope() as db:
@@ -608,6 +611,10 @@ class VoiceSession:
         except Exception as exc:
             logger.warning("ws[%s]: conversation record failed: %s",
                            self.session_id[:8], exc)
+        if leads:
+            from app.leads.capture import save_captured
+            await save_captured(self.state.site_key, self.session_id,
+                                self.state.persona, list(leads))
 
     async def _record_usage(
         self, *, intent, transcript, ack="", answer_text="", think=None,

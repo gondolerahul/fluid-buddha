@@ -28,7 +28,7 @@ def test_tools_gated_by_intelligence_level():
     from app.orchestrator.tools import tools_for
 
     names = lambda lvl, site=None: {t.name for t in tools_for(lvl, site)}
-    assert names("basic") == {"query_cortex", "navigate", "scroll_to"}
+    assert names("basic") == {"query_cortex", "navigate", "scroll_to", "capture_lead"}
     assert "set_persona" in names("high")
     assert "render_component" not in names("high")
     assert "render_component" in names("advance")

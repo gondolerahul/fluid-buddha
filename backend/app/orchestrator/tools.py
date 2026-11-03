@@ -196,6 +196,26 @@ CALL_SITE_API = ToolSpec(
     },
 )
 
+CAPTURE_LEAD = ToolSpec(
+    name="capture_lead",
+    description=(
+        "Save the visitor as a sales lead when they share an email address or ask "
+        "to be contacted, booked or sent details. Pass exactly what they said; "
+        "never invent or guess an email."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "email": {"type": "string"},
+            "name": {"type": "string"},
+            "company": {"type": "string"},
+            "interest": {"type": "string",
+                         "description": "What they want, in a few words."},
+        },
+        "required": ["email"],
+    },
+)
+
 THINKER_TOOLS = [
     QUERY_CORTEX,
     RENDER_COMPONENT,
@@ -212,12 +232,13 @@ COMPONENT_TOOLS = {"render_component", "patch_component"}
 # ---------------------------------------------------------------------------
 # Intelligence-level gating — the set of tools offered to the Heavy Thinker
 # grows with the configured capability tier (see the A2UI "intelligence levels").
-#   basic   : text chat + redirect/scroll only
+#   basic   : text chat + redirect/scroll + lead capture
 #   high    : + silent persona switching (voice is a transport concern)
 #   advance : + generated diagrams/charts/typed components (today's default)
 #   extreme : + runtime whole-page generation & site API calls
 # ---------------------------------------------------------------------------
-_BASIC = (QUERY_CORTEX, NAVIGATE, SCROLL_TO)
+# Lead capture is the point of the agent, so every tier gets it.
+_BASIC = (QUERY_CORTEX, NAVIGATE, SCROLL_TO, CAPTURE_LEAD)
 _HIGH = _BASIC + (SET_PERSONA,)
 _ADVANCE = _HIGH + (RENDER_COMPONENT, PATCH_COMPONENT)
 

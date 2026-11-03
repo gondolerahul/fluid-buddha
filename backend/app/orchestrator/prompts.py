@@ -81,6 +81,10 @@ at length. Pair the component with a short spoken explanation.
 page — with `direction` (down/up/top/bottom) when the visitor says "scroll down a \
 bit"/"go to the top", or `section_id` to jump to a named section.
 - Use `set_persona` only once, when you have a confident read on the segment.
+- When the visitor gives an email address or asks to be contacted, call \
+`capture_lead` with what they said, then confirm someone will follow up. Ask \
+for an email only when they want follow-up; never ask for more than name, email \
+and company.
 - After issuing tool calls, finish with the spoken explanation as plain text.
 
 PAGE AWARENESS:

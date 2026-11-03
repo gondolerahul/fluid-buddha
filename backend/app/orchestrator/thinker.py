@@ -89,6 +89,9 @@ class ThinkResult:
     components: list[ComponentPayload] = field(default_factory=list)
     pages: list[PageSpec] = field(default_factory=list)
     patches: list[ComponentPatch] = field(default_factory=list)
+    # Contact details the visitor shared (capture_lead); saved by the transport
+    # once the turn is recorded, so the lead links to its conversation.
+    leads: list[Any] = field(default_factory=list)
     grounding: Grounding = field(default_factory=Grounding)
     # Cost analytics (req F): which LLM tier ran + the tokens/tool-calls it spent.
     llm_kind: str = "thinker"        # 'fast' (lean) | 'thinker' (heavy)
@@ -316,6 +319,18 @@ class HeavyThinker:
                             "VALID ROUTES, or answer without navigating.",
                 }
             return {"ok": True}
+
+        if name == "capture_lead":
+            from app.leads.store import LeadError, LeadIn
+            try:
+                lead = LeadIn(email=args.get("email") or "", name=args.get("name"),
+                              company=args.get("company"),
+                              interest=args.get("interest")).cleaned()
+            except LeadError as exc:
+                return {"ok": False, "error": str(exc),
+                        "hint": "Ask the visitor for a valid email address."}
+            result.leads.append(lead)
+            return {"ok": True, "note": "Saved. Tell them someone will follow up."}
 
         logger.warning("Unknown tool call: %s", name)
         return {"ok": False, "error": "unknown tool"}

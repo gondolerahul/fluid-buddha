@@ -153,11 +153,13 @@ export class FluidBuddhaElement extends HTMLElement {
     this.pageRenderer.render(page);
   }
 
-  private onEnquiry(payload: EnquiryPayload): void {
-    const op = payload.operationId ? ` using ${payload.operationId}` : '';
-    this.session.sendText(
-      `Please submit this enquiry${op}: ${JSON.stringify(payload.values)}`,
-    );
+  /** The generated enquiry form posts straight to /leads (WS7) — the visitor's
+   *  details are stored and delivered without passing through the LLM. */
+  private async onEnquiry(payload: EnquiryPayload): Promise<boolean> {
+    const ok = await this.session.submitLead(payload.values);
+    if (ok) this.addMessage('pragya', 'Thanks — the team will be in touch soon.');
+    else this.addMessage('system', "Couldn't send that just now. Please try again.");
+    return ok;
   }
 
   // ---- Design Level 2: immersive particle overlay ----

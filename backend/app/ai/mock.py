@@ -32,7 +32,7 @@ from app.ai.base import (
 # Tool names that represent client-side actions (vs. server-side retrieval).
 _ACTION_TOOLS = {
     "render_component", "patch_component", "navigate", "scroll_to", "set_persona",
-    "generate_page",
+    "generate_page", "capture_lead",
 }
 
 _PERSONA_KEYWORDS = {
@@ -47,6 +47,7 @@ _EXEC_KEYWORDS = ["roi", "cost", "pricing", "budget", "savings", "business case"
 
 # Correction of an on-screen component: "actually we have 50 seats" → patch it.
 _ON_SCREEN_RE = re.compile(r"- sync_id (\S+): (\w+)")
+_EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}")
 _SEATS_RE = re.compile(r"(\d+)\s*(?:seats|people|employees|users)", re.IGNORECASE)
 
 
@@ -165,6 +166,9 @@ class MockLLMClient(LLMClient):
 
     def _decide_actions(self, low: str, tool_names: set[str]) -> list[ToolCall]:
         calls: list[ToolCall] = []
+        email = _EMAIL_RE.search(low)
+        if email and "capture_lead" in tool_names:
+            calls.append(ToolCall("capture_lead", {"email": email.group(0)}))
         persona = _infer_persona(low)
         if persona and "set_persona" in tool_names:
             calls.append(ToolCall("set_persona", {"persona": persona}))

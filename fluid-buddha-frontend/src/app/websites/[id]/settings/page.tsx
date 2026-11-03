@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AgentProfile, Api, ApiError, Persona, Website } from "@/lib/api";
+import { AgentProfile, Api, ApiError, Integrations, Persona, Website } from "@/lib/api";
 import { useWebsite } from "@/components/WebsiteContext";
 import { Spinner, useToast } from "@/components/ui";
 
@@ -39,6 +39,7 @@ export default function SettingsPage() {
       </div>
       <SiteForm key={website.id} website={website} onSaved={reload} />
       <ProfileSection id={website.id} />
+      <IntegrationsSection id={website.id} />
       <DangerZone website={website} />
     </div>
   );
@@ -278,6 +279,103 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
 
 // ---- danger zone -------------------------------------------------------------
 
+function IntegrationsSection({ id }: { id: string }) {
+  const [state, setState] = useState<{ cfg: Integrations | null } | null>(null);
+  useEffect(() => {
+    Api.getIntegrations(id).then((cfg) => setState({ cfg })).catch(() => setState({ cfg: null }));
+  }, [id]);
+  if (!state) return <div className="skeleton" style={{ height: 240 }} />;
+  if (!state.cfg) return <div className="notice err">Couldn&apos;t load integrations.</div>;
+  return <IntegrationsForm id={id} initial={state.cfg} />;
+}
+
+function IntegrationsForm({ id, initial }: { id: string; initial: Integrations }) {
+  const toast = useToast();
+  const [webhook, setWebhook] = useState(initial.webhook_url || "");
+  const [slack, setSlack] = useState(initial.slack_webhook_url || "");
+  const [hot, setHot] = useState(initial.hot_lead_score);
+  const [secret, setSecret] = useState(initial.webhook_secret);
+  const [busy, setBusy] = useState<"save" | "rotate" | "test" | null>(null);
+
+  const save = async (rotate = false) => {
+    setBusy(rotate ? "rotate" : "save");
+    try {
+      const cfg = await Api.saveIntegrations(id, {
+        webhook_url: webhook.trim() || null, slack_webhook_url: slack.trim() || null,
+        hot_lead_score: hot, rotate_secret: rotate,
+      });
+      setSecret(cfg.webhook_secret);
+      toast(rotate ? "Signing secret rotated" : "Integrations saved");
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Could not save integrations", "err");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const test = async () => {
+    setBusy("test");
+    try {
+      const r = await Api.testIntegrations(id);
+      toast(r.ok ? "Test lead sent" : `Test failed: ${r.error}`, r.ok ? undefined : "err");
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Test failed", "err");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="card" id="integrations">
+      <h3 style={{ marginBottom: 4 }}>Lead integrations</h3>
+      <p className="muted" style={{ fontSize: "0.84rem", marginBottom: 16 }}>
+        Every new lead is POSTed to your webhook (Zapier, Make, your CRM or your own endpoint),
+        and hot leads ping Slack.
+      </p>
+      <div className="stack">
+        <div className="field">
+          <label className="label">Webhook URL</label>
+          <input className="input mono" value={webhook} onChange={(e) => setWebhook(e.target.value)}
+            placeholder="https://hooks.zapier.com/hooks/catch/…" />
+        </div>
+        <div className="field">
+          <label className="label">Signing secret</label>
+          <div className="row" style={{ gap: 8 }}>
+            <input className="input mono" readOnly value={secret} aria-label="Signing secret" />
+            <button type="button" className="btn btn-sm" onClick={() => save(true)} disabled={busy !== null}>
+              {busy === "rotate" ? <Spinner /> : "Rotate"}
+            </button>
+          </div>
+          <p className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+            Requests carry <span className="mono">X-FluidBuddha-Signature: t=…,v1=…</span> —
+            HMAC-SHA256 of <span className="mono">{"{t}.{body}"}</span> with this secret.
+          </p>
+        </div>
+        <div className="grid grid-2" style={{ gap: 12 }}>
+          <div className="field">
+            <label className="label">Slack incoming webhook</label>
+            <input className="input mono" value={slack} onChange={(e) => setSlack(e.target.value)}
+              placeholder="https://hooks.slack.com/services/…" />
+          </div>
+          <div className="field">
+            <label className="label">Alert Slack when the score is at least</label>
+            <input className="input" type="number" min={0} max={100} value={hot}
+              onChange={(e) => setHot(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} />
+          </div>
+        </div>
+        <div className="row" style={{ gap: 10, justifyContent: "flex-end" }}>
+          <button type="button" className="btn" onClick={test} disabled={busy !== null}>
+            {busy === "test" ? <Spinner /> : "Send a test lead"}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => save(false)} disabled={busy !== null}>
+            {busy === "save" ? <Spinner /> : "Save integrations"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function DangerZone({ website }: { website: Website }) {
   const router = useRouter();
   const toast = useToast();
@@ -285,7 +383,7 @@ function DangerZone({ website }: { website: Website }) {
 
   const remove = async () => {
     if (!window.confirm(
-      `Delete "${website.name}"? This removes its knowledge, tour, cached answers and analytics, ` +
+      `Delete "${website.name}"? This removes its knowledge, tour, cached answers, analytics, conversations and leads, ` +
       "and its widget key stops working. This can't be undone.",
     )) return;
     setBusy(true);
@@ -305,7 +403,7 @@ function DangerZone({ website }: { website: Website }) {
         <div>
           <span className="eyebrow" style={{ color: "var(--err)" }}>Delete website</span>
           <p className="faint" style={{ fontSize: "0.82rem", marginTop: 4 }}>
-            Removes everything built for this site: knowledge, tour, cached answers, analytics and the widget key.
+            Removes everything built for this site: knowledge, tour, cached answers, analytics, conversations, leads and the widget key.
           </p>
         </div>
         <button className="btn btn-danger btn-sm" onClick={remove} disabled={busy}>

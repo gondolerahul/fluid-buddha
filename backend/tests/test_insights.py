@@ -61,7 +61,7 @@ def test_chat_turns_build_insights_and_transcripts():
         # small talk is not.
         gaps = [g["question"] for g in ins["gaps"]]
         assert q1 in gaps and "hello there" not in gaps
-        assert [f["count"] for f in ins["funnel"]] == [1, 1]
+        assert [f["count"] for f in ins["funnel"]] == [1, 1, 0]
         assert ins["grounded_rate"] == 0.0           # 2 real questions, none grounded
 
         convs = client.get(f"{base}/conversations", headers=h).json()

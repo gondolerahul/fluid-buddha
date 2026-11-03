@@ -245,6 +245,32 @@ export type ConversationTurn = {
 };
 export type Conversation = ConversationSummary & { transcript: ConversationTurn[] };
 
+export type LeadStatus = "new" | "contacted" | "qualified" | "won" | "lost";
+export type Lead = {
+  id: string;
+  source: "form" | "conversation" | string;
+  name: string | null;
+  email: string;
+  company: string | null;
+  phone: string | null;
+  message: string | null;
+  interest: string | null;
+  persona: string | null;
+  score: number;
+  summary: string;
+  status: LeadStatus;
+  conversation_id: string | null;
+  delivered_at: string | null;
+  delivery_error: string | null;
+  created_at: string;
+};
+export type Integrations = {
+  webhook_url: string | null;
+  webhook_secret: string;
+  slack_webhook_url: string | null;
+  hot_lead_score: number;
+};
+
 // ---- endpoint helpers ------------------------------------------------------
 export const Api = {
   register: (email: string, password: string, name?: string) =>
@@ -318,4 +344,18 @@ export const Api = {
       `/tenant/websites/${id}/conversations?limit=${limit}&offset=${offset}`),
   conversation: (id: string, cid: string) =>
     api<Conversation>(`/tenant/websites/${id}/conversations/${cid}`),
+
+  leads: (id: string, offset = 0, limit = 50) =>
+    api<{ items: Lead[]; total: number; limit: number; offset: number }>(
+      `/tenant/websites/${id}/leads?limit=${limit}&offset=${offset}`),
+  updateLead: (id: string, lid: string, status: LeadStatus) =>
+    api<Lead>(`/tenant/websites/${id}/leads/${lid}`, { method: "PATCH", body: { status } }),
+  getIntegrations: (id: string) => api<Integrations>(`/tenant/websites/${id}/integrations`),
+  saveIntegrations: (id: string, body: {
+    webhook_url: string | null; slack_webhook_url: string | null;
+    hot_lead_score: number; rotate_secret?: boolean;
+  }) => api<Integrations>(`/tenant/websites/${id}/integrations`, { method: "PUT", body }),
+  testIntegrations: (id: string) =>
+    api<{ ok: boolean; error: string | null }>(`/tenant/websites/${id}/integrations/test`,
+      { method: "POST" }),
 };

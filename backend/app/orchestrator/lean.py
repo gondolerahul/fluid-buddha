@@ -44,6 +44,9 @@ _CORRECTION_KW = re.compile(
 )
 
 
+_EMAIL_KW = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", re.IGNORECASE)
+
+
 def needs_heavy(transcript: str, intent: str = "general", *,
                 has_components: bool = False) -> bool:
     """Decide whether a turn must use the Heavy Thinker (tools/diagrams/nav)."""
@@ -51,6 +54,8 @@ def needs_heavy(transcript: str, intent: str = "general", *,
         return True
     if has_components and _CORRECTION_KW.search(transcript or ""):
         return True
+    if _EMAIL_KW.search(transcript or ""):
+        return True   # contact details → capture_lead needs the tool loop
     return bool(_HEAVY_KW.search(transcript or ""))
 
 

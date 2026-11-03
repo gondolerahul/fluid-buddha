@@ -90,6 +90,7 @@ class TurnResult:
     components: list[ComponentPayload] = field(default_factory=list)
     pages: list[PageSpec] = field(default_factory=list)
     patches: list[ComponentPatch] = field(default_factory=list)
+    leads: list[Any] = field(default_factory=list)   # LeadIn from capture_lead
     grounding: Grounding = field(default_factory=Grounding)
     # Cost analytics (req F): LLM tier + tokens/tool-calls this turn spent.
     llm_kind: str = "thinker"

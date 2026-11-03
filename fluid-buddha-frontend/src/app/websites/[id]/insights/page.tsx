@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Api, ApiError, Conversation, ConversationSummary, Insights, QuestionStat } from "@/lib/api";
-import { Modal, Spinner, fmtDate, useToast } from "@/components/ui";
+import { Api, ApiError, ConversationSummary, Insights, QuestionStat } from "@/lib/api";
+import { fmtDate, useToast } from "@/components/ui";
 import { AddSourceModal } from "@/components/AddSourceModal";
+import { TranscriptModal } from "@/components/TranscriptModal";
 
 const RANGES = [7, 30, 90];
 
@@ -138,34 +139,6 @@ export default function InsightsPage() {
       )}
       {openConv && <TranscriptModal id={id} cid={openConv} onClose={() => setOpenConv(null)} />}
     </div>
-  );
-}
-
-function TranscriptModal({ id, cid, onClose }: { id: string; cid: string; onClose: () => void }) {
-  const [conv, setConv] = useState<Conversation | null>(null);
-  useEffect(() => { Api.conversation(id, cid).then(setConv).catch(() => {}); }, [id, cid]);
-  return (
-    <Modal open onClose={onClose} title="Transcript">
-      {!conv ? <Spinner /> : (
-        <div className="stack">
-          {conv.transcript.map((t, i) => (
-            <div key={i} className="stack-sm">
-              <div><span className="eyebrow">Visitor</span><div>{t.question}</div></div>
-              <div>
-                <span className="eyebrow">Agent{t.served_from_cache ? " · cached" : ""}</span>
-                <div className="muted">{t.answer}</div>
-                {t.found && t.sources.length > 0 && (
-                  <div className="faint" style={{ fontSize: "0.8rem", marginTop: 4 }}>
-                    Sources: {t.sources.map((s) => s.label || s.document).join(", ")}
-                  </div>
-                )}
-                {t.unanswered && <span className="badge warn" style={{ marginTop: 6 }}>Not in your content</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </Modal>
   );
 }
 

@@ -33,8 +33,9 @@ def _ui_sid() -> str:
 
 
 async def _record_conversation(state, sid: str, question: str, answer: str, intent,
-                               grounding, *, served_from_cache: bool) -> None:
-    """Append the turn to this session's transcript (Insights, WS10; best-effort)."""
+                               grounding, *, served_from_cache: bool, leads=()) -> None:
+    """Append the turn to this session's transcript (Insights, WS10; best-effort),
+    then save any lead the agent captured in it (WS7)."""
     from app.insights.store import record_turn as record_conversation_turn
     try:
         async with session_scope() as db:
@@ -46,6 +47,9 @@ async def _record_conversation(state, sid: str, question: str, answer: str, inte
             )
     except Exception as exc:
         logger.warning("conversation record failed: %s", exc)
+    if leads:
+        from app.leads.capture import save_captured
+        await save_captured(state.site_key, sid, state.persona, list(leads))
 
 
 class ChatRequest(BaseModel):
@@ -150,8 +154,10 @@ async def chat(req: ChatRequest, request: Request) -> dict:
         )
 
     # Record the turn for future replay (best-effort, own session).
-    # A patch targets this session's components, so such a turn isn't replayable.
-    if settings.conversation_cache_enabled and result.answer_text and not result.patches:
+    # A patch targets this session's components, and a captured lead holds one
+    # visitor's contact details, so neither turn may be replayed.
+    if (settings.conversation_cache_enabled and result.answer_text
+            and not result.patches and not result.leads):
         try:
             async with session_scope() as db:
                 await rt.episodic(db, state.site_key).record(
@@ -181,7 +187,8 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     except Exception as exc:
         logger.debug("usage record skipped: %s", exc)
     await _record_conversation(state, sid, req.message, result.answer_text, result.intent,
-                               result.grounding.to_dict(), served_from_cache=False)
+                               result.grounding.to_dict(), served_from_cache=False,
+                               leads=result.leads)
 
     payload = result.to_message_dict()
     payload["session_id"] = sid

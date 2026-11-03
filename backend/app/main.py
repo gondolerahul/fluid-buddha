@@ -20,6 +20,7 @@ from app.routes import (
     health,
     ingestion,
     insights,
+    leads,
     tours,
     websites,
     widget,
@@ -57,6 +58,7 @@ app.include_router(chat.router)
 app.include_router(design.router)
 app.include_router(ws_transport.router)
 app.include_router(widget.router)
+app.include_router(leads.public)
 
 # Admin dashboard API (tenant auth + website management; more in later phases).
 app.include_router(auth.router)
@@ -67,3 +69,4 @@ app.include_router(cache.router)
 app.include_router(analytics.router)
 app.include_router(agent_profile.router)
 app.include_router(insights.router)
+app.include_router(leads.admin)

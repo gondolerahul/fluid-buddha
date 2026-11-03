@@ -105,6 +105,9 @@ async def summary(db: AsyncSession, site_key: str, days: int = 30) -> dict[str, 
         "HAVING NOT (array_agg(found ORDER BY created_at DESC))[1]", 20)), params)).mappings().all()
 
     n_asked, n_grounded = int(asked["asked"]), int(asked["grounded"])
+    n_leads = (await db.execute(text(
+        f"SELECT count(*) FROM leads WHERE site_key = :s AND created_at >= {since}"
+    ), params)).scalar() or 0
     return {
         "days": days,
         "conversations": int(head["conversations"]),
@@ -118,6 +121,7 @@ async def summary(db: AsyncSession, site_key: str, days: int = 30) -> dict[str, 
              "count": int(head["conversations"])},
             {"stage": "engaged", "label": f"Asked {ENGAGED_TURNS}+ questions",
              "count": int(head["engaged"])},
+            {"stage": "leads", "label": "Left their details", "count": int(n_leads)},
         ],
     }
 

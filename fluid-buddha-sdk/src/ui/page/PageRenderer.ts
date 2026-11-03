@@ -17,7 +17,8 @@ export interface EnquiryPayload {
 export class PageRenderer {
   constructor(
     private readonly container: HTMLElement,
-    private readonly onEnquiry: (payload: EnquiryPayload) => void,
+    /** Resolves true once the enquiry is stored (a lead), false on failure. */
+    private readonly onEnquiry: (payload: EnquiryPayload) => Promise<boolean>,
   ) {}
 
   render(page: PageSpec): void {
@@ -145,13 +146,18 @@ export class PageRenderer {
     submit.className = 'fbpage-btn';
     submit.textContent = str(p.submit_label) || 'Submit';
     form.appendChild(submit);
+    const label = submit.textContent;
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const values: Record<string, string> = {};
       inputs.forEach(({ name, el }) => (values[name] = el.value));
-      this.onEnquiry({ operationId: str(p.operation_id) || undefined, values });
-      submit.textContent = 'Sent ✓';
       submit.disabled = true;
+      submit.textContent = 'Sending…';
+      void this.onEnquiry({ operationId: str(p.operation_id) || undefined, values }).then((ok) => {
+        submit.textContent = ok ? 'Sent ✓' : 'Try again';
+        submit.disabled = ok;
+        if (!ok) setTimeout(() => { if (!submit.disabled) submit.textContent = label; }, 4000);
+      });
     });
     wrap.appendChild(form);
     return wrap;

@@ -197,6 +197,7 @@ class CognitiveLoop:
             state.register_component(c.sync_id, c.component_type, c.initial_state)
         result.pages.extend(think.pages)
         result.patches.extend(think.patches)
+        result.leads.extend(think.leads)
         for p in think.patches:
             state.update_component_state(p.target_sync_id, p.patch)
         result.grounding = think.grounding

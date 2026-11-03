@@ -55,6 +55,8 @@ export class Session {
   private userSpeaking = false;
   private _active = false;
   private textSessionId: string | undefined;
+  /** The voice session's id (from `ready`), so a lead links to its conversation. */
+  private wsSessionId: string | undefined;
   private greeted = false;
   private welcomeEnabled = false;
   private pageProvider?: () => Record<string, unknown>;
@@ -139,6 +141,7 @@ export class Session {
     switch (env.channel) {
       case 'EVENTS':
         if (env.type === 'ready') {
+          if (typeof env.payload.session_id === 'string') this.wsSessionId = env.payload.session_id;
           const cfg = (env.payload.config as { filler_delay_ms?: number; sample_rate?: number }) || {};
           // Reuse a player primed during the open gesture (so welcome audio is
           // allowed to autoplay); otherwise create it now.
@@ -301,6 +304,26 @@ export class Session {
       this.client.sendText(text); // server echoes the user transcript + answer
     } else {
       void this.httpFallback(text);
+    }
+  }
+
+  /** Store an enquiry-form submission as a lead (WS7). Posts straight to the
+   *  backend — the visitor's details never pass through the LLM. */
+  async submitLead(values: Record<string, string>): Promise<boolean> {
+    try {
+      const res = await fetch(`${(this.config.api || '').replace(/\/$/, '')}/leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: this.config.key || undefined,
+          site: this.config.site,
+          session_id: this.wsSessionId ?? this.textSessionId,
+          values,
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 

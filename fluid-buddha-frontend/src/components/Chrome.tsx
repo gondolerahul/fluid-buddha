@@ -39,6 +39,7 @@ const TABS = [
   { key: "ingestion", label: "Ingestion" },
   { key: "tour", label: "Tour" },
   { key: "insights", label: "Insights" },
+  { key: "leads", label: "Leads" },
   { key: "cache", label: "Responses" },
   { key: "analytics", label: "Analytics" },
   { key: "settings", label: "Settings" },
