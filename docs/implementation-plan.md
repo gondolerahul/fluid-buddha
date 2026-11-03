@@ -247,3 +247,18 @@ A focused slice of M0 that makes the gate reachable and de-risks the rest.
 ## Appendix — environment the plan assumes (verified this session)
 
 Python 3.12 venv, Node ≥ 20, Postgres+pgvector on 5434 (Docker), `MOCK_AI=true` for local/CI. All three subsystems build and run locally today; the backend seeds 334 nodes from the 9 HireBuddha docs and the full voice→UI round-trip works end to end in mock mode. See [defects.md §0](defects.md) for the exact run setup and what passed.
+
+---
+
+## Progress — Phase 1 (branch `phase1/beta`, 2026-11-03)
+
+| Item | Status | What shipped / what's left |
+|---|---|---|
+| F-3 migrations | ✅ | Alembic (`backend/migrations/`), applied at startup under an advisory lock; no DDL left on the request path (a test enforces it). **Left:** Redis sessions, OpenTelemetry/Sentry, time-to-first-audio metric. |
+| WS8 trust layer | 🟡 | Citations in all three design levels (label + page link), stored with cached answers so replays show them too. **Left:** mic/recording consent UX, PII redaction before storage/LLM (transcripts and leads now hold visitor text), retention settings, golden-answer pin/block. |
+| WS10 Insights v1 | ✅ | Conversation + turn store; top questions, knowledge gaps (closing once answered) with one-click "Answer this", visitors → engaged → leads funnel, transcript viewer. **Left:** meetings stage (needs booking). |
+| WS7 revenue layer | 🟡 | Leads from the enquiry form (no LLM) and the `capture_lead` tool; transparent score + summary; signed webhook (Zapier/Make/CRM) with retries; Slack hot-lead alerts; Leads tab + integrations settings. **Left:** native HubSpot then Salesforce sync, inline booking (Calendly/HubSpot Meetings), text live-takeover — all need real accounts to build against. |
+| WS5 engine quality | ⏳ | D-15 pushState navigation, AudioWorklet pre-roll, binary audio frames, streaming TTS, lazy Three.js, L2 reopen, query rewriting. |
+| WS9 self-serve onboarding | ⏳ | Sitemap crawler (robots, depth, SSRF guard), PDF/DOCX, auto personas, design-token extraction, preview link. |
+| WS11 holdout A/B | ⏳ | Depends on WS7 lead events (now available). |
+| WS12 pricing & billing | ⏳ | Stripe plans, caps + overage on `usage_events`, cost per conversation. Needs Stripe test keys. |
