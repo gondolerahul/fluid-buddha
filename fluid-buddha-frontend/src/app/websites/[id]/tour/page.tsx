@@ -26,9 +26,11 @@ export default function TourPage() {
   const [busy, setBusy] = useState(false);
   const [gen, setGen] = useState(false);
 
-  const load = () =>
-    Api.getTour(id).then((t) => { setStops(t.stops.map(toEdit)); setExists(t.exists); }).catch(() => setStops([]));
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    Api.getTour(id)
+      .then((t) => { setStops(t.stops.map(toEdit)); setExists(t.exists); })
+      .catch(() => setStops([]));
+  }, [id]);
 
   const update = (i: number, patch: Partial<EditStop>) =>
     setStops((s) => s!.map((st, j) => (j === i ? { ...st, ...patch } : st)));

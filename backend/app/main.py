@@ -21,6 +21,7 @@ from app.routes import (
     ingestion,
     tours,
     websites,
+    widget,
 )
 from app.runtime import build_runtime
 from app.transport import websocket as ws_transport
@@ -63,6 +64,7 @@ app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(design.router)
 app.include_router(ws_transport.router)
+app.include_router(widget.router)
 
 # Admin dashboard API (tenant auth + website management; more in later phases).
 app.include_router(auth.router)

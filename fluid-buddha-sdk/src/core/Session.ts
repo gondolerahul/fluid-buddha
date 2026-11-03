@@ -101,6 +101,9 @@ export class Session {
       intelligence: this.config.intelligence,
       design: this.config.design,
     });
+    // The widget key is what authorises a customer site; the backend resolves
+    // the site and tier from it.
+    if (this.config.key) q.set('key', this.config.key);
     return `${base}/ws/voice?${q.toString()}`;
   }
 
@@ -311,6 +314,7 @@ export class Session {
         body: JSON.stringify({
           message: text,
           session_id: this.textSessionId,
+          key: this.config.key || undefined,
           site: this.config.site,
           intelligence: this.config.intelligence,
           design: this.config.design,

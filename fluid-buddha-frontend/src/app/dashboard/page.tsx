@@ -124,6 +124,7 @@ function AddWebsiteModal({
             <select className="select" value={design} onChange={(e) => setDesign(e.target.value)}>
               <option value="level1">level1 — panel</option>
               <option value="level2">level2 — particle</option>
+              <option value="level3">level3 — atmosphere</option>
             </select>
           </div>
         </div>

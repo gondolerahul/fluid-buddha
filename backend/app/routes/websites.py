@@ -18,7 +18,7 @@ from app.tenancy import store
 router = APIRouter(prefix="/tenant/websites", tags=["websites"])
 
 _INTELLIGENCE = {"basic", "high", "advance", "extreme"}
-_DESIGN = {"level1", "level2"}
+_DESIGN = {"level1", "level2", "level3"}  # the SDK's three design levels
 
 
 class WebsiteCreate(BaseModel):
@@ -100,6 +100,18 @@ async def update_website(
         db, site.id, tenant.id, **body.model_dump(exclude_none=True)
     )
     return updated.public()
+
+
+@router.post("/{website_id}/rotate-key")
+async def rotate_key(
+    website_id: str,
+    tenant: store.Tenant = Depends(current_tenant),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """Issue a new widget key; the old one stops working immediately. Also gives
+    sites created before widget keys existed their first key."""
+    site = await _owned(db, website_id, tenant)
+    return (await store.rotate_public_key(db, site.id, tenant.id)).public()
 
 
 @router.delete("/{website_id}", status_code=status.HTTP_204_NO_CONTENT)

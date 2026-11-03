@@ -35,10 +35,12 @@ export function AppHeader() {
 }
 
 const TABS = [
+  { key: "install", label: "Install" },
   { key: "ingestion", label: "Ingestion" },
   { key: "tour", label: "Tour" },
   { key: "cache", label: "Responses" },
   { key: "analytics", label: "Analytics" },
+  { key: "settings", label: "Settings" },
 ];
 
 export function WebsiteTabs({ id, name }: { id: string; name: string }) {

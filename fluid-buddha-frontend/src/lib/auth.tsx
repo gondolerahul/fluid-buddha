@@ -4,7 +4,7 @@
  * localStorage, and exposes login/register/logout. ``useRequireAuth`` redirects
  * unauthenticated visitors to /login.
  */
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Api, Tenant, clearToken, getToken, setToken } from "./api";
 

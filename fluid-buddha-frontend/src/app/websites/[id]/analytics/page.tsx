@@ -1,14 +1,16 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
 import {
-  Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
+  Bar, BarChart, CartesianGrid, Cell, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Analytics, Api } from "@/lib/api";
 import { fmtUSD } from "@/components/ui";
 
 type Group = "day" | "hour" | "session";
+
+const subscribeNoop = () => () => {};
 
 const CATS = [
   { key: "asr_cost", label: "ASR", color: "var(--c-asr)" },
@@ -30,21 +32,27 @@ const COLORS: Record<string, string> = {
 export default function AnalyticsPage() {
   const id = String(useParams().id);
   const [group, setGroup] = useState<Group>("day");
-  const [data, setData] = useState<Analytics | null>(null);
-  const [mounted, setMounted] = useState(false);
+  // Each result remembers which (site, grouping) it is for, so switching the
+  // grouping shows the skeleton until the matching data arrives — without a
+  // synchronous setState inside the effect.
+  const [result, setResult] = useState<{ key: string; data: Analytics | null } | null>(null);
+  const key = `${id}:${group}`;
+  const data = result?.key === key ? result.data : null;
+  // recharts measures the DOM, so charts render only on the client.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
-  useEffect(() => setMounted(true), []);
   useEffect(() => {
-    setData(null);
-    Api.analytics(id, group).then(setData).catch(() => setData(null));
-  }, [id, group]);
+    Api.analytics(id, group)
+      .then((d) => setResult({ key, data: d }))
+      .catch(() => setResult({ key, data: null }));
+  }, [id, group, key]);
 
   const t = data?.totals;
   const perf = data?.performance;
   const split = data?.cache_split;
 
   const pieData = data
-    ? CATS.map((c) => ({ name: c.label, value: (t as any)?.[c.key] || 0, color: COLORS[c.color] }))
+    ? CATS.map((c) => ({ name: c.label, value: t?.[c.key] || 0, color: COLORS[c.color] }))
         .filter((d) => d.value > 0)
     : [];
   const splitData = split
@@ -137,7 +145,7 @@ export default function AnalyticsPage() {
                       <span className="swatch" style={{ background: COLORS[c.color] }} />
                       <span className="muted">{c.label}</span>
                     </span>
-                    <span className="mono">{fmtUSD((t as any)?.[c.key] || 0)}</span>
+                    <span className="mono">{fmtUSD(t?.[c.key] || 0)}</span>
                   </div>
                 ))}
                 <div className="divider" />

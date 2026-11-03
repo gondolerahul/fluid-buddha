@@ -315,6 +315,19 @@ async def get_website_by_public_key(
     return _row_to_website(row) if row else None
 
 
+async def rotate_public_key(
+    db: AsyncSession, website_id: uuid.UUID, tenant_id: uuid.UUID
+) -> Optional[Website]:
+    """Replace a website's widget key. The previous key stops resolving at once."""
+    await ensure_tables(db)
+    await db.execute(
+        text("UPDATE tenant_websites SET public_key = :pk WHERE id = :id AND tenant_id = :tid"),
+        {"pk": generate_public_key(), "id": website_id, "tid": tenant_id},
+    )
+    await db.commit()
+    return await get_website(db, website_id, tenant_id)
+
+
 def is_reserved_site_key(site_key: str) -> bool:
     return site_key in _RESERVED_SITE_KEYS
 

@@ -46,8 +46,13 @@ export interface FluidBuddhaConfig {
   backend: string;
   /** HTTP base for the text fallback; derived from `backend` if omitted. */
   api: string;
-  /** Knowledge scope on the backend (one per site). */
+  /** Knowledge scope on the backend (one per site). Only built-in demo sites
+   *  can be reached by `site` alone; a customer site needs its `key`. */
   site: string;
+  /** Per-website widget key from the console's Install tab (`data-key`). When
+   *  set, the backend resolves the site and capability tier from it and ignores
+   *  `site`/`intelligence` sent by the browser. */
+  key: string;
   position: 'bottom-right' | 'bottom-left';
   accent: string;
   greeting: string;
@@ -76,6 +81,7 @@ const DEFAULTS: FluidBuddhaConfig = {
   backend: '',
   api: '',
   site: 'hirebuddha',
+  key: '',
   position: 'bottom-right',
   accent: '#c9a24a',
   greeting:
@@ -117,6 +123,8 @@ export function optionsFromAttributes(el: Element | null): FluidBuddhaOptions {
   if (api) opts.api = api;
   const site = get('site');
   if (site) opts.site = site;
+  const key = get('key');
+  if (key) opts.key = key;
   const accent = get('accent');
   if (accent) opts.accent = accent;
   const greeting = get('greeting');

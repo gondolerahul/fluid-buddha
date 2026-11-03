@@ -5,6 +5,16 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:8080";
 
+/** WebSocket base the embedded widget connects to (`data-backend`). Defaults to
+ *  the API host over ws(s). */
+export const WIDGET_BACKEND =
+  process.env.NEXT_PUBLIC_WIDGET_BACKEND?.replace(/\/$/, "") || API_BASE.replace(/^http/, "ws");
+
+/** Where the SDK bundle is hosted (the install snippet's `<script src>`).
+ *  Defaults to the SDK's local `npm run serve:demo` server. */
+export const SDK_URL =
+  process.env.NEXT_PUBLIC_SDK_URL || "http://localhost:4000/dist/fluid-buddha.global.js";
+
 const TOKEN_KEY = "fb_token";
 
 export function getToken(): string | null {
@@ -53,20 +63,33 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
 
   const text = await res.text();
   const data = text ? safeJson(text) : null;
-  if (!res.ok) {
-    const detail =
-      (data && (data.detail || data.message)) || res.statusText || "Request failed";
-    throw new ApiError(res.status, typeof detail === "string" ? detail : "Request failed");
-  }
+  if (!res.ok) throw new ApiError(res.status, errorMessage(data, res.statusText));
   return data as T;
 }
 
-function safeJson(text: string): any {
+function safeJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
     return null;
   }
+}
+
+/** A readable message from an error body. FastAPI validation errors (422) carry
+ *  a list of `{loc, msg}` entries, shown here as "field: message". */
+function errorMessage(data: unknown, fallback: string): string {
+  const body = (data && typeof data === "object" ? data : {}) as { detail?: unknown; message?: unknown };
+  const detail = body.detail ?? body.message;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((d: { loc?: unknown[]; msg?: string }) => {
+      const field = Array.isArray(d.loc) ? d.loc.filter((p) => p !== "body").join(".") : "";
+      const msg = (d.msg ?? "invalid").replace(/^Value error, /, "");
+      return field ? `${field}: ${msg}` : msg;
+    });
+    if (parts.length) return parts.join("; ");
+  }
+  return fallback || "Request failed";
 }
 
 // ---- domain types ----------------------------------------------------------
@@ -76,6 +99,8 @@ export type AuthResponse = { access_token: string; token_type: string; tenant: T
 export type Website = {
   id: string;
   site_key: string;
+  /** Widget key embedded in the install snippet; null for sites created before keys existed. */
+  public_key: string | null;
   name: string;
   domain: string | null;
   intelligence: string;
@@ -84,6 +109,30 @@ export type Website = {
   status: string;
   created_at: string;
 };
+
+export type Persona = { slug: string; label: string; focus: string; tone: string; landing: string };
+
+export type AgentProfile = {
+  site_key: string;
+  agent_name: string;
+  company_name: string;
+  brand_voice: string;
+  personas: Persona[];
+  closing_use_case: string;
+  routes: string[];
+  dynamic_prefixes: string[];
+};
+
+export type WidgetConfig = {
+  site_key: string;
+  intelligence: string;
+  design: string | null;
+  accent: string | null;
+  agent_name: string;
+  company_name: string;
+};
+
+export type Readiness = { status: string; db: boolean; mock_ai: boolean };
 
 export type Source = {
   id: string;
@@ -169,6 +218,17 @@ export const Api = {
     api<Website>(`/tenant/websites/${id}`, { method: "PATCH", body }),
   deleteWebsite: (id: string) =>
     api<void>(`/tenant/websites/${id}`, { method: "DELETE" }),
+  rotateKey: (id: string) =>
+    api<Website>(`/tenant/websites/${id}/rotate-key`, { method: "POST" }),
+
+  getProfile: (id: string) => api<AgentProfile>(`/tenant/websites/${id}/profile`),
+  updateProfile: (id: string, body: Partial<Omit<AgentProfile, "site_key">>) =>
+    api<AgentProfile>(`/tenant/websites/${id}/profile`, { method: "PUT", body }),
+
+  // Public checks used by the Install tab's "Test connection".
+  readiness: () => api<Readiness>("/readyz", { auth: false }),
+  widgetConfig: (key: string) =>
+    api<WidgetConfig>(`/widget/config?key=${encodeURIComponent(key)}`, { auth: false }),
 
   ingestion: (id: string) => api<IngestionStatus>(`/tenant/websites/${id}/ingestion`),
   addSource: (id: string, body: { kind: string; name: string; content: string }) =>

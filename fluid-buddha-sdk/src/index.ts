@@ -1,9 +1,11 @@
 // Public entry point.
 //
 //   <script src="fluid-buddha.global.js" data-backend="wss://voice.example.com"
-//           data-site="hirebuddha"></script>
+//           data-key="fbk_..."></script>
 //
-// auto-injects the overlay. Or programmatically:
+// auto-injects the overlay. `data-key` is the website's widget key from the
+// console's Install tab; built-in demo sites can use `data-site` instead. Or
+// programmatically:
 //
 //   import { init } from 'fluid-buddha';
 //   init({ backend: 'wss://voice.example.com', site: 'hirebuddha',

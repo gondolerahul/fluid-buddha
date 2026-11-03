@@ -17,7 +17,10 @@ Object.defineProperty(globalThis, 'navigator', { value: window.navigator, config
 globalThis.CustomEvent = window.CustomEvent;
 globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 // Deterministic WebSocket stub (never actually connects).
-globalThis.WebSocket = class { constructor() { this.readyState = 0; } close() {} send() {} };
+globalThis.WebSocket = class {
+  constructor(url) { this.readyState = 0; globalThis.__lastWsUrl = url; }
+  close() {} send() {}
+};
 
 const mod = await import('../dist/fluid-buddha.mjs');
 const { init, Session, Canvas, HostBridge } = mod;
@@ -180,6 +183,15 @@ ok(!document.querySelector('[data-fb-persona-veil]'), 'cross-fade veil is remove
 new HostBridge({}).setPersona('startups');
 await new Promise((r) => setTimeout(r, 250));
 ok(document.documentElement.getAttribute('data-fb-persona') === 'startups', 'default path sets data-fb-persona');
+
+// ---- Widget key reaches the backend ----
+const keyed = new Session(
+  { backend: 'ws://x', api: 'http://x', site: 'hirebuddha', key: 'fbk_test123', intelligence: 'advance', design: 'level1', position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
+  bridge,
+  { onStatus() {}, onUserTranscript() {}, onAgentMessage() {}, onComponent() {}, onPatch() {}, onSystem() {}, onPage() {} },
+);
+keyed.connect();
+ok(new URL(globalThis.__lastWsUrl).searchParams.get('key') === 'fbk_test123', 'widget key is sent on the voice socket');
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

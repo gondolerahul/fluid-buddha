@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Api, ApiError, IngestionStatus } from "@/lib/api";
 import { Modal, Spinner, StatusBadge, fmtDate, useToast } from "@/components/ui";
@@ -12,8 +12,8 @@ export default function IngestionPage() {
   const [running, setRunning] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = () => Api.ingestion(id).then(setData).catch(() => {});
-  useEffect(() => { load(); }, [id]);
+  const load = useCallback(() => Api.ingestion(id).then(setData).catch(() => {}), [id]);
+  useEffect(() => { load(); }, [load]);
 
   const run = async () => {
     setRunning(true);

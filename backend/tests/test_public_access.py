@@ -109,3 +109,55 @@ def test_resolver_locks_site_and_tier():
             await engine.dispose()
 
     asyncio.run(run())
+
+
+def test_widget_config_checks_a_key_without_a_turn():
+    with TestClient(app) as client:
+        h = _register(client)
+        site = client.post("/tenant/websites", json={
+            "name": "Config Co", "intelligence": "high", "design": "level3"}, headers=h).json()
+        r = client.get("/widget/config", params={"key": site["public_key"]})
+        assert r.status_code == 200, r.text
+        cfg = r.json()
+        assert cfg["site_key"] == site["site_key"]
+        assert (cfg["intelligence"], cfg["design"]) == ("high", "level3")
+        assert cfg["agent_name"] == "Pragya" and cfg["company_name"] == "Config Co"
+        bad = client.get("/widget/config", params={"key": "fbk_nope"})
+        assert bad.status_code == 403 and bad.json()["detail"] == "invalid_widget_key"
+
+
+def test_rotate_key_retires_the_old_key():
+    with TestClient(app) as client:
+        h = _register(client)
+        site = client.post("/tenant/websites", json={"name": "Rotate Co"}, headers=h).json()
+        old = site["public_key"]
+        rotated = client.post(f"/tenant/websites/{site['id']}/rotate-key", headers=h).json()
+        new = rotated["public_key"]
+        assert new and new != old and new.startswith("fbk_")
+        assert client.post("/chat", json={"message": "hi", "key": old}).status_code == 403
+        assert client.post("/chat", json={"message": "hi", "key": new}).status_code == 200
+        # Only the owner can rotate.
+        other = _register(client)
+        assert client.post(f"/tenant/websites/{site['id']}/rotate-key",
+                           headers=other).status_code == 404
+
+
+def test_origin_allow_list_enforced_outside_dev():
+    """In a non-dev environment a keyed site only answers its own domain."""
+    from app.config import get_settings
+    from app.tenancy.public_access import _origin_allowed
+    from app.tenancy.store import Website
+
+    get_settings().app_env = "production"  # restored by tests/conftest.py
+    site = Website(
+        id=uuid.uuid4(), tenant_id=uuid.uuid4(), site_key="acme", name="Acme",
+        domain="acme.com", intelligence="advance", design="level1", accent=None,
+        status="active", created_at=None,
+    )
+    assert _origin_allowed(site, "https://acme.com")
+    assert _origin_allowed(site, "https://www.acme.com")
+    assert not _origin_allowed(site, "https://evil.example")
+    assert not _origin_allowed(site, "https://notacme.com")  # suffix, not subdomain
+    assert not _origin_allowed(site, None)
+    site.domain = None  # no domain configured -> any origin
+    assert _origin_allowed(site, "https://anything.example")

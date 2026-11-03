@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Api, ApiError, CacheEntry } from "@/lib/api";
 import { Modal, Spinner, fmtDate, useToast } from "@/components/ui";
@@ -12,11 +12,12 @@ export default function CachePage() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<CacheEntry | null>(null);
 
-  const load = (q = search) =>
+  const fetchList = useCallback((q: string) =>
     Api.listCache(id, { search: q || undefined, limit: 100 })
       .then((r) => { setList(r.items); setTotal(r.total); })
-      .catch(() => setList([]));
-  useEffect(() => { load(""); }, [id]);
+      .catch(() => setList([])), [id]);
+  const load = () => fetchList(search);
+  useEffect(() => { fetchList(""); }, [fetchList]);
 
   const remove = async (eid: string) => {
     try { await Api.deleteCache(id, eid); load(); toast("Deleted"); }
@@ -70,7 +71,7 @@ export default function CachePage() {
                   </td>
                   <td className="muted" style={{ maxWidth: 320 }}>{e.answer_text}</td>
                   <td className="mono faint" style={{ fontSize: "0.78rem" }}>
-                    {e.actions.length ? e.actions.map((a, i) => <div key={i}>{(a as any).type}</div>) : "—"}
+                    {e.actions.length ? e.actions.map((a, i) => <div key={i}>{String(a.type ?? "")}</div>) : "—"}
                   </td>
                   <td>
                     {e.hit_count > 0 ? (
@@ -93,7 +94,8 @@ export default function CachePage() {
         </div>
       )}
 
-      <EditModal id={id} entry={editing} onClose={() => setEditing(null)}
+      {/* Remount per entry so the form initialises from it (no prop→state effect). */}
+      <EditModal key={editing?.id ?? "none"} id={id} entry={editing} onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); load(); toast("Saved to cache"); }}
         onError={(m) => toast(m, "err")} />
     </div>
@@ -105,16 +107,9 @@ function EditModal({
 }: {
   id: string; entry: CacheEntry | null; onClose: () => void; onSaved: () => void; onError: (m: string) => void;
 }) {
-  const [answer, setAnswer] = useState("");
-  const [actions, setActions] = useState("[]");
+  const [answer, setAnswer] = useState(entry?.answer_text ?? "");
+  const [actions, setActions] = useState(entry ? JSON.stringify(entry.actions, null, 2) : "[]");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (entry) {
-      setAnswer(entry.answer_text);
-      setActions(JSON.stringify(entry.actions, null, 2));
-    }
-  }, [entry]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
