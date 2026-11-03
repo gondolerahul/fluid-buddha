@@ -18,6 +18,7 @@ from app.db import get_session
 from app.tenancy import sources as src_store
 from app.tenancy import store
 from app.tenancy.deps import owned_website
+from app.tenancy.url_fetch import UnsafeURLError, check_url
 
 router = APIRouter(prefix="/tenant/websites/{website_id}", tags=["ingestion"])
 
@@ -61,6 +62,13 @@ async def add_source(
     site: store.Website = Depends(owned_website),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
+    if body.kind == "url":
+        # Reject unfetchable URLs up front (scheme, credentials, literal
+        # non-public IP). DNS is re-checked at fetch time (docs/defects.md D-5).
+        try:
+            check_url(body.content)
+        except UnsafeURLError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
     s = await src_store.add_source(
         db, website_id=site.id, kind=body.kind, name=body.name, content=body.content
     )

@@ -184,10 +184,9 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
     """Ingest a website's pending sources into its CORTEX tree, mark each source's
     outcome, and re-plan the guided tour. Self-contained (opens its own sessions)
     so it can run as a FastAPI ``BackgroundTask``."""
-    import httpx
-
     from app.db import SessionLocal
     from app.cortex.purge import delete_document_nodes, invalidate_site_caches
+    from app.tenancy.url_fetch import fetch_public_text
     from ingestion.ingest import ingest_documents, plan_and_save_tour
     from ingestion.scraper import SourceDocument
 
@@ -202,10 +201,9 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
     for s in pending:
         try:
             if s.kind == "url":
-                async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-                    resp = await client.get(s.content)
-                    resp.raise_for_status()
-                body = strip_html(resp.text)
+                # SSRF-guarded fetch: public addresses only, every redirect
+                # re-checked, size/type capped (docs/defects.md D-5).
+                body = strip_html(await fetch_public_text(s.content))
                 if not body:
                     raise ValueError("no readable text at URL")
                 doc = SourceDocument(filename=s.name or s.content, route=None, content=body,

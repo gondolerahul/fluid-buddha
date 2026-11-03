@@ -106,6 +106,8 @@ class VoiceSession:
         self._bg_tasks: set[asyncio.Task] = set()
         # Debounced live reaction to the visitor playing with a component.
         self._react_task: asyncio.Task | None = None
+        # The tour plan handed to the client on hello; tour_say speaks only its steps.
+        self._tour_plan = None
 
     # ---- low-level send -------------------------------------------------
     async def send(self, channel: str, type_: str, payload=None, sync_id=None) -> None:
@@ -248,6 +250,7 @@ class VoiceSession:
         if payload.get("tour", True) is not False:
             plan = await self._load_tour()
             if plan is not None:
+                self._tour_plan = plan
                 await self.send(Channel.EVENTS, "tour_plan",
                                 {"stops": [s.to_dict() for s in plan.stops]})
                 logger.info("ws[%s]: sent tour plan (%d stops)",
@@ -267,13 +270,28 @@ class VoiceSession:
     async def _on_tour_say(self, payload: dict) -> None:
         """Speak one pre-planned tour narration, then signal completion so the
         client performs the stop's move (scroll/navigate) only AFTER the voice
-        has finished — the exact speak/scroll sync the tour requires (Req 5)."""
-        text = (payload.get("text") or "").strip()
+        has finished — the exact speak/scroll sync the tour requires (Req 5).
+
+        The client only chooses WHICH step; the words always come from the
+        stored plan, so tour_say can't be used to speak arbitrary text."""
         index = payload.get("index")
+        text = await self._tour_narration(index)
+        if text is None:
+            await self.send(Channel.EVENTS, "error", {"reason": "unknown_tour_step"})
+            return
         if not text or await self._budget_blocked():
             return
         await self._cancel_response()
         self._response_task = asyncio.create_task(self._tour_say(text, index))
+
+    async def _tour_narration(self, index) -> str | None:
+        """Stored narration for tour step ``index``; None if there is no such step."""
+        if isinstance(index, bool) or not isinstance(index, int):
+            return None
+        plan = self._tour_plan or await self._load_tour()
+        if plan is None or not 0 <= index < len(plan.stops):
+            return None
+        return (plan.stops[index].narration or "").strip()
 
     async def _tour_say(self, text: str, index) -> None:
         try:

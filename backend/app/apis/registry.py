@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from app.config import get_settings
 
@@ -123,9 +124,12 @@ class SiteApiRegistry:
 
     @staticmethod
     def _fill_path(path: str, params: dict[str, Any]) -> str:
+        # Percent-encode each value (including "/", "?", "#") so a model-supplied
+        # param can only fill its own path segment, never add segments, a query
+        # or a fragment (e.g. "../../admin").
         out = path
         for k, v in params.items():
-            out = out.replace("{" + k + "}", str(v))
+            out = out.replace("{" + k + "}", quote(str(v), safe=""))
         return out
 
 
