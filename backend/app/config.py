@@ -11,12 +11,19 @@ from __future__ import annotations
 import uuid
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Namespace used to derive a stable per-site entity UUID from a short site key.
 # Deterministic so ingestion and query always resolve to the same knowledge tree.
 _SITE_NAMESPACE = uuid.UUID("a2a2a2a2-0000-0000-0000-00000000a2a2")
+
+# The shipped dev JWT secret. It is fine for local work, but the app refuses to
+# boot with it (or with an empty secret) when APP_ENV is not one of the dev
+# environments below — so a real deployment cannot accidentally sign tokens with
+# a secret that is public in this repo. See docs/defects.md D-2.
+_DEV_JWT_SECRET = "dev-fluid-buddha-secret-change-me-in-production-0001"
+_DEV_ENVS = {"local", "dev", "development", "test", "ci"}
 
 
 class Settings(BaseSettings):
@@ -36,8 +43,10 @@ class Settings(BaseSettings):
     )
 
     # ---- Database ----
+    # Host port 5434 matches docker-compose.yml, so a local `uvicorn` with no
+    # .env connects to the compose Postgres out of the box.
     cortex_db_url: str = (
-        "postgresql+asyncpg://cortex:cortex@localhost:5433/cortex"
+        "postgresql+asyncpg://cortex:cortex@localhost:5434/cortex"
     )
 
     # ---- AI provider ----
@@ -67,8 +76,9 @@ class Settings(BaseSettings):
     cortex_retrieval_top_k: int = 5
 
     # ---- Tenant auth (admin dashboard: register/login with JWT bearer) ----
-    # Override JWT_SECRET in production — the default is for local/dev only.
-    jwt_secret: str = "dev-fluid-buddha-secret-change-me-in-production-0001"
+    # The default below is for local/dev only; a non-dev APP_ENV must override it
+    # (enforced in _require_strong_secret).
+    jwt_secret: str = _DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_expire_min: int = 60 * 24 * 7  # access token lifetime (7 days)
 
@@ -92,6 +102,26 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def is_dev_env(self) -> bool:
+        return self.app_env.strip().lower() in _DEV_ENVS
+
+    @model_validator(mode="after")
+    def _require_strong_secret(self) -> "Settings":
+        """Refuse to run a non-dev environment with the public dev secret.
+
+        Local/dev/test/ci keep working with the shipped default; anything else
+        must set its own JWT_SECRET. See docs/defects.md D-2.
+        """
+        if not self.is_dev_env and (
+            not self.jwt_secret or self.jwt_secret == _DEV_JWT_SECRET
+        ):
+            raise ValueError(
+                f"JWT_SECRET must be set to a non-default value when APP_ENV "
+                f"is '{self.app_env}' (not one of {sorted(_DEV_ENVS)})."
+            )
+        return self
 
 
 # ---------------------------------------------------------------------------

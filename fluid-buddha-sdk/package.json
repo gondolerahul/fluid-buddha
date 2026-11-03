@@ -34,6 +34,9 @@
     "vertex-ai"
   ],
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
     "esbuild": "^0.23.0",
     "jsdom": "^24.1.0",

@@ -1,0 +1,12 @@
+# Backend tooling config. Runtime deps live in requirements.txt; test-only
+# deps in requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+# Backstop so a stalled WebSocket turn fails loudly instead of hanging the run
+# (see docs/defects.md D-7). The real fix is the isolation in tests/conftest.py;
+# this is the seatbelt.
+timeout = 60
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"

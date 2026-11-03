@@ -40,12 +40,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="A2UI Orchestrator", version="0.1.0", lifespan=lifespan)
 
+# A credentialed request cannot use a wildcard origin (CORS spec), and an
+# allow-all origin is too broad for the admin API that shares this app. The
+# console authenticates with a Bearer token (not cookies), so when origins are
+# left wide open we allow any origin but turn credentials off. Set an explicit
+# CORS_ORIGINS list in any deployed environment. See docs/defects.md D-21.
+wildcard = "*" in settings.cors_origin_list or settings.cors_origins.strip() == "*"
 cors_kwargs = {
     "allow_methods": ["*"],
     "allow_headers": ["*"],
-    "allow_credentials": True,
+    "allow_credentials": not wildcard,
 }
-if "*" in settings.cors_origin_list or settings.cors_origins.strip() == "*":
+if wildcard:
     cors_kwargs["allow_origin_regex"] = r".*"
 else:
     cors_kwargs["allow_origins"] = settings.cors_origin_list

@@ -11,7 +11,9 @@ globalThis.window = window;
 globalThis.document = window.document;
 globalThis.customElements = window.customElements;
 globalThis.HTMLElement = window.HTMLElement;
-globalThis.navigator = window.navigator;
+// `navigator` is a getter-only global on Node >= 20, so a plain assignment
+// throws. Define it instead so the test runs on current Node unmodified.
+Object.defineProperty(globalThis, 'navigator', { value: window.navigator, configurable: true });
 globalThis.CustomEvent = window.CustomEvent;
 globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 // Deterministic WebSocket stub (never actually connects).
