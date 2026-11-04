@@ -564,5 +564,47 @@ offline.remove();
   pinned.remove();
 }
 
+// ---- Recap pages (M2-6) ----
+{
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    calls.push({ url: u, body: init && init.body ? JSON.parse(init.body) : null });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => ({ experiment_id: null, arm: null, goal_path: null, overrides: {}, defaults: {} }) };
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'Plans start at 2,000.', session_id: 'sess-recap', actions: [], components: [] }) };
+    if (u.endsWith('/recap')) return { ok: true, status: 200, json: async () => ({ url: 'https://api.example.com/r/tok123', emailed: true }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const w = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_recap_site', site: 'x', design: 'level1' });
+  await settle();
+  w.ask('What does it cost?');
+  await settle();
+  w.ask('Please email me a recap at Ana@Example.com');
+  await settle();
+  const rc = calls.find((c) => c.url.endsWith('/recap'));
+  ok(rc && rc.body.session_id === 'sess-recap' && rc.body.email === 'Ana@Example.com' && rc.body.key === 'fbk_recap_site',
+    '"email me a recap" asks for a recap of this conversation, with the address');
+  ok(!calls.some((c) => c.url.endsWith('/chat') && c.body.message.includes('recap')), 'the recap request is not sent to the agent');
+  const link = [...w.shadowRoot.querySelectorAll('.bubble.pragya a')].find((a) => a.href === 'https://api.example.com/r/tok123');
+  ok(link && link.target === '_blank' && link.rel.includes('noopener') && w.shadowRoot.textContent.includes('emailed it to Ana@Example.com'),
+    'the recap link shows as a link, and says it was emailed');
+  w.remove();
+
+  // The recap page's renderer draws each component in its slot.
+  const { readFile } = await import('node:fs/promises');
+  const code = await readFile(new URL('../dist/fluid-buddha-recap.global.js', import.meta.url), 'utf8');
+  document.body.innerHTML = '<div data-fb-slot="c0"><div class="comp-fallback">flow</div></div>'
+    + '<div data-fb-slot="c1"></div><script type="application/json" id="fb-recap-data">'
+    + JSON.stringify([{ slot: 'c0', component: { component_type: 'flowchart', initial_state: { nodes: [{ label: 'A' }, { label: 'B' }], edges: [] } } },
+      { slot: 'c1', component: { component_type: 'roi_calculator', initial_state: { seats: 5, monthly_cost: 1000, hours_saved: 40 } } },
+      { slot: 'nope', component: { component_type: 'chart' } }]) + '</script>';
+  new Function(code)();
+  const s0 = document.querySelector('[data-fb-slot="c0"]').shadowRoot;
+  ok(s0 && s0.querySelector('.card .flow-node') && s0.querySelector('style').textContent.includes('.card'),
+    'the recap page draws a flowchart with the widget styles');
+  ok(document.querySelector('[data-fb-slot="c1"]').shadowRoot.querySelector('.roi'), 'and an ROI calculator');
+  document.body.innerHTML = '';
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

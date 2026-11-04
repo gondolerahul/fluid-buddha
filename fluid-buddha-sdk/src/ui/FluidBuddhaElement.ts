@@ -529,7 +529,18 @@ export class FluidBuddhaElement extends HTMLElement {
   // ---- UI helpers ----
   private addMessage(sender: 'user' | 'pragya' | 'system', text: string, grounding?: Grounding): void {
     const bubble = h('div', `bubble ${sender}`);
-    bubble.append(h('div', undefined, text));
+    const body = h('div');
+    // Web links in the text become links (e.g. a recap, M2-6); the rest stays text.
+    text.split(/(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)])/).forEach((part, i) => {
+      if (i % 2) {
+        const a = h('a', undefined, part);
+        a.href = part;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        body.append(a);
+      } else body.append(part);
+    });
+    bubble.append(body);
     const sources = sourcesEl(grounding, (route) => this.hostBridge?.navigate(route));
     if (sources) bubble.append(sources);
     this.messagesEl.insertBefore(bubble, this.canvasEl);

@@ -59,6 +59,9 @@ interface AnyRecognition {
   onerror: (() => void) | null;
 }
 
+const RECAP_RE =
+  /\b(send|email|mail|share|give) me (this|that|a (recap|summary|copy)|the (recap|summary|conversation))\b|\brecap (link|please)\b/i;
+
 export class Session {
   private client: VoiceClient | null = null;
   private capture: AudioCapture | null = null;
@@ -394,6 +397,13 @@ export class Session {
   // ---- text ----
   sendText(text: string): void {
     if (!text.trim()) return;
+    // "Send me this" / "email me a recap at me@x.com" (M2-6): a shareable
+    // recap of the conversation instead of a turn.
+    if (this.config.key && RECAP_RE.test(text)) {
+      this.cb.onUserTranscript(text, false);
+      void this.recap(text.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/)?.[0]);
+      return;
+    }
     this.abortTour(); // a typed question takes over from the tour
     this.connect();
     if (this.client?.isOpen) {
@@ -401,6 +411,30 @@ export class Session {
       this.client.sendText(text); // server echoes the user transcript + answer
     } else {
       void this.httpFallback(text);
+    }
+  }
+
+  /** Build (or refresh) this conversation's recap link, optionally emailed. */
+  async recap(email?: string): Promise<void> {
+    const say = (t: string) => this.cb.onAgentMessage(t);
+    try {
+      const res = await fetch(`${(this.config.api || '').replace(/\/$/, '')}/recap`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: this.config.key, site: this.config.site,
+          session_id: this.wsSessionId ?? this.textSessionId, email }),
+      });
+      if (res.status === 404 || res.status === 422) {
+        say(res.status === 404 ? 'Ask me something first, then I can put together a recap.'
+          : "That email address doesn't look right.");
+        return;
+      }
+      const d = await res.json();
+      if (!res.ok || !d.url) throw new Error();
+      say(`Here's your recap. Open it on any device or forward it to your team: ${d.url}`
+        + (d.emailed ? ` I've also emailed it to ${email}.` : ''));
+    } catch {
+      say("I couldn't make a recap just now. Please try again in a moment.");
     }
   }
 

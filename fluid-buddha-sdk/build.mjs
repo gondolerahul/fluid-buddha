@@ -59,6 +59,9 @@ await Promise.all([
           entryNames: 'fluid-buddha', chunkNames: 'chunks/[name]-[hash]',
           outExtension: { '.js': '.mjs' } }),
   build({ ...shared, format: 'cjs', outfile: 'dist/fluid-buddha.cjs' }),
+  // The recap page's renderer (M2-6): components only, no widget.
+  build({ ...shared, entryPoints: ['src/recap.ts'], format: 'iife', globalName: 'FluidBuddhaRecap',
+          minify: true, outfile: 'dist/fluid-buddha-recap.global.js' }),
 ]);
 
-console.log('built dist/fluid-buddha.{global.js,mjs,cjs} + particles');
+console.log('built dist/fluid-buddha.{global.js,mjs,cjs} + particles + recap');
