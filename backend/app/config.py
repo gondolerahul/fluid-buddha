@@ -130,6 +130,9 @@ class Settings(BaseSettings):
     # Insights v2 (M2-5): how often new visitor turns are classified, and how
     # often accounts are checked for a due weekly digest. 0 = off.
     insights_classify_seconds: int = 20
+    # Where the widget's built files are served from (the recap page loads the
+    # SDK's recap bundle from here, M2-6).
+    widget_sdk_base: str = "http://localhost:4000/dist"
     digest_check_seconds: int = 600
     # Base URL of the console, for links in emails (invitations, digests).
     console_url: str = "http://localhost:3001"

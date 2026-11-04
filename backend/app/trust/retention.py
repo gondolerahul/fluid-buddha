@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import session_scope
+from app.recaps import store as recap_store
 from app.trust.settings import DEFAULT_TRANSCRIPT_DAYS
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,9 @@ async def purge_expired(db: AsyncSession) -> dict[str, int]:
         # What people said during a takeover (M2-2) is part of the transcript.
         "live_messages": await _purge(db, "live_messages", "at",
                                       "transcript_retention_days", DEFAULT_TRANSCRIPT_DAYS),
+        # Shared recap links past their expiry (M2-6); a recap also goes with
+        # its conversation (ON DELETE CASCADE), so erasure removes it too.
+        "recaps": await recap_store.purge_expired(db),
     }
     await db.commit()
     return removed

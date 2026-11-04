@@ -34,7 +34,7 @@ async def record_turn(
     question: str, answer: str, intent: Optional[str] = None,
     persona: Optional[str] = None, page: Optional[str] = None,
     grounding: Optional[dict] = None, served_from_cache: bool = False,
-    consent_at: Optional[datetime] = None,
+    consent_at: Optional[datetime] = None, components: Optional[list] = None,
 ) -> None:
     """Append one turn to the session's conversation (created on first turn).
     ``consent_at`` is when the visitor allowed the microphone (WS8). The caller
@@ -62,14 +62,17 @@ async def record_turn(
     await db.execute(text(
         "INSERT INTO conversation_turns "
         "(id, conversation_id, site_key, question, q_norm, answer, intent, persona, "
-        " page, found, confidence, sources, served_from_cache) VALUES "
-        "(:id, :c, :s, :q, :qn, :a, :i, :p, :pg, :f, :conf, CAST(:src AS jsonb), :cached)"
+        " page, found, confidence, sources, served_from_cache, components) VALUES "
+        "(:id, :c, :s, :q, :qn, :a, :i, :p, :pg, :f, :conf, CAST(:src AS jsonb), :cached, "
+        " CAST(:comp AS jsonb))"
     ), {
         "id": uuid.uuid4(), "c": conv_id, "s": site_key, "q": question[:2000],
         "qn": normalize_question(question), "a": answer or "", "i": intent,
         "p": persona, "pg": page, "f": found,
         "conf": float(g.get("confidence") or 0.0),
         "src": json.dumps(g.get("sources") or []), "cached": served_from_cache,
+        # The components shown (their specs), so a recap can draw them again (M2-6).
+        "comp": json.dumps(list(components or [])[:6], default=str),
     })
 
 

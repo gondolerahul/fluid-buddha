@@ -224,9 +224,9 @@ def test_visitor_leaving_ends_the_takeover():
             base = f"/tenant/websites/{site['id']}/live/{sid}"
             client.post(f"{base}/takeover", headers=owner_h)
             _until(ws, _is("EVENTS", "operator_joined"))
-        for _ in range(40):
+        for _ in range(100):   # up to 5 s: the cleanup is async and the suite's DB is busy
             conv = client.get(base, headers=owner_h).json()
-            if conv["takeover"] is None:
+            if conv["takeover"] is None and "The visitor left" in [e["text"] for e in conv["events"]]:
                 break
             time.sleep(0.05)
         assert conv["takeover"] is None and conv["live"] is False

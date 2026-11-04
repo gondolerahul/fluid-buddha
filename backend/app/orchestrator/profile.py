@@ -76,6 +76,9 @@ class SiteProfile:
     tour_enabled: bool = True
     # Products visitors compare this one with; Insights counts their mentions (M2-5).
     competitors: list[str] = field(default_factory=list)
+    # The next step a recap page offers (M2-6), e.g. "Book a demo" → URL.
+    cta_label: str = ""
+    cta_url: str = ""
 
     @property
     def persona_slugs(self) -> list[str]:
@@ -117,7 +120,15 @@ class SiteProfile:
                              if merged.get("default_persona") in {p.slug for p in personas} else ""),
             tour_enabled=merged.get("tour_enabled") is not False,
             competitors=_clean_names(merged.get("competitors") or []),
+            cta_label=str(merged.get("cta_label") or "").strip()[:60],
+            cta_url=_clean_cta(str(merged.get("cta_url") or "")),
         )
+
+
+def _clean_cta(url: str) -> str:
+    url = url.strip()
+    bad = set("\"'<> ") | {"\r", "\n", "\t"}
+    return url if url.startswith("https://") and len(url) <= 500 and not bad & set(url) else ""
 
 
 def _clean_names(names: list[Any]) -> list[str]:

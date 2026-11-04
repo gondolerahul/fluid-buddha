@@ -722,7 +722,7 @@ class VoiceSession:
                 question=pii.stored(transcript), answer=pii.stored(think.answer_text),
                 intent=route.intent,
                 grounding=think.grounding.to_dict(), served_from_cache=False,
-                leads=think.leads,
+                leads=think.leads, components=[c.to_dict() for c in think.components],
             ))
         except asyncio.CancelledError:
             logger.info("ws[%s]: turn CANCELLED before completion (barge-in or "
@@ -940,7 +940,7 @@ class VoiceSession:
             logger.warning("ws[%s]: record_turn failed: %s", self.session_id[:8], exc)
 
     async def _record_conversation(self, *, question, answer, intent, grounding,
-                                   served_from_cache, leads=()) -> None:
+                                   served_from_cache, leads=(), components=()) -> None:
         """Append the turn to this session's transcript (Insights, WS10), then
         save any lead the agent captured in it (WS7)."""
         from app.insights.store import record_turn as record_conversation_turn
@@ -951,7 +951,7 @@ class VoiceSession:
                     channel="voice", question=question, answer=answer, intent=intent,
                     persona=self.state.persona, page=self.state.page,
                     grounding=grounding, served_from_cache=served_from_cache,
-                    consent_at=self._consent_at,
+                    consent_at=self._consent_at, components=list(components),
                 )
         except Exception as exc:
             logger.warning("ws[%s]: conversation record failed: %s",
@@ -1087,6 +1087,7 @@ class VoiceSession:
         self._spawn(self._record_conversation(
             question=transcript, answer=best.answer_text, intent="cached",
             grounding=best.grounding, served_from_cache=True,
+            components=list(getattr(best, "components", None) or []),
         ))
 
     async def _emit_cached_action(self, action: dict) -> None:

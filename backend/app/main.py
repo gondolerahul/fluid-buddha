@@ -35,6 +35,7 @@ from app.routes import (
     tours,
     triggers,
     digest,
+    recaps,
     websites,
     widget,
 )
@@ -110,3 +111,5 @@ app.include_router(triggers.public)
 app.include_router(triggers.admin)
 app.include_router(digest.admin)
 app.include_router(digest.public)
+app.include_router(recaps.public)
+app.include_router(recaps.admin)

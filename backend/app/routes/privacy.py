@@ -22,7 +22,8 @@ from app.tenancy import store
 from app.tenancy.deps import owned_website
 from app.trust import retention
 from app.trust.settings import (
-    LEAD_RETENTION_DAYS, TRANSCRIPT_RETENTION_DAYS, Privacy, get_privacy, save_privacy,
+    DEFAULT_RECAP_DAYS, LEAD_RETENTION_DAYS, RECAP_DAYS, TRANSCRIPT_RETENTION_DAYS, Privacy,
+    get_privacy, save_privacy,
 )
 
 router = APIRouter(prefix="/tenant/websites/{website_id}", tags=["privacy"])
@@ -34,6 +35,14 @@ class PrivacyUpdate(BaseModel):
     privacy_policy_url: Optional[str] = Field(None, max_length=500)
     transcript_retention_days: int
     lead_retention_days: int
+    recap_days: int = DEFAULT_RECAP_DAYS
+
+    @field_validator("recap_days")
+    @classmethod
+    def _recaps(cls, v: int) -> int:
+        if v not in RECAP_DAYS:
+            raise ValueError(f"must be one of {RECAP_DAYS}")
+        return v
 
     @field_validator("privacy_policy_url")
     @classmethod

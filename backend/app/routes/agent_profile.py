@@ -61,6 +61,15 @@ class ProfileUpdate(BaseModel):
     default_persona: Optional[str] = Field(None, max_length=40)
     tour_enabled: Optional[bool] = None
     competitors: Optional[list[str]] = Field(None, max_length=30)
+    cta_label: Optional[str] = Field(None, max_length=60)
+    cta_url: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("cta_url")
+    @classmethod
+    def _https(cls, v: Optional[str]) -> Optional[str]:
+        if v and not v.strip().startswith("https://"):
+            raise ValueError("the call-to-action link must start with https://")
+        return v
 
     @field_validator("personas")
     @classmethod

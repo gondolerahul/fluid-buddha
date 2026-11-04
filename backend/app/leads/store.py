@@ -133,7 +133,16 @@ def lead_dict(r: Any) -> dict[str, Any]:
         "delivered_at": r["delivered_at"].isoformat() if r["delivered_at"] else None,
         "delivery_error": r["delivery_error"],
         "created_at": r["created_at"].isoformat(),
+        # The conversation's recap link, if the visitor asked for one (M2-6).
+        "recap": ({"views": r["recap_views"], "forwards": max(0, (r["recap_viewers"] or 0) - 1),
+                   "last_viewed_at": r["recap_last"].isoformat() if r["recap_last"] else None}
+                  if r.get("recap_views") is not None else None),
     }
+
+
+_WITH_RECAP = ("l.*, r.views AS recap_views, r.viewers AS recap_viewers, "
+                "r.last_viewed_at AS recap_last FROM leads l "
+                "LEFT JOIN recaps r ON r.conversation_id = l.conversation_id")
 
 
 async def list_leads(db: AsyncSession, site_key: str, *, limit: int = 50,
@@ -141,13 +150,13 @@ async def list_leads(db: AsyncSession, site_key: str, *, limit: int = 50,
     total = (await db.execute(text("SELECT count(*) FROM leads WHERE site_key = :s"),
                               {"s": site_key})).scalar() or 0
     rows = (await db.execute(text(
-        "SELECT * FROM leads WHERE site_key = :s ORDER BY created_at DESC "
+        f"SELECT {_WITH_RECAP} WHERE l.site_key = :s ORDER BY l.created_at DESC "
         "LIMIT :lim OFFSET :off"), {"s": site_key, "lim": limit, "off": offset})).mappings().all()
     return [lead_dict(r) for r in rows], int(total)
 
 
 async def get_lead(db: AsyncSession, site_key: str, lead_id: uuid.UUID) -> Optional[dict]:
-    row = (await db.execute(text("SELECT * FROM leads WHERE id = :id AND site_key = :s"),
+    row = (await db.execute(text(f"SELECT {_WITH_RECAP} WHERE l.id = :id AND l.site_key = :s"),
                             {"id": lead_id, "s": site_key})).mappings().first()
     return lead_dict(row) if row else None
 

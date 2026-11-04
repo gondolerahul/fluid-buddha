@@ -40,7 +40,8 @@ def _ui_sid() -> str:
 
 
 async def _record_conversation(state, sid: str, question: str, answer: str, intent,
-                               grounding, *, served_from_cache: bool, leads=()) -> None:
+                               grounding, *, served_from_cache: bool, leads=(),
+                               components=()) -> None:
     """Append the turn to this session's transcript (Insights, WS10; best-effort),
     then save any lead the agent captured in it (WS7)."""
     from app.insights.store import record_turn as record_conversation_turn
@@ -51,6 +52,7 @@ async def _record_conversation(state, sid: str, question: str, answer: str, inte
                 question=question, answer=answer, intent=intent,
                 persona=state.persona, page=state.page,
                 grounding=grounding, served_from_cache=served_from_cache,
+                components=list(components),
             )
     except Exception as exc:
         logger.warning("conversation record failed: %s", exc)
@@ -192,7 +194,8 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
         except Exception as exc:
             logger.debug("usage record (cached) skipped: %s", exc)
         await _record_conversation(state, sid, req.message, replay.answer_text, "cached",
-                                   replay.grounding, served_from_cache=True)
+                                   replay.grounding, served_from_cache=True,
+                                   components=replay.components)
         return {
             "text": replay.answer_text, "ack": "", "intent": "cached",
             "persona": state.persona, "actions": replay.actions,
@@ -247,7 +250,8 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     await _record_conversation(state, sid, pii.stored(message),
                                pii.stored(result.answer_text), result.intent,
                                result.grounding.to_dict(), served_from_cache=False,
-                               leads=result.leads)
+                               leads=result.leads,
+                               components=[c.to_dict() for c in result.components])
 
     payload = result.to_message_dict()
     payload["text"] = PiiVault.spoken(payload["text"])
