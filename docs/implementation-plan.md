@@ -171,7 +171,9 @@ Exit gate: *≥5 paying design partners, ≥1 with a statistically supported lif
 
 ## Part C — Milestones M2 & M3 (roadmap Phases 2–3, summarized)
 
-These inherit the roadmap's detail; listed here so the backlog is complete.
+These inherit the roadmap's detail; listed here so the backlog is complete. **Detailed,
+decided plan (2026-11-04, omnichannel and white-label out of scope):
+[m2-m3-plan.md](m2-m3-plan.md).**
 
 **M2 · Repeatable growth (months 3–6, Phase 2)** 🟢
 Insights v2 (objection/competitor mining, weekly CMO digest) · experimentation engine · proactive triggers (pricing dwell, exit intent, return) · shareable recap pages · CMS plugins (WordPress/Webflow/Framer/Shopify) + GTM + React/Vue wrappers · custom-component SDK + actions marketplace · team/RBAC/SSO/audit log · vertical templates · voice handoff (WebRTC) · SOC 2 Type I + EU residency + DPA.
