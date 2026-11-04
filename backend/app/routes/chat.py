@@ -24,7 +24,8 @@ from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.state import normalize_sections
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
 from app.transport.guard import check_public_budget
-from app.transport.session_store import store
+from app.observability.tracing import span
+from app.transport.session_store import store as sessions
 from app.trust.pii import PiiVault, contains_pii
 from app.trust.settings import get_privacy
 
@@ -94,7 +95,17 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     await ensure_profile(resolved.site_key)
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
 
-    sid, state = store.get_or_create(req.session_id, site_key=resolved.site_key)
+    sid, state = await sessions.load(req.session_id, site_key=resolved.site_key)
+    try:
+        with span("chat.turn", site=resolved.site_key):
+            return await _turn(req, rt, t0, resolved, privacy, sid, state)
+    finally:
+        # Saved after every turn; shared across replicas with REDIS_URL (F-3).
+        await sessions.save(sid, state)
+
+
+async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
+                state) -> dict:
     state.site_key = resolved.site_key
     state.intelligence = resolved.intelligence
     if req.icp:

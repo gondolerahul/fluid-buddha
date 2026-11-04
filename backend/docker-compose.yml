@@ -21,6 +21,18 @@ services:
       timeout: 5s
       retries: 10
 
+  # Shared state for more than one backend replica (F-3). Off by default.
+  redis:
+    image: redis:7-alpine
+    container_name: a2ui-redis
+    profiles: ["scale"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build: .
     container_name: a2ui-backend
@@ -42,6 +54,14 @@ services:
       # Public widget origins ("*" is fine: each request is also checked against
       # the website's domain) vs. the admin API, which only the console calls.
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      # Production plumbing (F-3). REDIS_URL shares chat sessions and the rate
+      # limit between replicas: start the redis service with
+      #   REDIS_URL=redis://redis:6379/0 docker compose --profile scale up -d
+      REDIS_URL: ${REDIS_URL:-}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
       ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://localhost:3001,http://127.0.0.1:3001}
       # Seed the knowledge base from the mounted website docs on first boot.
       INGEST_ON_START: "true"

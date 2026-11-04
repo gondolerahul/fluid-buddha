@@ -77,7 +77,8 @@ def test_chat_masks_pii_before_the_model_and_storage():
         assert "jo@acme.io" not in r["text"] and "<EMAIL" not in r["text"]
 
         # What the model sees next turn (the history) holds placeholders only.
-        _, state = store.get_or_create(r["session_id"], site_key=site["site_key"])
+        sid, state = asyncio.run(store.load(r["session_id"], site_key=site["site_key"]))
+        assert sid == r["session_id"]
         assert "<EMAIL_1>" in state.history[0].text and "acme.io" not in state.history[0].text
 
         # The lead still gets the real address the visitor typed.

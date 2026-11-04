@@ -6,8 +6,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 # Dependencies first for layer caching.
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY requirements.txt requirements-observability.txt ./
+RUN pip install -r requirements.txt -r requirements-observability.txt
 
 # Application code.
 COPY app ./app

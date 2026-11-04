@@ -39,6 +39,9 @@ from app.orchestrator.state import (
     normalize_sections,
 )
 from app.transport.envelope import Channel, make, pack_audio, unpack_audio
+from app.observability import metrics as prom
+from app.observability.context import session_id as log_session_id
+from app.observability.tracing import span
 from app.trust.pii import PiiVault, contains_pii, redact
 from app.trust.settings import Privacy, get_privacy
 
@@ -139,6 +142,12 @@ class VoiceSession:
         self.privacy = Privacy()
         self._consent_at: datetime | None = None
         self._consent_asked = False
+        # Time to first audio (F-3): when the current question arrived, and how
+        # long until the first speech / the first answer speech went out.
+        self._turn_t0: float | None = None
+        self._turn_path = "fresh"
+        self._first_audio_ms: float | None = None
+        self._first_answer_ms: float | None = None
 
     # ---- low-level send -------------------------------------------------
     async def send(self, channel: str, type_: str, payload=None, sync_id=None) -> None:
@@ -147,6 +156,7 @@ class VoiceSession:
     # ---- lifecycle ------------------------------------------------------
     async def run(self) -> None:
         await self.ws.accept()
+        log_session_id.set(self.session_id[:8])  # on every log line of this socket
         try:
             async with session_scope() as db:
                 self.privacy = await get_privacy(db, self.state.site_key)
@@ -278,6 +288,7 @@ class VoiceSession:
                 if ev.is_final and ev.text:
                     final = ev.text
         except Exception as exc:  # ASR failure shouldn't kill the socket
+            prom.ENGINE_ERRORS.labels("asr").inc()
             logger.warning("ASR failed: %s", exc)
         return final
 
@@ -317,6 +328,8 @@ class VoiceSession:
         self._last_utt_text = transcript
         self._last_utt_at = now
         await self._cancel_response()  # supersede any in-flight response
+        self._turn_t0, self._turn_path = now, "fresh"
+        self._first_audio_ms = self._first_answer_ms = None
         self._response_task = asyncio.create_task(self._respond(transcript))
 
     async def _on_hello(self, payload: dict) -> None:
@@ -434,17 +447,29 @@ class VoiceSession:
         # Cache-first (Feature 2): if we've answered a near-identical question for
         # this persona before and have enough history, replay it verbatim
         # (components + byte-exact audio) instead of re-thinking.
-        if not personal and not followup and await self._maybe_replay(transcript):
-            return
+        try:
+            with span("voice.turn", site=self.state.site_key) as turn_span:
+                if not personal and not followup and await self._maybe_replay(transcript):
+                    if turn_span is not None:
+                        turn_span.set_attribute("turn.path", "cached")
+                    return
+                await self._respond_fresh(heard, transcript, personal, followup)
+        finally:
+            self._turn_t0 = None  # later speech (a reaction, the tour) isn't this turn
+
+    async def _respond_fresh(self, heard: str, transcript: str, personal: bool,
+                             followup: bool) -> None:
+        pii = self.state.pii
 
         think_task: asyncio.Task | None = None
-        t0 = time.monotonic()
+        t0 = self._turn_t0 or time.monotonic()  # timed from the question's arrival
         try:
             await self.send(Channel.STATE, "transcript", {"text": heard})
 
             # 1. Fast Router — instant ack (latency masking, Req 3.3.1)
             self._persona_emitted = self.state.persona
-            route = await self.rt.loop.route(transcript, self.state)
+            with prom.timed("route"):
+                route = await self.rt.loop.route(transcript, self.state)
 
             # Adaptive persona + probe decision (Feature 1): switch only on a
             # confident, changed read; decide whether to weave in a qualifying
@@ -527,7 +552,7 @@ class VoiceSession:
             self._spawn(self._record_usage(
                 intent=route.intent, transcript=transcript, ack=route.ack,
                 answer_text=think.answer_text, think=think,
-                served_from_cache=False, t0=t0,
+                served_from_cache=False, t0=t0, ttfa_ms=self._first_audio_ms,
             ))
             self._spawn(self._record_conversation(
                 question=pii.stored(transcript), answer=pii.stored(think.answer_text),
@@ -541,6 +566,7 @@ class VoiceSession:
             await self.send(Channel.EVENTS, "interrupted", {})
             raise
         except Exception as exc:
+            prom.ENGINE_ERRORS.labels("llm").inc()
             logger.exception("ws[%s]: response failed: %s", self.session_id[:8], exc)
             await self.send(Channel.EVENTS, "error", {"message": "Something went wrong."})
         finally:
@@ -560,6 +586,12 @@ class VoiceSession:
         loop; otherwise the lean single-shot path answers (Hybrid). ``related``
         injects cached near-matches as context; ``probe`` asks the model to weave
         in a qualifying question."""
+        with prom.timed("think_heavy" if heavy else "think_lean"):
+            return await self._think_in_session(transcript, persona, heavy,
+                                                related=related, probe=probe)
+
+    async def _think_in_session(self, transcript: str, persona, heavy: bool,
+                                related=None, probe: bool = False):
         async with session_scope() as db:
             bridge = self.rt.bridge(db, self.state.site_key)
             if heavy:
@@ -644,6 +676,10 @@ class VoiceSession:
                     t.cancel()
 
     async def _synthesize(self, seg_text: str, q: asyncio.Queue) -> None:
+        with prom.timed("tts"):
+            await self._synthesize_segment(seg_text, q)
+
+    async def _synthesize_segment(self, seg_text: str, q: asyncio.Queue) -> None:
         """Produce one segment's PCM into ``q``, then None. Serves byte-exact
         cached PCM when we've synthesised this exact text + voice before, else
         streams live TTS and persists it for next time (Feature 2 audio cache).
@@ -666,6 +702,7 @@ class VoiceSession:
             raise
         except Exception as exc:
             buf.clear()
+            prom.ENGINE_ERRORS.labels("tts").inc()
             logger.warning("ws[%s]: TTS failed: %s", self.session_id[:8], exc)
         finally:
             q.put_nowait(None)
@@ -677,7 +714,20 @@ class VoiceSession:
         frame = max(1, int(self.rt.settings.tts_sample_rate * 0.2)) * 2  # 16-bit mono
         return [pcm[i:i + frame] for i in range(0, len(pcm), frame)]
 
+    def _note_audio_out(self) -> None:
+        """Time to first audio, and to first answer audio, for this turn."""
+        if self._turn_t0 is None:
+            return  # welcome / tour / reaction: not a question
+        elapsed = time.monotonic() - self._turn_t0
+        if self._first_audio_ms is None:
+            self._first_audio_ms = elapsed * 1000.0
+            prom.FIRST_AUDIO_SECONDS.labels(self._turn_path).observe(elapsed)
+        if self._answer_speaking and self._first_answer_ms is None:
+            self._first_answer_ms = elapsed * 1000.0
+            prom.FIRST_ANSWER_AUDIO_SECONDS.labels(self._turn_path).observe(elapsed)
+
     async def _send_audio(self, pcm: bytes, seg_id: str) -> None:
+        self._note_audio_out()
         if self.binary_audio:
             await self.ws.send_bytes(pack_audio(seg_id, pcm))
         else:
@@ -749,7 +799,7 @@ class VoiceSession:
 
     async def _record_usage(
         self, *, intent, transcript, ack="", answer_text="", think=None,
-        served_from_cache=False, t0=None,
+        served_from_cache=False, t0=None, ttfa_ms=None,
     ) -> None:
         """Persist one voice-turn usage event for analytics (req F/G). ASR
         duration is estimated from the transcript length (~15 chars/sec of
@@ -764,6 +814,7 @@ class VoiceSession:
                 asr_ms=(len(transcript or "") / 15.0) * 1000.0,
                 tts_chars=len(ack or "") + len(answer_text or ""),
                 latency_ms=latency,
+                ttfa_ms=ttfa_ms,
             )
             if think is not None and not served_from_cache:
                 metrics.add_llm(
@@ -825,7 +876,8 @@ class VoiceSession:
 
     async def _replay(self, transcript: str, best) -> None:
         """Stream a cached answer verbatim: components, then byte-exact audio."""
-        t0 = time.monotonic()
+        t0 = self._turn_t0 or time.monotonic()  # timed from the question's arrival
+        self._turn_path = "cached"
         logger.info("ws[%s]: REPLAY (score=%.3f, %d components) for %r",
                     self.session_id[:8], best.score, len(best.components),
                     transcript[:80])
@@ -865,7 +917,7 @@ class VoiceSession:
         # Cached voice turn: no LLM spend — only TTS (req G shows the saving).
         self._spawn(self._record_usage(
             intent="cached", transcript=transcript, ack=ack, answer_text=best.answer_text,
-            served_from_cache=True, t0=t0,
+            served_from_cache=True, t0=t0, ttfa_ms=self._first_audio_ms,
         ))
         self._spawn(self._record_conversation(
             question=transcript, answer=best.answer_text, intent="cached",

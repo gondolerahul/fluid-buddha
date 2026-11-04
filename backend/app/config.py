@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     log_level: str = "INFO"
+    log_format: str = "text"                  # text | json (one object per line)
     # Public widget surface (/chat, /widget, ...): the sites embedding the widget.
     # :3000 = hirebuddha marketing site, :4000 = SDK demos, :3001 = the console
     # (its Install tab tests /widget/config). "*" is fine here — each request is
@@ -122,6 +123,23 @@ class Settings(BaseSettings):
     # Dev only: let the crawler and URL sources reach localhost / private
     # addresses (to crawl a site running on your machine). Never in production.
     ingest_allow_private_urls: bool = False
+
+    # ---- Production plumbing (F-3) ----
+    # Shared state for running more than one backend: chat sessions and the
+    # public rate limit. Unset = in-process (fine for one replica).
+    redis_url: str = ""
+    session_ttl_minutes: int = 30             # idle chat sessions are dropped after this
+    session_cache_max: int = 10_000           # in-process store: most sessions kept
+    # Prometheus metrics at /metrics; with a token, scrapers must send
+    # "Authorization: Bearer <token>".
+    metrics_enabled: bool = True
+    metrics_token: str = ""
+    # OpenTelemetry tracing: on when an OTLP/HTTP collector endpoint is set.
+    otel_exporter_otlp_endpoint: str = ""
+    otel_service_name: str = "fluid-buddha-backend"
+    # Sentry error reporting: on when a DSN is set.
+    sentry_dsn: str = ""
+    release: str = ""                         # e.g. the git sha, for Sentry
 
     @property
     def cors_origin_list(self) -> list[str]:

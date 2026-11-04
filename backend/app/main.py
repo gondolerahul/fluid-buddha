@@ -11,6 +11,9 @@ from app.config import get_settings
 from app.cors import ScopedCORSMiddleware
 from app.db import dispose_engine, init_db
 from app.logging_config import configure_logging
+from app.observability.errors import setup_sentry
+from app.observability.middleware import ObservabilityMiddleware
+from app.observability.tracing import setup_tracing
 from app.routes import (
     agent_profile,
     analytics,
@@ -18,11 +21,11 @@ from app.routes import (
     cache,
     chat,
     design,
+    experiments,
     health,
     ingestion,
     insights,
     leads,
-    experiments,
     onboarding,
     privacy,
     tours,
@@ -34,8 +37,11 @@ from app.transport import websocket as ws_transport
 from app.trust.retention import retention_sweep_loop
 
 settings = get_settings()
-configure_logging(settings.log_level)
+configure_logging(settings.log_level, settings.log_format)
 logger = logging.getLogger("a2ui")
+# Both are no-ops unless configured (SENTRY_DSN, OTEL_EXPORTER_OTLP_ENDPOINT).
+setup_sentry(settings)
+setup_tracing(settings)
 
 
 @asynccontextmanager
@@ -62,6 +68,9 @@ app.add_middleware(
     public_origins=settings.cors_origin_list,
     admin_origins=settings.admin_cors_origin_list,
 )
+# Outermost: every response (CORS preflights included) gets an X-Request-ID,
+# and every log line written while handling it carries that id (F-3).
+app.add_middleware(ObservabilityMiddleware)
 
 app.include_router(health.router)
 app.include_router(chat.router)

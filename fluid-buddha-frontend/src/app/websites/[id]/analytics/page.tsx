@@ -82,7 +82,8 @@ export default function AnalyticsPage() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-4" style={{ marginBottom: 20 }}>
+      <div className="grid" style={{ marginBottom: 20,
+        gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
         <Kpi label="Total cost" value={t ? fmtUSD(t.total_cost) : "…"} />
         <Kpi label="Turns" value={t ? String(t.turns) : "…"}
           hint={t ? `${t.generated_turns} generated · ${t.cached_turns} cached` : ""} />
@@ -90,6 +91,10 @@ export default function AnalyticsPage() {
           hint="Served without an LLM call" />
         <Kpi label="Latency p95" value={perf ? `${Math.round(perf.p95_latency_ms)} ms` : "…"}
           hint={perf ? `p50 ${Math.round(perf.p50_latency_ms)} ms` : ""} />
+        <Kpi label="Time to first audio"
+          value={!perf ? "…" : perf.p50_ttfa_ms == null ? "—" : `${Math.round(perf.p50_ttfa_ms)} ms`}
+          hint={!perf ? "" : perf.p95_ttfa_ms == null ? "No spoken turns yet"
+            : `median · p95 ${Math.round(perf.p95_ttfa_ms)} ms · ${perf.ttfa_turns} voice turns`} />
       </div>
 
       {/* Stacked cost-over-time */}

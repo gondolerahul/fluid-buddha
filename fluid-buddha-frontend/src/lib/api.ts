@@ -261,6 +261,10 @@ export type Analytics = {
     p50_latency_ms: number;
     p95_latency_ms: number;
     cache_hit_rate: number;
+    /** Time to first audio (question in → first speech out), over spoken voice turns. */
+    ttfa_turns: number;
+    p50_ttfa_ms: number | null;
+    p95_ttfa_ms: number | null;
   };
   cache_split: {
     cached: { turns: number; cost: number };

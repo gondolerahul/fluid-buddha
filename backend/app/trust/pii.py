@@ -110,6 +110,19 @@ class PiiVault:
         self._tokens: dict[str, str] = {}   # value -> "<EMAIL_1>"
         self._counts: dict[str, int] = {}
 
+    def to_dict(self) -> dict:
+        """For a shared session store (F-3). Holds the real values."""
+        return {"enabled": self.enabled, "values": dict(self._values),
+                "counts": dict(self._counts)}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PiiVault":
+        vault = cls(enabled=bool(data.get("enabled", True)))
+        vault._values = {str(k): str(v) for k, v in (data.get("values") or {}).items()}
+        vault._tokens = {v: k for k, v in vault._values.items()}
+        vault._counts = {str(k): int(v) for k, v in (data.get("counts") or {}).items()}
+        return vault
+
     def mask(self, text: str) -> str:
         if not (self.enabled and text):
             return text

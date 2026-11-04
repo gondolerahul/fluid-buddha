@@ -41,6 +41,9 @@ class TurnMetrics:
     thinker_out_tok: int = 0
     tool_calls: int = 0
     latency_ms: float = 0.0
+    # Voice: question received → first byte of speech sent (F-3). None when
+    # nothing was spoken (text turns, the Basic tier).
+    ttfa_ms: Optional[float] = None
 
     def add_llm(self, *, kind: str, input_tokens: int, output_tokens: int,
                 tool_calls: int = 0) -> None:
@@ -77,10 +80,10 @@ async def record_turn(db: AsyncSession, metrics: TurnMetrics,
             "INSERT INTO usage_events (id, site_key, session_id, channel, intent, "
             " persona, page, served_from_cache, asr_ms, tts_chars, fast_in_tok, "
             " fast_out_tok, thinker_in_tok, thinker_out_tok, tool_calls, asr_cost, "
-            " tts_cost, fast_cost, thinker_cost, tool_cost, total_cost, latency_ms) "
+            " tts_cost, fast_cost, thinker_cost, tool_cost, total_cost, latency_ms, ttfa_ms) "
             "VALUES (:id, :sk, :sid, :ch, :intent, :persona, :page, :cache, :asr_ms, "
             " :tts_chars, :fi, :fo, :ti, :to, :tc, :asr_cost, :tts_cost, :fast_cost, "
-            " :thinker_cost, :tool_cost, :total_cost, :lat)"
+            " :thinker_cost, :tool_cost, :total_cost, :lat, :ttfa)"
         ), {
             "id": uuid.uuid4(), "sk": metrics.site_key, "sid": metrics.session_id,
             "ch": metrics.channel, "intent": metrics.intent, "persona": metrics.persona,
@@ -88,9 +91,14 @@ async def record_turn(db: AsyncSession, metrics: TurnMetrics,
             "asr_ms": metrics.asr_ms, "tts_chars": metrics.tts_chars,
             "fi": metrics.fast_in_tok, "fo": metrics.fast_out_tok,
             "ti": metrics.thinker_in_tok, "to": metrics.thinker_out_tok,
-            "tc": metrics.tool_calls, "lat": metrics.latency_ms, **costs,
+            "tc": metrics.tool_calls, "lat": metrics.latency_ms,
+            "ttfa": metrics.ttfa_ms, **costs,
         })
         await db.commit()
+        from app.observability import metrics as prom
+        path = "cached" if metrics.served_from_cache else "fresh"
+        prom.TURNS.labels(metrics.channel, path).inc()
+        prom.TURN_SECONDS.labels(metrics.channel, path).observe(metrics.latency_ms / 1000.0)
     except Exception as exc:
         logger.warning("usage record failed (site=%s): %s", metrics.site_key, exc)
         try:
@@ -131,6 +139,10 @@ def _round_row(d: dict) -> dict:
     return out
 
 
+def _ms(v) -> Optional[float]:
+    return None if v is None else round(float(v), 1)
+
+
 async def analytics(
     db: AsyncSession, *, site_key: str, group_by: str = "day",
     frm: Optional[datetime] = None, to: Optional[datetime] = None,
@@ -156,6 +168,9 @@ async def analytics(
         f"SELECT {_SUMS}, "
         "percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50_latency_ms, "
         "percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95_latency_ms, "
+        "count(ttfa_ms) AS ttfa_turns, "
+        "percentile_cont(0.5) WITHIN GROUP (ORDER BY ttfa_ms) AS p50_ttfa_ms, "
+        "percentile_cont(0.95) WITHIN GROUP (ORDER BY ttfa_ms) AS p95_ttfa_ms, "
         "coalesce(sum(total_cost) FILTER (WHERE served_from_cache), 0) AS cached_cost, "
         "coalesce(sum(total_cost) FILTER (WHERE NOT served_from_cache), 0) AS generated_cost "
         f"FROM usage_events WHERE {where}"
@@ -173,6 +188,10 @@ async def analytics(
         "p50_latency_ms": round(float(tot.get("p50_latency_ms") or 0), 1),
         "p95_latency_ms": round(float(tot.get("p95_latency_ms") or 0), 1),
         "cache_hit_rate": round(cached / turns, 4) if turns else 0.0,
+        # Time to first audio over spoken voice turns (null when there were none).
+        "ttfa_turns": int(tot.get("ttfa_turns") or 0),
+        "p50_ttfa_ms": _ms(tot.get("p50_ttfa_ms")),
+        "p95_ttfa_ms": _ms(tot.get("p95_ttfa_ms")),
     }
     cache_split = {
         "cached": {"turns": cached, "cost": round(float(tot.get("cached_cost") or 0), 6)},

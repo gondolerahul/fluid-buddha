@@ -103,6 +103,7 @@ async def run_crawl_job(job_id: uuid.UUID, website_id: uuid.UUID, site_key: str,
                         start_url: str, max_pages: int, max_depth: int,
                         *, fetch=None) -> None:
     from app.config import get_settings
+    from app.observability.metrics import CRAWL_JOBS
     from app.onboarding.crawler import crawl
     from app.tenancy.url_fetch import fetch_public
 
@@ -125,6 +126,7 @@ async def run_crawl_job(job_id: uuid.UUID, website_id: uuid.UUID, site_key: str,
                    if result.blocked_by_robots and not result.pages
                    else "No readable pages were found at that address")
             await _update(job_id, status="failed", error=why)
+            CRAWL_JOBS.labels("failed").inc()
             return
 
         ingested = await _ingest(site_key, website_id, pages)
@@ -135,11 +137,13 @@ async def run_crawl_job(job_id: uuid.UUID, website_id: uuid.UUID, site_key: str,
 
         found = await _design(site_key, result, fetch)
         await _update(job_id, design_found=found, phase="done", status="done")
+        CRAWL_JOBS.labels("done").inc()
         logger.info("crawl job %s: site=%s pages=%d ingested=%d personas=%d design=%s",
                     job_id, site_key, len(result.pages), ingested, added, found)
     except Exception as exc:
         logger.exception("crawl job %s failed: %s", job_id, exc)
         await _update(job_id, status="failed", error=str(exc)[:500] or "Crawl failed")
+        CRAWL_JOBS.labels("failed").inc()
 
 
 async def _ingest(site_key: str, website_id: uuid.UUID, pages) -> int:

@@ -145,6 +145,42 @@ Cached answers carry a `status`: `pinned` answers always replay for their
 question (even before the "enough history" gate) and survive content
 changes; `blocked` ones never replay and their question is not cached again.
 
+## Operations
+
+- **Request ids.** Every response carries `X-Request-ID` (the caller's, if it
+  sent a plain one), and every log line written while handling it shows that
+  id; voice log lines also carry the session. `LOG_FORMAT=json` writes one JSON
+  object per line.
+- **Metrics** at `/metrics` (Prometheus; `METRICS_TOKEN` to require a bearer
+  token, `METRICS_ENABLED=false` to turn it off). Labels are route templates and
+  stages, never site keys or ids:
+  - `fb_time_to_first_audio_seconds{path}`: question received to the first byte
+    of speech sent, usually the ack; `fb_time_to_first_answer_audio_seconds`
+    for the answer itself (`path` = `fresh` or `cached`);
+  - `fb_turns_total` / `fb_turn_seconds{channel,path}`,
+    `fb_stage_seconds{stage}` (route, retrieval, think_lean, think_heavy, tts),
+    `fb_engine_errors_total{engine}`, `fb_http_requests_total` /
+    `fb_http_request_seconds{method,route}`, `fb_ws_connections`,
+    `fb_crawl_jobs_total{status}`.
+  Time to first audio is also stored per voice turn (`usage_events.ttfa_ms`)
+  and shown per site on the console's Analytics tab (median and p95).
+- **Tracing** (optional): set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP
+  collector. Each HTTP request is a span, with the turn (`voice.turn`,
+  `chat.turn`) and its stages (`stage.route`, `stage.retrieval`,
+  `stage.think_*`, `stage.tts`) below it. Spans never hold what visitors said.
+- **Errors** (optional): set `SENTRY_DSN`. Events carry the request id; request
+  bodies, cookies, query strings, auth headers, users and local variables are
+  stripped first (`app/observability/errors.py`).
+  OpenTelemetry and Sentry come from `requirements-observability.txt`
+  (installed in the Docker image; inert unless configured).
+- **More than one replica**: set `REDIS_URL`. Chat sessions (with their PII
+  placeholders, expiring after `SESSION_TTL_MINUTES` idle) and the public
+  per-minute rate limit then live in Redis, so any replica can take the next
+  turn. Without it both stay in process, which is right for one replica.
+  A voice WebSocket keeps its state on the connection and needs no Redis; if
+  Redis is unreachable, sessions start fresh and the rate limit falls back to
+  the replica's own count. `docker compose --profile scale` starts a Redis.
+
 ## Going live on Vertex AI
 
 1. `gcloud auth application-default login` (or set `GOOGLE_APPLICATION_CREDENTIALS`).

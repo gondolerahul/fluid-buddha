@@ -25,7 +25,10 @@ async def query_cortex(
     top_k: int = 5,
     threshold: float = 0.45,
 ) -> dict[str, Any]:
-    rows = await bridge.search(query, top_k=top_k)
+    from app.observability.metrics import timed
+
+    with timed("retrieval"):
+        rows = await bridge.search(query, top_k=top_k)
     snippets = [
         {
             "text": (r.get("content") or "").strip(),

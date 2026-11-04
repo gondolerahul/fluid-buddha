@@ -24,6 +24,8 @@ def cors_kwargs(origins: list[str]) -> dict:
         "allow_methods": ["*"],
         "allow_headers": ["*"],
         "allow_credentials": not wildcard,
+        # So browser code can read the id to quote in a bug report (F-3).
+        "expose_headers": ["X-Request-ID"],
     }
     if wildcard:
         kwargs["allow_origin_regex"] = r".*"

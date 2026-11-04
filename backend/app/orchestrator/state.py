@@ -60,6 +60,38 @@ class ConversationState:
     # and the history only ever see the masked text.
     pii: PiiVault = field(default_factory=PiiVault)
 
+    def to_dict(self) -> dict:
+        """JSON-able form for a shared session store (F-3)."""
+        return {
+            "site_key": self.site_key, "persona": self.persona,
+            "intelligence": self.intelligence, "page": self.page,
+            "viewport": self.viewport, "sections": self.sections,
+            "history": [{"role": m.role, "text": m.text} for m in self.history
+                        if m.role in ("user", "model")],
+            "persona_confidence": self.persona_confidence,
+            "turns_since_probe": self.turns_since_probe,
+            "persona_locked": self.persona_locked,
+            "components": self.components,
+            "pii": self.pii.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ConversationState":
+        state = cls(site_key=str(data["site_key"]))
+        state.persona = data.get("persona")
+        state.intelligence = normalize_intelligence(data.get("intelligence"))
+        state.page = data.get("page")
+        state.viewport = data.get("viewport")
+        state.sections = normalize_sections(data.get("sections") or [])
+        state.history = [ChatMessage(role=str(m["role"]), text=str(m.get("text") or ""))
+                         for m in data.get("history") or []]
+        state.persona_confidence = float(data.get("persona_confidence") or 0.0)
+        state.turns_since_probe = int(data.get("turns_since_probe") or 0)
+        state.persona_locked = bool(data.get("persona_locked"))
+        state.components = dict(data.get("components") or {})
+        state.pii = PiiVault.from_dict(data.get("pii") or {})
+        return state
+
     def add_turn(self, user_text: str, model_text: str) -> None:
         self.history.append(ChatMessage(role="user", text=user_text))
         self.history.append(ChatMessage(role="model", text=model_text))
