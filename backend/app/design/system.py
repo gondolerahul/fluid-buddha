@@ -10,14 +10,17 @@ typography, radius, logo, brand voice). It is:
     the tokens).
 
 Resolution mirrors the multi-site content pipeline: a per-site env override
-(``<SITE>_DESIGN_SYSTEM``) or a ``DESIGN_SYSTEM_DIR/<site>.json`` file. With no
-file present a sensible default is returned so the stack always runs.
+(``<SITE>_DESIGN_SYSTEM``) or a ``DESIGN_SYSTEM_DIR/<site>.json`` file. Without
+a file, the tokens read off the site's own CSS at onboarding are used
+(``site_design``, WS9; loaded by ``ensure_design``), else a sensible default
+so the stack always runs.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -122,14 +125,49 @@ def _design_path(site_key: str) -> Path | None:
     return None
 
 
-@lru_cache(maxsize=16)
+_TTL_S = 30.0
+# Designs extracted at onboarding, by site: (expires_at, data or None).
+_extracted: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
+
+def remember_extracted(site_key: str, data: dict[str, Any] | None) -> None:
+    _extracted[site_key] = (time.monotonic() + _TTL_S, data)
+
+
+async def ensure_design(site_key: str) -> None:
+    """Load the site's extracted design into the cache unless fresh."""
+    hit = _extracted.get(site_key)
+    if hit and hit[0] > time.monotonic():
+        return
+    from app.db import session_scope
+    from app.onboarding.design import load_design
+
+    try:
+        async with session_scope() as db:
+            data = await load_design(db, site_key)
+    except Exception as exc:  # never let a design read break a conversation
+        logger.warning("design load failed for %s: %s", site_key, exc)
+        data = hit[1] if hit else None
+    remember_extracted(site_key, data)
+
+
 def load_design_system(site_key: str) -> DesignSystem:
+    file_design = _load_file_design(site_key)
+    if file_design is not None:
+        return file_design
+    hit = _extracted.get(site_key)
+    return DesignSystem.from_dict(hit[1] if hit else None)
+
+
+@lru_cache(maxsize=16)
+def _load_file_design(site_key: str) -> DesignSystem | None:
     path = _design_path(site_key)
-    data: dict[str, Any] = {}
-    if path and path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            logger.info("loaded design system for %s from %s", site_key, path)
-        except Exception as exc:  # malformed file shouldn't break the stack
-            logger.warning("failed to read design system %s: %s", path, exc)
+    if not (path and path.exists()):
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        logger.info("loaded design system for %s from %s", site_key, path)
+    except Exception as exc:  # malformed file shouldn't break the stack
+        logger.warning("failed to read design system %s: %s", path, exc)
+        data = {}
     return DesignSystem.from_dict(data)

@@ -153,6 +153,32 @@ export type IngestionStatus = {
   sources: Source[];
 };
 
+/** One "crawl my website" run (WS9). */
+export type CrawlJob = {
+  id: string;
+  start_url: string;
+  max_pages: number;
+  max_depth: number;
+  status: "running" | "done" | "failed";
+  phase: "crawling" | "ingesting" | "personas" | "design" | "done";
+  pages_found: number;
+  pages_ingested: number;
+  pages_skipped: number;
+  personas_added: number;
+  design_found: boolean;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+  /** Paste-URL → live, in seconds. */
+  duration_s: number | null;
+};
+export type DesignInfo = {
+  /** Tokens read off the site; null before a crawl. */
+  extracted: { name?: string; logo_url?: string; colors?: Record<string, string>;
+    typography?: Record<string, string>; radius?: string } | null;
+  design: Record<string, unknown>;
+};
+
 export type TourStop = { narration: string; move?: Record<string, unknown> | null; label?: string };
 export type TourPlan = { site_key: string; stops: TourStop[]; exists: boolean; edited: boolean };
 
@@ -320,6 +346,10 @@ export const Api = {
   },
   deleteSource: (id: string, sid: string) =>
     api<void>(`/tenant/websites/${id}/sources/${sid}`, { method: "DELETE" }),
+  startCrawl: (id: string, body: { url?: string; max_pages: number; max_depth: number }) =>
+    api<CrawlJob>(`/tenant/websites/${id}/crawl`, { method: "POST", body }),
+  latestCrawl: (id: string) => api<CrawlJob | null>(`/tenant/websites/${id}/crawl`),
+  getDesign: (id: string) => api<DesignInfo>(`/tenant/websites/${id}/design`),
   runIngestion: (id: string) =>
     api<{ status: string; pending?: number; nodes?: number }>(
       `/tenant/websites/${id}/ingestion/run`,

@@ -27,6 +27,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.db import session_scope
 from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFIDENCE
 from app.orchestrator.result import ClientAction, Grounding
+from app.design.system import ensure_design
 from app.orchestrator.profile import ensure_profile
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.tour_store import load_plan
@@ -989,6 +990,7 @@ async def voice_ws(websocket: WebSocket) -> None:
 
     # Load the site's agent profile (name, personas, sitemap) for the prompts.
     await ensure_profile(resolved.site_key)
+    await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
     session = VoiceSession(
         websocket, runtime, site_key=resolved.site_key,
         intelligence=resolved.intelligence, tier_locked=resolved.tier_locked,

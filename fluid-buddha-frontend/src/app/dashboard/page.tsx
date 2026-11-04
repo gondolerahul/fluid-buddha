@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRequireAuth } from "@/lib/auth";
 import { Api, ApiError, Website } from "@/lib/api";
 import { AppHeader } from "@/components/Chrome";
@@ -81,14 +82,17 @@ function AddWebsiteModal({
   const [design, setDesign] = useState("level1");
   const [accent, setAccent] = useState("#ffd23f");
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      await Api.createWebsite({ name, domain: domain || null, intelligence, design, accent });
+      const site = await Api.createWebsite({ name, domain: domain || null, intelligence, design, accent });
       setName(""); setDomain("");
-      onCreated();
+      // With a domain, go straight to crawling it (WS9).
+      if (site.domain) router.push(`/websites/${site.id}/ingestion`);
+      else onCreated();
     } catch (e) {
       onError(e instanceof ApiError ? e.message : "Could not create website.");
     } finally {

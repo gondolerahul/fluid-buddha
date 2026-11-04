@@ -48,9 +48,15 @@ def test_normalize_intelligence():
 def test_design_system_endpoint_returns_tokens():
     import asyncio
 
+    from app.db import dispose_engine
     from app.routes.design import design_system
 
-    doc = asyncio.run(design_system(site="fluidbuddha"))
+    async def go():
+        try:
+            return await design_system(site="fluidbuddha")
+        finally:  # the endpoint reads the DB: don't leave the pool on this loop
+            await dispose_engine()
+    doc = asyncio.run(go())
     assert "tokens" in doc and doc["tokens"]["--ds-color-primary"]
     assert doc["brand_voice"]
     assert "--ds-radius" in doc["tokens"]

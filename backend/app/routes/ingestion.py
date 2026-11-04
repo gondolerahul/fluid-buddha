@@ -3,8 +3,8 @@ Ingestion control (req C): a tenant manages what each website's agent knows.
 
 They can attach sources (pasted text, a URL, or an uploaded document), see the
 ingestion status, and trigger a run that feeds pending sources into the site's
-CORTEX knowledge tree. Uploaded files are decoded as UTF-8 text (markdown / txt /
-html / csv / json); binary formats like PDF need extraction first (follow-up).
+CORTEX knowledge tree. Uploaded files may be PDF or DOCX (their text is
+extracted, WS9) or text formats (markdown / txt / html / csv / json).
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
+from app.onboarding.documents import DocumentError, extract_text
 from app.tenancy import sources as src_store
 from app.tenancy import store
 from app.tenancy.deps import owned_website
@@ -22,7 +23,7 @@ from app.tenancy.url_fetch import UnsafeURLError, check_url
 
 router = APIRouter(prefix="/tenant/websites/{website_id}", tags=["ingestion"])
 
-_MAX_UPLOAD = 2 * 1024 * 1024  # 2 MB of text
+_MAX_UPLOAD = 10 * 1024 * 1024  # 10 MB file; at most 2 MB of extracted text
 
 
 class SourceCreate(BaseModel):
@@ -81,14 +82,14 @@ async def upload_source(
     site: store.Website = Depends(owned_website),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    raw = await file.read()
+    raw = await file.read(_MAX_UPLOAD + 1)
     if len(raw) > _MAX_UPLOAD:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                            "File too large (max 2 MB of text).")
-    text = raw.decode("utf-8", errors="replace").strip()
-    if not text:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "File has no readable UTF-8 text.")
+                            "File too large (max 10 MB).")
+    try:
+        text = extract_text(raw, file.filename or "", file.content_type or "")
+    except DocumentError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
     s = await src_store.add_source(
         db, website_id=site.id, kind="file",
         name=file.filename or "upload.txt", content=text,

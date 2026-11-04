@@ -121,6 +121,28 @@ async def delete_source(
     return True
 
 
+async def upsert_url_source(
+    db: AsyncSession, *, website_id: uuid.UUID, url: str, name: str
+) -> uuid.UUID:
+    """Add a crawled page as a URL source, or queue an existing one for
+    re-ingestion (a re-crawl refreshes pages instead of duplicating them)."""
+    existing = (await db.execute(
+        text("SELECT id FROM tenant_sources WHERE website_id = :wid AND kind = 'url' "
+             "AND content = :url ORDER BY created_at LIMIT 1"),
+        {"wid": website_id, "url": url},
+    )).scalar()
+    if existing:
+        await db.execute(
+            text("UPDATE tenant_sources SET status = 'pending', error = NULL, name = :n "
+                 "WHERE id = :id"),
+            {"id": existing, "n": name},
+        )
+        await db.commit()
+        return existing
+    s = await add_source(db, website_id=website_id, kind="url", name=name, content=url)
+    return s.id
+
+
 async def pending_sources(db: AsyncSession, website_id: uuid.UUID) -> list[Source]:
     res = await db.execute(
         text(f"SELECT {_COLS} FROM tenant_sources "
@@ -155,15 +177,41 @@ def strip_html(html: str) -> str:
     return _WS_RE.sub("\n\n", text_only).strip()
 
 
-async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
+async def _read_url(url: str) -> tuple[str, bool]:
+    """Fetch a URL source: ``(text, is_page)``. A PDF is read for its text but
+    isn't a page the agent can navigate to."""
+    from app.onboarding.documents import pdf_text
+    from app.onboarding.html import parse_page
+    from app.tenancy.url_fetch import ALLOWED_CONTENT_TYPES, fetch_public
+
+    # SSRF-guarded fetch: public addresses only, every redirect re-checked,
+    # size/type capped (docs/defects.md D-5).
+    got = await fetch_public(url, allowed_types=ALLOWED_CONTENT_TYPES + ("application/pdf",),
+                             max_bytes=10_000_000)
+    if got.content_type == "application/pdf":
+        return pdf_text(got.body), False
+    if got.content_type == "text/plain":
+        return got.text, True
+    info = parse_page(got.text, got.url)
+    body = info.text or strip_html(got.text)
+    if info.title and not body.startswith(info.title):
+        body = f"{info.title}\n\n{body}"
+    return body, True
+
+
+async def run_ingestion(
+    site_key: str, website_id: uuid.UUID,
+    prefetched: Optional[dict[str, tuple[str, bool]]] = None,
+) -> dict:
     """Ingest a website's pending sources into its CORTEX tree, mark each source's
     outcome, and re-plan the guided tour. Self-contained (opens its own sessions)
-    so it can run as a FastAPI ``BackgroundTask``."""
+    so it can run as a FastAPI ``BackgroundTask``. ``prefetched`` maps a URL
+    source to ``(text, is_page)`` the crawler already read (WS9), so it isn't
+    downloaded twice."""
     from app.db import SessionLocal
     from app.cortex.purge import delete_document_nodes, invalidate_site_caches
     from app.orchestrator.profile import merge_routes
     from app.orchestrator.sitemap import route_from_url
-    from app.tenancy.url_fetch import fetch_public_text
     from ingestion.ingest import ingest_documents, plan_and_save_tour
     from ingestion.scraper import SourceDocument
 
@@ -178,15 +226,16 @@ async def run_ingestion(site_key: str, website_id: uuid.UUID) -> dict:
     for s in pending:
         try:
             if s.kind == "url":
-                # SSRF-guarded fetch: public addresses only, every redirect
-                # re-checked, size/type capped (docs/defects.md D-5).
-                body = strip_html(await fetch_public_text(s.content))
-                if not body:
+                if prefetched and s.content in prefetched:
+                    body, is_page = prefetched[s.content]
+                else:
+                    body, is_page = await _read_url(s.content)
+                if not (body or "").strip():
                     raise ValueError("no readable text at URL")
                 # The URL's path is a real page on the site: it becomes a
                 # navigable route and lets the tour visit it (D-9).
                 doc = SourceDocument(filename=s.name or s.content,
-                                     route=route_from_url(s.content) or None,
+                                     route=(route_from_url(s.content) or None) if is_page else None,
                                      content=body, document_id=s.id)
             else:  # text | file — content is already plain text
                 if not (s.content or "").strip():

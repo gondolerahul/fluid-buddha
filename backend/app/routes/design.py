@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.design.system import load_design_system
+from app.design.system import ensure_design, load_design_system
 
 router = APIRouter(tags=["design"])
 
 
 @router.get("/design-system")
 async def design_system(site: str = "hirebuddha") -> dict:
+    await ensure_design(site)
     return load_design_system(site).to_dict()

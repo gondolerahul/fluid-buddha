@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     # How often visitor data past each site's retention window is deleted.
     retention_sweep_minutes: int = 60         # 0 = off
 
+    # ---- Self-serve onboarding (WS9) ----
+    crawl_max_pages: int = 50                 # hard cap per crawl
+    crawl_max_depth: int = 3
+    crawl_concurrency: int = 4
+    # Dev only: let the crawler and URL sources reach localhost / private
+    # addresses (to crawl a site running on your machine). Never in production.
+    ingest_allow_private_urls: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

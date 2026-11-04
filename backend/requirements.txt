@@ -23,6 +23,9 @@ alembic>=1.13   # schema migrations (migrations/), applied at startup by init_db
 # ---- CORTEX memory engine (the host injects Gemini providers) ----
 hb-cortex-memory==0.1.0
 
+# ---- Onboarding (WS9): text out of uploaded / crawled PDFs ----
+pypdf>=6.0
+
 # ---- Google Cloud / Vertex AI ----
 google-genai>=1.0.0            # Gemini LLM + embeddings (Vertex backend)
 google-cloud-speech>=2.26      # streaming ASR

@@ -18,6 +18,7 @@ from typing import Any
 
 from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
+from app.design.system import ensure_design
 from app.orchestrator.profile import ensure_profile
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.state import normalize_sections
@@ -91,6 +92,7 @@ async def chat(req: ChatRequest, request: Request) -> dict:
         raise HTTPException(status_code=429, detail=blocked)
     # Load the site's agent profile (name, personas, sitemap) for the prompts.
     await ensure_profile(resolved.site_key)
+    await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
 
     sid, state = store.get_or_create(req.session_id, site_key=resolved.site_key)
     state.site_key = resolved.site_key

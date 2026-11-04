@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { Api, ApiError, IngestionStatus } from "@/lib/api";
 import { Spinner, StatusBadge, fmtDate, useToast } from "@/components/ui";
 import { AddSourceModal } from "@/components/AddSourceModal";
+import { CrawlCard } from "@/components/CrawlCard";
 
 export default function IngestionPage() {
   const id = String(useParams().id);
@@ -57,6 +58,8 @@ export default function IngestionPage() {
 
   return (
     <div className="fade-in">
+      <CrawlCard id={id} onIngested={load} />
+
       <div className="grid grid-3" style={{ marginBottom: 22 }}>
         <Stat label="Knowledge nodes" value={data ? String(data.document_count) : "—"} hint="Ingested into the agent's memory" />
         <Stat label="Sources" value={data ? String(data.sources.length) : "—"} hint={`${pending} pending`} />
@@ -78,11 +81,11 @@ export default function IngestionPage() {
           <div>
             <h2>Data sources</h2>
             <p className="muted" style={{ fontSize: "0.86rem" }}>
-              Add the content the agent should know. Missing something? Add it here.
+              Add the content the agent should know: PDFs, Word documents, text or single pages.
             </p>
           </div>
           <div className="row" style={{ gap: 8 }}>
-            <input ref={fileRef} type="file" hidden accept=".txt,.md,.markdown,.html,.csv,.json"
+            <input ref={fileRef} type="file" hidden accept=".pdf,.docx,.txt,.md,.markdown,.html,.csv,.json"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
             <button className="btn" onClick={() => fileRef.current?.click()}>Upload file</button>
             <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Add text / URL</button>

@@ -23,7 +23,7 @@ from app.config import site_entity_id
 # conversation via ON DELETE CASCADE).
 _SITE_TABLES = (
     "site_tours", "site_profiles", "conversation_cache", "answer_audio_cache", "usage_events",
-    "conversations", "leads", "site_integrations", "site_privacy",
+    "conversations", "leads", "site_integrations", "site_privacy", "site_design",
 )
 
 

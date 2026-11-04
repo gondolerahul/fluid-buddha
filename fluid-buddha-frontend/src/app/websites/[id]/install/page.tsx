@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { API_BASE, Api, ApiError, SDK_URL, WIDGET_BACKEND, Website } from "@/lib/api";
 import { useWebsite } from "@/components/WebsiteContext";
@@ -34,6 +34,39 @@ init({
     onNavigate: (path) => router.push(path),
   },
 });`;
+}
+
+/** A bookmarklet that drops the widget onto whatever page is open (WS9):
+ *  preview the agent on your real site before installing anything. */
+function bookmarklet(w: Website): string {
+  const attrs: Record<string, string> = {
+    "data-backend": WIDGET_BACKEND,
+    "data-key": w.public_key ?? "",
+    "data-intelligence": w.intelligence,
+    "data-design": w.design,
+  };
+  if (w.accent) attrs["data-accent"] = w.accent;
+  const sets = Object.entries(attrs)
+    .map(([k, v]) => `s.setAttribute(${JSON.stringify(k)},${JSON.stringify(v)});`)
+    .join("");
+  const code =
+    "(function(){if(document.querySelector('fluid-buddha'))return;" +
+    `var s=document.createElement('script');s.src=${JSON.stringify(SDK_URL)};${sets}` +
+    "document.body.appendChild(s);})()";
+  return "javascript:" + encodeURIComponent(code);
+}
+
+/** React refuses javascript: URLs in href, so the link's address is set on
+ *  the DOM element directly. */
+function BookmarkletLink({ href, label }: { href: string; label: string }) {
+  const ref = useRef<HTMLAnchorElement>(null);
+  useEffect(() => { ref.current?.setAttribute("href", href); }, [href]);
+  return (
+    <a ref={ref} className="btn btn-primary btn-sm" onClick={(e) => e.preventDefault()}
+      title="Drag me to your bookmarks bar" style={{ cursor: "grab" }}>
+      {label}
+    </a>
+  );
 }
 
 export default function InstallPage() {
@@ -160,6 +193,29 @@ export default function InstallPage() {
           <p className="faint" style={{ fontSize: "0.8rem", marginTop: 10 }}>
             Tier, design and accent come from <Link href={`/websites/${website.id}/settings`}>Settings</Link>.
             The backend enforces the tier from the key, whatever the snippet says.
+          </p>
+        </section>
+      )}
+
+      {key && (
+        <section className="card" id="preview">
+          <span className="eyebrow">Preview on your site</span>
+          <p className="muted" style={{ fontSize: "0.86rem", margin: "8px 0 14px" }}>
+            Try the agent on your live site before installing anything. Drag this button to your
+            bookmarks bar, open any page of {website.domain || "your site"}, and click the bookmark.
+            Only you see it, until you reload the page.
+          </p>
+          <div className="row wrap" style={{ gap: 10, alignItems: "center" }}>
+            <BookmarkletLink href={bookmarklet(website)} label={`Preview ${website.name}`} />
+            <button className="btn btn-sm" onClick={() => copy(decodeURIComponent(bookmarklet(website)), "Bookmarklet")}>
+              Copy as text
+            </button>
+          </div>
+          <p className="faint" style={{ fontSize: "0.8rem", marginTop: 10 }}>
+            {website.domain
+              ? `The key only answers on ${website.domain}, so preview there. `
+              : ""}
+            A site with a strict Content-Security-Policy may block it; install the snippet instead.
           </p>
         </section>
       )}

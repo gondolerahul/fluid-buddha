@@ -62,6 +62,38 @@ revision — never DDL in application code (a test enforces this):
 .venv/bin/alembic upgrade head
 ```
 
+### Onboarding: crawl a website
+
+Console → Ingestion → *Crawl your website* (or
+`POST /tenant/websites/{id}/crawl {url?, max_pages, max_depth}`; the URL defaults
+to the website's domain). One job (`app/onboarding/jobs.py`, progress in
+`crawl_jobs`) does it all:
+
+1. **Crawl** (`app/onboarding/crawler.py`): obeys `robots.txt` for
+   `FluidBuddhaIngest` (a 401/403 robots file means stay out; `Crawl-delay` up to
+   2 s), seeds from the sitemap, then follows same-site links breadth-first to
+   the depth and page limits (capped by `CRAWL_MAX_PAGES` / `CRAWL_MAX_DEPTH`).
+   Every request, redirect, robots file, sitemap and stylesheet goes through the
+   SSRF-guarded fetch. `noindex` pages and assets are skipped; linked PDFs are
+   read.
+2. **Ingest**: each page becomes a URL source (a re-crawl refreshes the same
+   sources) and is ingested from the text already fetched. Pages become
+   navigable routes.
+3. **Personas**, only if the site has none: audience URLs (`/for/…`,
+   `/solutions/…`, `/industries/…`) become personas with that page as landing;
+   with a real model, it proposes 2-4 from page titles when the URLs don't say.
+4. **Design tokens** (`app/onboarding/design.py`): brand colours, fonts, radius,
+   logo and name from the homepage's CSS variables, `body`/heading rules,
+   `theme-color` and colour frequency; stored in `site_design` and used by
+   `/design-system` unless a `design-system.json` is configured.
+
+Uploads accept PDF and DOCX (text extracted; scanned PDFs are refused with a
+message) as well as text formats, up to 10 MB. The console's Install tab has
+a *Preview on your site* bookmarklet that drops the widget onto any page.
+
+To crawl a site running on your own machine, set `INGEST_ALLOW_PRIVATE_URLS=true`
+(dev only: it turns the private-address guard off).
+
 ### Privacy (trust layer)
 
 Each website has privacy settings (console → Settings → Privacy & data, or
