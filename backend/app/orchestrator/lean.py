@@ -44,7 +44,8 @@ _CORRECTION_KW = re.compile(
 )
 
 
-_EMAIL_KW = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", re.IGNORECASE)
+# A raw email, or its masked placeholder (WS8).
+_EMAIL_KW = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}|<EMAIL_\d+>", re.IGNORECASE)
 
 
 def needs_heavy(transcript: str, intent: str = "general", *,

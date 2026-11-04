@@ -124,6 +124,7 @@ class CognitiveLoop:
             related=related,
             probe=probe,
             on_screen=state.components,
+            pii=state.pii,
         )
 
     async def react(self, entry: dict, persona, site_key: str) -> str:
@@ -178,6 +179,7 @@ class CognitiveLoop:
                 related=related,
                 probe=probe,
                 on_screen=state.components,
+                pii=state.pii,
             )
         else:
             think = await self.lean.respond(

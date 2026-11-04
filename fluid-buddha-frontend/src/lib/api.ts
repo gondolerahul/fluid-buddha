@@ -166,8 +166,11 @@ export type CacheEntry = {
   page: string | null;
   channel: string | null;
   hit_count: number;
+  status: CacheStatus;
   created_at: string;
 };
+/** auto: replayed by similarity; pinned: always replayed; blocked: never replayed. */
+export type CacheStatus = "auto" | "pinned" | "blocked";
 export type CacheList = { total: number; limit: number; offset: number; items: CacheEntry[] };
 
 export type AnalyticsSeriesRow = {
@@ -264,6 +267,14 @@ export type Lead = {
   delivery_error: string | null;
   created_at: string;
 };
+export type Privacy = {
+  redact_pii: boolean;
+  consent_required: boolean;
+  privacy_policy_url: string | null;
+  /** 0 keeps data until deleted. */
+  transcript_retention_days: number;
+  lead_retention_days: number;
+};
 export type Integrations = {
   webhook_url: string | null;
   webhook_secret: string;
@@ -321,8 +332,11 @@ export const Api = {
   generateTour: (id: string) =>
     api<TourPlan>(`/tenant/websites/${id}/tour/generate`, { method: "POST" }),
 
-  listCache: (id: string, params: { limit?: number; offset?: number; search?: string } = {}) => {
+  listCache: (id: string, params: {
+    limit?: number; offset?: number; search?: string; status?: CacheStatus;
+  } = {}) => {
     const q = new URLSearchParams();
+    if (params.status) q.set("status_filter", params.status);
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
     if (params.search) q.set("search", params.search);
@@ -358,4 +372,11 @@ export const Api = {
   testIntegrations: (id: string) =>
     api<{ ok: boolean; error: string | null }>(`/tenant/websites/${id}/integrations/test`,
       { method: "POST" }),
+
+  getPrivacy: (id: string) => api<Privacy>(`/tenant/websites/${id}/privacy`),
+  savePrivacy: (id: string, body: Privacy) =>
+    api<Privacy>(`/tenant/websites/${id}/privacy`, { method: "PUT", body }),
+  eraseVisitor: (id: string, email: string) =>
+    api<{ leads: number; conversations: number }>(`/tenant/websites/${id}/privacy/erase`,
+      { method: "POST", body: { email } }),
 };

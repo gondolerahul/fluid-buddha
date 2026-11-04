@@ -47,7 +47,7 @@ _EXEC_KEYWORDS = ["roi", "cost", "pricing", "budget", "savings", "business case"
 
 # Correction of an on-screen component: "actually we have 50 seats" → patch it.
 _ON_SCREEN_RE = re.compile(r"- sync_id (\S+): (\w+)")
-_EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}")
+_EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}|<email_\d+>")
 _SEATS_RE = re.compile(r"(\d+)\s*(?:seats|people|employees|users)", re.IGNORECASE)
 
 

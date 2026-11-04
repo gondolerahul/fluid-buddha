@@ -19,6 +19,8 @@ export { FluidBuddhaElement };
 export { Session } from './core/Session';
 export { HostBridge } from './core/HostBridge';
 export { Canvas } from './ui/components/canvas';
+// For hosts that build their own UI around Session (requestConsent).
+export { consentCopy, consentPrompt } from './ui/consent';
 export type {
   FluidBuddhaConfig,
   FluidBuddhaOptions,
@@ -33,6 +35,7 @@ export type {
   PageSpec,
   PageSection,
   Grounding,
+  Privacy,
 } from './protocol';
 
 function defineElement(): void {

@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.db import session_scope
 from app.orchestrator.profile import ensure_profile
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
+from app.trust.settings import get_privacy
 
 router = APIRouter(tags=["widget"])
 
@@ -26,6 +27,7 @@ async def widget_config(key: str = Query(..., min_length=1, max_length=200)) -> 
     try:
         async with session_scope() as db:
             resolved = await resolve_public_site(db, key=key, site=None, intelligence=None)
+            privacy = await get_privacy(db, resolved.site_key)
     except PublicAccessError as exc:
         raise HTTPException(status_code=403, detail=exc.reason)
     website = resolved.website
@@ -37,4 +39,5 @@ async def widget_config(key: str = Query(..., min_length=1, max_length=200)) -> 
         "accent": website.accent if website else None,
         "agent_name": profile.agent_name,
         "company_name": profile.company_name,
+        "privacy": privacy.public(),
     }

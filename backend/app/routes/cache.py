@@ -12,6 +12,8 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from typing import Literal, Optional
+
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +29,8 @@ class CacheEntryUpdate(BaseModel):
     answer_text: str | None = None
     components: list[dict] | None = None
     actions: list[dict] | None = None
+    # Golden answers (WS8): pin the approved answer, or block it from replay.
+    status: Literal["auto", "pinned", "blocked"] | None = None
 
 
 def _episodic(request: Request, db: AsyncSession, site_key: str):
@@ -40,12 +44,14 @@ async def list_cache(
     offset: int = 0,
     search: str | None = None,
     kind: str = "turn",
+    status_filter: Optional[Literal["auto", "pinned", "blocked"]] = None,
     site: store.Website = Depends(owned_website),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     cache = _episodic(request, db, site.site_key)
     items, total = await cache.list_entries(
-        kind=kind, limit=min(limit, 200), offset=offset, search=search
+        kind=kind, limit=min(limit, 200), offset=offset, search=search,
+        status=status_filter,
     )
     return {"total": total, "limit": limit, "offset": offset, "items": items}
 
@@ -84,7 +90,7 @@ async def update_cache_entry(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cache entry not found")
     updated = await cache.update_entry(
         eid, question=body.question, answer_text=body.answer_text,
-        components=body.components, actions=body.actions,
+        components=body.components, actions=body.actions, status=body.status,
     )
     return updated
 

@@ -115,6 +115,15 @@ export interface Grounding {
   sources: Array<{ document?: string; section?: string; score?: number; label?: string; route?: string }>;
 }
 
+/** The site's privacy settings, sent on `ready` (WS8). `retention_days` 0 means
+ *  transcripts are kept until deleted; null when unknown (socket unavailable). */
+export interface Privacy {
+  consent_required: boolean;
+  policy_url?: string | null;
+  retention_days: number | null;
+  redacts_pii: boolean;
+}
+
 export const base64ToBytes = (b64: string): Uint8Array => {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);

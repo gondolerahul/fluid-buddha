@@ -111,6 +111,10 @@ class Settings(BaseSettings):
     public_rate_limit_per_min: int = 120      # turns per site per minute; 0 = off
     public_daily_spend_cap_usd: float = 0.0   # USD per site per UTC day; 0 = off
 
+    # ---- Trust layer (WS8) ----
+    # How often visitor data past each site's retention window is deleted.
+    retention_sweep_minutes: int = 60         # 0 = off
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

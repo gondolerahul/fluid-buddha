@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AgentProfile, Api, ApiError, Integrations, Persona, Website } from "@/lib/api";
+import { AgentProfile, Api, ApiError, Integrations, Persona, Privacy, Website } from "@/lib/api";
 import { useWebsite } from "@/components/WebsiteContext";
 import { Spinner, useToast } from "@/components/ui";
 
@@ -40,6 +40,7 @@ export default function SettingsPage() {
       <SiteForm key={website.id} website={website} onSaved={reload} />
       <ProfileSection id={website.id} />
       <IntegrationsSection id={website.id} />
+      <PrivacySection id={website.id} />
       <DangerZone website={website} />
     </div>
   );
@@ -372,6 +373,132 @@ function IntegrationsForm({ id, initial }: { id: string; initial: Integrations }
           </button>
         </div>
       </div>
+    </section>
+  );
+}
+
+const TRANSCRIPT_DAYS = [30, 90, 180, 365, 0];
+const LEAD_DAYS = [90, 180, 365, 730, 0];
+const daysLabel = (d: number) => (d === 0 ? "Keep until deleted" : d >= 365 ? `${d / 365} year${d > 365 ? "s" : ""}` : `${d} days`);
+
+function PrivacySection({ id }: { id: string }) {
+  const [state, setState] = useState<{ cfg: Privacy | null } | null>(null);
+  useEffect(() => {
+    Api.getPrivacy(id).then((cfg) => setState({ cfg })).catch(() => setState({ cfg: null }));
+  }, [id]);
+  if (!state) return <div className="skeleton" style={{ height: 260 }} />;
+  if (!state.cfg) return <div className="notice err">Couldn&apos;t load privacy settings.</div>;
+  return <PrivacyForm id={id} initial={state.cfg} />;
+}
+
+function PrivacyForm({ id, initial }: { id: string; initial: Privacy }) {
+  const toast = useToast();
+  const [cfg, setCfg] = useState<Privacy>(initial);
+  const [busy, setBusy] = useState(false);
+  const [erase, setErase] = useState("");
+  const [erasing, setErasing] = useState(false);
+  const set = <K extends keyof Privacy>(k: K, v: Privacy[K]) => setCfg((c) => ({ ...c, [k]: v }));
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      setCfg(await Api.savePrivacy(id, {
+        ...cfg, privacy_policy_url: cfg.privacy_policy_url?.trim() || null,
+      }));
+      toast("Privacy settings saved");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Could not save privacy settings", "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const eraseVisitor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = erase.trim();
+    if (!email || !window.confirm(
+      `Delete every lead for ${email} and the conversations they came from? This can't be undone.`,
+    )) return;
+    setErasing(true);
+    try {
+      const r = await Api.eraseVisitor(id, email);
+      toast(r.leads ? `Deleted ${r.leads} lead${r.leads === 1 ? "" : "s"} and ${r.conversations} conversation${r.conversations === 1 ? "" : "s"}`
+        : "No leads with that email");
+      setErase("");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Could not delete that visitor's data", "err");
+    } finally {
+      setErasing(false);
+    }
+  };
+
+  return (
+    <section className="card" id="privacy">
+      <h3 style={{ marginBottom: 4 }}>Privacy &amp; data</h3>
+      <p className="muted" style={{ fontSize: "0.84rem", marginBottom: 16 }}>
+        What the agent stores about visitors, for how long, and what they agree to before voice.
+      </p>
+      <form onSubmit={save} className="stack">
+        <label className="check">
+          <input type="checkbox" checked={cfg.redact_pii} onChange={(e) => set("redact_pii", e.target.checked)} />
+          <span>
+            Mask personal details
+            <span className="faint">Emails, phone, card, ID and bank numbers are replaced before the AI
+              sees them and before transcripts are saved. Leads still get the email the visitor gave.</span>
+          </span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={cfg.consent_required}
+            onChange={(e) => set("consent_required", e.target.checked)} />
+          <span>
+            Ask before using the microphone
+            <span className="faint">Visitors see what voice means and choose to allow it or type.
+              Turn off only if your site&apos;s own consent banner already covers it.</span>
+          </span>
+        </label>
+        <div className="field">
+          <label className="label">Privacy policy link <span className="faint">(shown in the consent prompt)</span></label>
+          <input className="input" type="url" value={cfg.privacy_policy_url ?? ""}
+            onChange={(e) => set("privacy_policy_url", e.target.value)} placeholder="https://example.com/privacy" />
+        </div>
+        <div className="grid grid-2" style={{ gap: 12 }}>
+          <div className="field">
+            <label className="label">Keep transcripts for</label>
+            <select className="select" value={cfg.transcript_retention_days}
+              onChange={(e) => set("transcript_retention_days", Number(e.target.value))}>
+              {TRANSCRIPT_DAYS.map((d) => <option key={d} value={d}>{daysLabel(d)}</option>)}
+            </select>
+            <p className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+              Older conversations and cached answers are deleted. Pinned answers stay.
+            </p>
+          </div>
+          <div className="field">
+            <label className="label">Keep leads for</label>
+            <select className="select" value={cfg.lead_retention_days}
+              onChange={(e) => set("lead_retention_days", Number(e.target.value))}>
+              {LEAD_DAYS.map((d) => <option key={d} value={d}>{daysLabel(d)}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="row" style={{ justifyContent: "flex-end" }}>
+          <button className="btn btn-primary" disabled={busy}>{busy ? <Spinner /> : "Save privacy settings"}</button>
+        </div>
+      </form>
+
+      <form onSubmit={eraseVisitor} className="stack-sm" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+        <label className="label">Delete a visitor&apos;s data</label>
+        <p className="faint" style={{ fontSize: "0.78rem" }}>
+          For a deletion request: removes their leads and the conversations those leads came from.
+        </p>
+        <div className="row" style={{ gap: 8 }}>
+          <input className="input" type="email" value={erase} onChange={(e) => setErase(e.target.value)}
+            placeholder="visitor@example.com" aria-label="Visitor email" />
+          <button className="btn btn-danger btn-sm" disabled={erasing || !erase.trim()}>
+            {erasing ? <Spinner /> : "Delete data"}
+          </button>
+        </div>
+      </form>
     </section>
   );
 }

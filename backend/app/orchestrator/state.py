@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.ai.base import ChatMessage
+from app.trust.pii import PiiVault
 
 
 INTELLIGENCE_LEVELS = ("basic", "high", "advance", "extreme")
@@ -55,6 +56,9 @@ class ConversationState:
     # the agent can react when the visitor plays with one. Capped (last N).
     components: dict[str, dict] = field(default_factory=dict)
     max_components: int = 8
+    # Placeholders for the visitor's PII in this conversation (WS8): the model
+    # and the history only ever see the masked text.
+    pii: PiiVault = field(default_factory=PiiVault)
 
     def add_turn(self, user_text: str, model_text: str) -> None:
         self.history.append(ChatMessage(role="user", text=user_text))

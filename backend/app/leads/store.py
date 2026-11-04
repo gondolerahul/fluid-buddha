@@ -18,9 +18,11 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.trust.pii import SENSITIVE, redact
+
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
 # A message that shares contact details isn't a question about the product.
-_HAS_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", re.I)
+_HAS_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}|\[email\]|<email_\d+>", re.I)
 _BUYING_RE = re.compile(
     r"\b(pric|cost|quote|demo|trial|buy|purchase|plan|contract|onboard|integrat)", re.I)
 _FIELD_MAX = {"name": 200, "email": 320, "company": 200, "phone": 50,
@@ -47,6 +49,10 @@ class LeadIn:
         if not EMAIL_RE.match(email):
             raise LeadError("a valid email address is required")
         vals["email"] = email
+        # Card, ID and bank numbers have no place in a lead (WS8).
+        for k in ("message", "interest"):
+            if vals[k]:
+                vals[k] = redact(vals[k], SENSITIVE)
         return LeadIn(**vals)
 
 

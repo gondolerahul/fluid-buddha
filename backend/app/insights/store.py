@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -33,9 +34,11 @@ async def record_turn(
     question: str, answer: str, intent: Optional[str] = None,
     persona: Optional[str] = None, page: Optional[str] = None,
     grounding: Optional[dict] = None, served_from_cache: bool = False,
+    consent_at: Optional[datetime] = None,
 ) -> None:
     """Append one turn to the session's conversation (created on first turn).
-    The caller owns the transaction."""
+    ``consent_at`` is when the visitor allowed the microphone (WS8). The caller
+    owns the transaction."""
     if not (question or "").strip():
         return
     g = grounding or {}
@@ -43,17 +46,18 @@ async def record_turn(
     unanswered = not found and intent != SMALL_TALK
     conv_id = (await db.execute(text(
         "INSERT INTO conversations "
-        "(id, site_key, session_id, channel, persona, first_page, turns, ungrounded) "
-        "VALUES (:id, :s, :sid, :ch, :p, :pg, 1, :ug) "
+        "(id, site_key, session_id, channel, persona, first_page, turns, ungrounded, "
+        " consent_at) VALUES (:id, :s, :sid, :ch, :p, :pg, 1, :ug, :ca) "
         "ON CONFLICT (site_key, session_id) DO UPDATE SET "
         "turns = conversations.turns + 1, "
         "ungrounded = conversations.ungrounded + EXCLUDED.ungrounded, "
         "persona = COALESCE(EXCLUDED.persona, conversations.persona), "
+        "consent_at = COALESCE(conversations.consent_at, EXCLUDED.consent_at), "
         "last_at = now() "
         "RETURNING id"
     ), {
         "id": uuid.uuid4(), "s": site_key, "sid": session_id, "ch": channel,
-        "p": persona, "pg": page, "ug": 1 if unanswered else 0,
+        "p": persona, "pg": page, "ug": 1 if unanswered else 0, "ca": consent_at,
     })).scalar_one()
     await db.execute(text(
         "INSERT INTO conversation_turns "

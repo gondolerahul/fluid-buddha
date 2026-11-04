@@ -15,6 +15,7 @@ globalThis.HTMLElement = window.HTMLElement;
 // throws. Define it instead so the test runs on current Node unmodified.
 Object.defineProperty(globalThis, 'navigator', { value: window.navigator, configurable: true });
 globalThis.CustomEvent = window.CustomEvent;
+Object.defineProperty(globalThis, 'localStorage', { value: window.localStorage, configurable: true });
 globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 // Deterministic WebSocket stub (never actually connects).
 globalThis.WebSocket = class {
@@ -218,6 +219,50 @@ const keyed = new Session(
 );
 keyed.connect();
 ok(new URL(globalThis.__lastWsUrl).searchParams.get('key') === 'fbk_test123', 'widget key is sent on the voice socket');
+
+// ---- Microphone consent (WS8) ----
+const { consentCopy, consentPrompt } = mod;
+const priv = { consent_required: true, retention_days: 30, redacts_pii: true, policy_url: 'https://example.com/privacy' };
+const copy = consentCopy(priv);
+ok(copy.includes('not stored') && copy.includes('30 days') && copy.includes('masked'), 'consent copy states audio, masking and retention');
+const host = document.createElement('div');
+document.body.appendChild(host);
+const sroot = host.attachShadow({ mode: 'open' });
+const allowP = consentPrompt(sroot, priv);
+const dlg = sroot.querySelector('.fb-consent [role=dialog]');
+ok(!!dlg && dlg.getAttribute('aria-modal') === 'true', 'consent prompt renders a modal dialog');
+ok(sroot.querySelector('.fb-consent a').href === 'https://example.com/privacy', 'consent prompt links the privacy policy');
+sroot.querySelector('.fb-consent-allow').click();
+ok((await allowP) === true && !sroot.querySelector('.fb-consent'), 'Allow resolves true and closes the prompt');
+const denyP = consentPrompt(sroot, { ...priv, policy_url: 'javascript:alert(1)' });
+ok(!sroot.querySelector('.fb-consent a'), 'a non-web policy link is not rendered');
+sroot.querySelector('.fb-consent-card').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+ok((await denyP) === false, 'Escape declines');
+
+const cfgC = { backend: 'ws://x', api: 'http://x', site: 'consent-site', intelligence: 'advance', design: 'level1', position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} };
+const asked = [];
+const sys = [];
+let answer = false;
+const cs = new Session(cfgC, bridge, {
+  onStatus() {}, onUserTranscript() {}, onAgentMessage() {}, onComponent() {}, onPatch() {},
+  onSystem: (m) => sys.push(m), onPage() {},
+  requestConsent: async (p) => { asked.push(p); return answer; },
+});
+cs.feed({ channel: 'EVENTS', type: 'ready', payload: { session_id: 'c1', config: {}, privacy: priv } });
+await cs.startVoice();
+ok(asked.length === 1 && !cs.active && sys.at(-1).startsWith('Voice is off'), 'declining consent keeps the mic off');
+answer = true;
+await cs.startVoice();
+ok(asked.length === 2 && window.localStorage.getItem('fluidbuddha:consent:consent-site') === '1', 'allowing consent is remembered for the site');
+await cs.startVoice();
+ok(asked.length === 2, 'a remembered consent is not asked again');
+const noAsk = new Session({ ...cfgC, site: 'open-site' }, bridge, {
+  onStatus() {}, onUserTranscript() {}, onAgentMessage() {}, onComponent() {}, onPatch() {},
+  onSystem() {}, onPage() {}, requestConsent: async () => { asked.push('x'); return true; },
+});
+noAsk.feed({ channel: 'EVENTS', type: 'ready', payload: { config: {}, privacy: { ...priv, consent_required: false } } });
+await noAsk.startVoice();
+ok(asked.length === 2, 'a site that does not require consent skips the prompt');
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

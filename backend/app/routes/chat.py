@@ -23,6 +23,8 @@ from app.orchestrator.state import normalize_sections
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
 from app.transport.guard import check_public_budget
 from app.transport.session_store import store
+from app.trust.pii import PiiVault, contains_pii
+from app.trust.settings import get_privacy
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -81,6 +83,7 @@ async def chat(req: ChatRequest, request: Request) -> dict:
             )
             # Per-site rate limit + daily spend cap (docs/defects.md D-3).
             blocked = await check_public_budget(rdb, resolved.site_key, rt.settings)
+            privacy = await get_privacy(rdb, resolved.site_key)
     except PublicAccessError as exc:
         raise HTTPException(status_code=403, detail=exc.reason)
     if blocked:
@@ -98,6 +101,14 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     if req.sections is not None:
         state.sections = normalize_sections(req.sections)
 
+    # PII masking (WS8): the loop, the history and every store see placeholders.
+    # A turn that carries the visitor's details is personal: never replayed or
+    # cached.
+    pii = state.pii
+    pii.enabled = privacy.redact_pii
+    message = pii.mask(req.message)
+    personal = message != req.message
+
     settings = rt.settings
 
     # Cache-first (Feature 2): replay a close past answer, or pass near-matches to
@@ -105,16 +116,18 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     # poison the main reasoning transaction.
     related: list = []
     replay = None
-    if settings.conversation_cache_enabled:
+    if settings.conversation_cache_enabled and not personal:
         try:
             async with session_scope() as cdb:
                 cache = rt.episodic(cdb, state.site_key)
                 hits = await cache.query(
-                    transcript=req.message, persona=state.persona,
+                    transcript=message, persona=state.persona,
                     page=state.page, top_k=settings.episodic_top_k,
                 )
-                if hits and await cache.count(persona=state.persona) >= settings.episodic_min_episodes:
-                    best = hits[0]
+                # A pinned answer (WS8) replays before the "enough data" gate.
+                best = hits[0] if hits else None
+                if best and (best.pinned or await cache.count(persona=state.persona)
+                             >= settings.episodic_min_episodes):
                     if best.score >= settings.episodic_replay_threshold:
                         replay = best
                         await cache.mark_hit(best.question, state.persona)
@@ -150,18 +163,19 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     async with session_scope() as db:
         bridge = rt.bridge(db, site_key=state.site_key)
         result = await rt.loop.run_turn(
-            user_text=req.message, state=state, bridge=bridge, related=related,
+            user_text=message, state=state, bridge=bridge, related=related,
         )
 
     # Record the turn for future replay (best-effort, own session).
     # A patch targets this session's components, and a captured lead holds one
     # visitor's contact details, so neither turn may be replayed.
+    personal = personal or contains_pii(result.answer_text)
     if (settings.conversation_cache_enabled and result.answer_text
-            and not result.patches and not result.leads):
+            and not result.patches and not result.leads and not personal):
         try:
             async with session_scope() as db:
                 await rt.episodic(db, state.site_key).record(
-                    question=req.message, answer_text=result.answer_text,
+                    question=message, answer_text=result.answer_text,
                     components=[c.to_dict() for c in result.components],
                     actions=[a.to_dict() for a in result.actions],
                     persona=state.persona, page=state.page, channel="text",
@@ -186,10 +200,13 @@ async def chat(req: ChatRequest, request: Request) -> dict:
             await record_turn(adb, metrics)
     except Exception as exc:
         logger.debug("usage record skipped: %s", exc)
-    await _record_conversation(state, sid, req.message, result.answer_text, result.intent,
+    await _record_conversation(state, sid, pii.stored(message),
+                               pii.stored(result.answer_text), result.intent,
                                result.grounding.to_dict(), served_from_cache=False,
                                leads=result.leads)
 
     payload = result.to_message_dict()
+    payload["text"] = PiiVault.spoken(payload["text"])
+    payload["ack"] = PiiVault.spoken(payload["ack"])
     payload["session_id"] = sid
     return payload

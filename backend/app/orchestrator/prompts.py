@@ -85,6 +85,9 @@ bit"/"go to the top", or `section_id` to jump to a named section.
 `capture_lead` with what they said, then confirm someone will follow up. Ask \
 for an email only when they want follow-up; never ask for more than name, email \
 and company.
+- Contact and payment details the visitor types arrive masked as placeholders \
+such as <EMAIL_1> or <PHONE_1>. Pass a placeholder to `capture_lead` exactly as \
+written; never read one aloud — say "your email" instead.
 - After issuing tool calls, finish with the spoken explanation as plain text.
 
 PAGE AWARENESS:

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Api, ApiError, CacheEntry } from "@/lib/api";
+import { Api, ApiError, CacheEntry, CacheStatus } from "@/lib/api";
 import { Modal, Spinner, fmtDate, useToast } from "@/components/ui";
 
 export default function CachePage() {
@@ -19,6 +19,18 @@ export default function CachePage() {
   const load = () => fetchList(search);
   useEffect(() => { fetchList(""); }, [fetchList]);
 
+  const setStatus = async (e: CacheEntry, status: CacheStatus) => {
+    try {
+      const updated = await Api.updateCache(id, e.id, { status });
+      setList((l) => l?.map((x) => (x.id === updated.id ? updated : x)) ?? null);
+      toast(status === "pinned" ? "Pinned — always given for this question"
+        : status === "blocked" ? "Blocked — this question is always answered fresh"
+        : "Back to automatic replay");
+    } catch {
+      toast("Could not update", "err");
+    }
+  };
+
   const remove = async (eid: string) => {
     try { await Api.deleteCache(id, eid); load(); toast("Deleted"); }
     catch { toast("Could not delete", "err"); }
@@ -31,7 +43,8 @@ export default function CachePage() {
           <h2>Cached responses</h2>
           <p className="muted" style={{ fontSize: "0.88rem" }}>
             Answers &amp; actions the agent replays. Edit them to curate exactly what visitors hear —
-            saved straight back to the cache.
+            saved straight back to the cache. Pin an answer to always give it for that question;
+            block one to have the agent answer fresh every time.
           </p>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); load(); }} className="row" style={{ gap: 8 }}>
@@ -67,6 +80,8 @@ export default function CachePage() {
                     <div className="row" style={{ gap: 6, marginTop: 5 }}>
                       {e.persona && <span className="badge">{e.persona}</span>}
                       {e.channel && <span className="badge">{e.channel}</span>}
+                      {e.status === "pinned" && <span className="badge accent">pinned</span>}
+                      {e.status === "blocked" && <span className="badge err">blocked</span>}
                     </div>
                   </td>
                   <td className="muted" style={{ maxWidth: 320 }}>{e.answer_text}</td>
@@ -84,6 +99,15 @@ export default function CachePage() {
                   <td>
                     <div className="row" style={{ gap: 4 }}>
                       <button className="btn btn-ghost btn-sm" onClick={() => setEditing(e)}>Edit</button>
+                      {e.status !== "pinned" && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => setStatus(e, "pinned")}>Pin</button>
+                      )}
+                      {e.status !== "blocked" && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => setStatus(e, "blocked")}>Block</button>
+                      )}
+                      {e.status !== "auto" && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => setStatus(e, "auto")}>Unset</button>
+                      )}
                       <button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(e.id)}>Delete</button>
                     </div>
                   </td>

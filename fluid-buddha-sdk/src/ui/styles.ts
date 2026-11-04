@@ -794,4 +794,32 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
   .trigger::after, .l2-play::after, .l3-seed, .panel::after, .l2-hint { animation: none !important; }
   .trigger::after { opacity: 0 !important; }
 }
+
+/* ---- Microphone consent (WS8): above every design level ---- */
+.fb-consent {
+  position: fixed; inset: 0; z-index: calc(var(--fb-z-base) + 100);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(5,6,8,0.55); backdrop-filter: blur(6px);
+  font-family: inherit;
+}
+.fb-consent-card {
+  width: min(380px, 100%); padding: 20px 20px 16px; border-radius: 16px;
+  background: var(--fb-surface); color: var(--fb-fg);
+  border: 1px solid var(--fb-border); box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.fb-consent-card h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.fb-consent-card p { margin: 0; font-size: 0.88rem; line-height: 1.5; color: var(--fb-muted); }
+.fb-consent-card a { font-size: 0.84rem; color: var(--fb-gold-bright); }
+.fb-consent-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.fb-consent-actions button {
+  font: inherit; font-size: 0.86rem; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--fb-border); background: transparent; color: var(--fb-fg);
+}
+.fb-consent-actions .fb-consent-allow {
+  background: var(--fb-accent); border-color: var(--fb-accent); color: var(--fb-void); font-weight: 600;
+}
+.fb-consent-actions button:focus-visible, .fb-consent-card a:focus-visible {
+  outline: 2px solid var(--fb-gold-bright); outline-offset: 2px;
+}
 `;

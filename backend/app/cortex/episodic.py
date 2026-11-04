@@ -15,6 +15,11 @@ Two cooperating stores:
   semantic recall and future consolidation (``DreamingEngine``). Replay never
   depends on it, so the package's storage quirks can't break a conversation.
 
+Golden answers (WS8): each row has a ``status``. ``pinned`` is the tenant's
+approved answer: it wins an exact match, replays before the "enough data"
+gate and survives retention. ``blocked`` never replays, and its question is
+not cached again, so it is always answered fresh. ``auto`` is everything else.
+
 Privacy (Req 4.2): only transcripts + agent output + component specs are stored
 here — never the visitor's microphone audio (that lives only in the agent's TTS
 cache, see ``app/transport/answer_audio.py``).
@@ -58,6 +63,7 @@ class CachedAnswer:
     score: float           # 1.0 for an exact-question match, else cosine
     match: str             # 'exact' | 'semantic'
     grounding: Optional[dict] = None   # the original answer's sources (WS8)
+    pinned: bool = False               # the tenant's approved answer (WS8)
 
 
 @dataclass
@@ -117,6 +123,8 @@ class EpisodicCache:
     ) -> None:
         if not (question and answer_text):
             return
+        if kind == "turn" and await self._curated(question):
+            return   # a pinned answer stands; a blocked question stays uncached
         try:
             vec = await self._embed(question)
             sql = (
@@ -153,6 +161,16 @@ class EpisodicCache:
 
         if self.settings.episodic_memory_enabled and kind == "turn":
             await self._write_episode(question, answer_text, persona, page, channel)
+
+    async def _curated(self, question: str) -> bool:
+        try:
+            res = await self.db.execute(text(
+                "SELECT 1 FROM conversation_cache WHERE site_key=:s AND kind='turn' "
+                "AND q_norm=:qn AND status <> 'auto' LIMIT 1"
+            ), {"s": self.site_key, "qn": normalize_question(question)})
+            return res.first() is not None
+        except Exception:
+            return False
 
     async def _write_episode(
         self, question: str, answer_text: str,
@@ -220,15 +238,16 @@ class EpisodicCache:
         try:
             res = await self.db.execute(text(
                 "SELECT id, question, answer_text, components, actions, persona, page, "
-                "grounding FROM conversation_cache "
-                "WHERE site_key=:s AND kind='turn' AND q_norm=:qn "
+                "grounding, status FROM conversation_cache "
+                "WHERE site_key=:s AND kind='turn' AND q_norm=:qn AND status <> 'blocked' "
                 "AND (persona IS NULL OR CAST(:p AS text) IS NULL OR persona=CAST(:p AS text)) "
-                "ORDER BY (persona IS NOT DISTINCT FROM CAST(:p AS text)) DESC, "
+                "ORDER BY (status = 'pinned') DESC, "
+                "(persona IS NOT DISTINCT FROM CAST(:p AS text)) DESC, "
                 "created_at DESC LIMIT 1"
             ), {"s": self.site_key, "qn": normalize_question(transcript), "p": persona})
             row = res.first()
             if row is not None:
-                out.append(self._row_to_answer(row, 1.0, "exact", row[7]))
+                out.append(self._row_to_answer(row, 1.0, "exact", row[7], row[8]))
                 seen.add(row[0])
         except Exception as exc:
             logger.warning("episodic exact query failed: %s", exc)
@@ -239,16 +258,17 @@ class EpisodicCache:
             try:
                 res = await self.db.execute(text(
                     "SELECT id, question, answer_text, components, actions, persona, "
-                    "page, 1 - (embedding <=> CAST(:vec AS vector)) AS score, grounding "
-                    "FROM conversation_cache "
+                    "page, 1 - (embedding <=> CAST(:vec AS vector)) AS score, grounding, "
+                    "status FROM conversation_cache "
                     "WHERE site_key=:s AND kind='turn' AND embedding IS NOT NULL "
+                    "AND status <> 'blocked' "
                     "AND (persona IS NULL OR CAST(:p AS text) IS NULL OR persona=CAST(:p AS text)) "
                     "ORDER BY embedding <=> CAST(:vec AS vector) LIMIT :k"
                 ), {"s": self.site_key, "vec": json.dumps(vec), "p": persona, "k": top_k})
                 for r in res.fetchall():
                     if r[0] in seen:
                         continue
-                    out.append(self._row_to_answer(r, float(r[7]), "semantic", r[8]))
+                    out.append(self._row_to_answer(r, float(r[7]), "semantic", r[8], r[9]))
                     seen.add(r[0])
             except Exception as exc:
                 logger.warning("episodic semantic query failed: %s", exc)
@@ -294,12 +314,13 @@ class EpisodicCache:
             "page": r["page"],
             "channel": r["channel"],
             "hit_count": r["hit_count"],
+            "status": r["status"],
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         }
 
     async def list_entries(
         self, *, kind: str = "turn", limit: int = 50, offset: int = 0,
-        search: Optional[str] = None,
+        search: Optional[str] = None, status: Optional[str] = None,
     ) -> tuple[list[dict], int]:
         """Page through cached turns for the admin cache editor."""
         where = "site_key=:s AND kind=:k"
@@ -307,13 +328,16 @@ class EpisodicCache:
         if search:
             where += " AND (question ILIKE :q OR answer_text ILIKE :q)"
             params["q"] = f"%{search}%"
+        if status:
+            where += " AND status=:st"
+            params["st"] = status
         total = (await self.db.execute(
             text(f"SELECT count(*) FROM conversation_cache WHERE {where}"), params
         )).scalar() or 0
         res = await self.db.execute(
             text("SELECT id, question, answer_text, components, actions, persona, page, "
-                 f"channel, hit_count, created_at FROM conversation_cache WHERE {where} "
-                 "ORDER BY created_at DESC LIMIT :lim OFFSET :off"),
+                 f"channel, hit_count, status, created_at FROM conversation_cache "
+                 f"WHERE {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"),
             {**params, "lim": limit, "off": offset},
         )
         return [self._entry_dict(r) for r in res.mappings().all()], int(total)
@@ -321,7 +345,7 @@ class EpisodicCache:
     async def get_entry(self, entry_id: uuid.UUID) -> Optional[dict]:
         res = await self.db.execute(
             text("SELECT id, question, answer_text, components, actions, persona, page, "
-                 "channel, hit_count, created_at FROM conversation_cache "
+                 "channel, hit_count, status, created_at FROM conversation_cache "
                  "WHERE id=:id AND site_key=:s"),
             {"id": entry_id, "s": self.site_key},
         )
@@ -334,6 +358,7 @@ class EpisodicCache:
         answer_text: Optional[str] = None,
         components: Optional[list[dict]] = None,
         actions: Optional[list[dict]] = None,
+        status: Optional[str] = None,
     ) -> Optional[dict]:
         """Edit a cached response/actions in place (req E). Editing the question
         also refreshes its normalised key + embedding so replay stays correct."""
@@ -345,6 +370,8 @@ class EpisodicCache:
             sets.append("components=CAST(:c AS jsonb)"); params["c"] = json.dumps(components)
         if actions is not None:
             sets.append("actions=CAST(:ac AS jsonb)"); params["ac"] = json.dumps(actions)
+        if status is not None:
+            sets.append("status=:st"); params["st"] = status
         if question is not None:
             sets.append("question=:q"); params["q"] = question[:2000]
             sets.append("q_norm=:qn"); params["qn"] = normalize_question(question)
@@ -371,7 +398,7 @@ class EpisodicCache:
 
     @staticmethod
     def _row_to_answer(row: Any, score: float, match: str,
-                       grounding: Any = None) -> CachedAnswer:
+                       grounding: Any = None, status: Any = None) -> CachedAnswer:
         def _as_list(v: Any) -> list:
             if v is None:
                 return []
@@ -389,4 +416,5 @@ class EpisodicCache:
             components=_as_list(row[3]), actions=_as_list(row[4]),
             persona=row[5], page=row[6], score=score, match=match,
             grounding=grounding if isinstance(grounding, dict) else None,
+            pinned=status == "pinned",
         )

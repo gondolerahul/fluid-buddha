@@ -6,7 +6,8 @@
 import { AudioCapture } from '../audio/AudioCapture';
 import { AudioPlayer } from '../audio/AudioPlayer';
 import { JitterBuffer } from '../audio/JitterBuffer';
-import { ComponentPayload, Envelope, Grounding, PageSpec, base64ToBytes } from '../protocol';
+import { ComponentPayload, Envelope, Grounding, PageSpec, Privacy, base64ToBytes } from '../protocol';
+import { CONSENT_VERSION, hasConsent, rememberConsent } from '../ui/consent';
 import { ConnectionStatus, VoiceClient } from '../transport/VoiceClient';
 import { FluidBuddhaConfig } from './config';
 import { HostBridge } from './HostBridge';
@@ -26,7 +27,13 @@ export interface SessionCallbacks {
   onAgentAudio?: () => void;
   /** Short status from the guided tour (e.g. "touring"/""). Optional. */
   onTourStatus?: (text: string) => void;
+  /** Ask the visitor to allow the microphone (WS8); resolve true to allow.
+   *  Without it, a site that requires consent never starts the mic. */
+  requestConsent?: (privacy: Privacy) => Promise<boolean>;
 }
+
+// Used when the socket never says what the site wants: ask, to be safe.
+const FALLBACK_PRIVACY: Privacy = { consent_required: true, retention_days: null, redacts_pii: true };
 
 interface AnyRecognition {
   continuous: boolean;
@@ -63,6 +70,10 @@ export class Session {
   private _audioUnlockArmed = false;
   private readonly tour: TourController;
   private tourDoneWaiters = new Map<number, () => void>();
+  /** The site's privacy settings from `ready`, and callers waiting for them. */
+  private privacy: Privacy | null = null;
+  private readySeen = false;
+  private privacyWaiters: Array<() => void> = [];
 
   constructor(
     private readonly config: FluidBuddhaConfig,
@@ -142,6 +153,9 @@ export class Session {
       case 'EVENTS':
         if (env.type === 'ready') {
           if (typeof env.payload.session_id === 'string') this.wsSessionId = env.payload.session_id;
+          if (env.payload.privacy) this.privacy = env.payload.privacy as Privacy;
+          this.readySeen = true;
+          this.privacyWaiters.splice(0).forEach((w) => w());
           const cfg = (env.payload.config as { filler_delay_ms?: number; sample_rate?: number }) || {};
           // Reuse a player primed during the open gesture (so welcome audio is
           // allowed to autoplay); otherwise create it now.
@@ -168,6 +182,9 @@ export class Session {
         } else if (env.type === 'interrupted') {
           this.jitter?.reset();
           this.tour.abort(); // a real barge-in ends the tour
+        } else if (env.type === 'consent_required') {
+          // Audio reached a server session that hasn't heard the consent yet.
+          if (hasConsent(this.consentKey)) this.sendConsent();
         } else if (env.type === 'error') {
           this.cb.onSystem(String(env.payload.message || 'Error'));
         }
@@ -239,10 +256,49 @@ export class Session {
     }
   }
 
+  private get consentKey(): string {
+    return this.config.key || this.config.site;
+  }
+
+  private sendConsent(): void {
+    this.client?.sendRaw('EVENTS', 'consent', { mic: true, version: CONSENT_VERSION });
+  }
+
+  /** Resolves with the site's privacy settings once the socket is ready. */
+  private awaitPrivacy(timeoutMs = 4000): Promise<Privacy> {
+    if (this.readySeen) return Promise.resolve(this.privacy ?? FALLBACK_PRIVACY);
+    return new Promise((resolve) => {
+      const t = setTimeout(() => resolve(this.privacy ?? FALLBACK_PRIVACY), timeoutMs);
+      this.privacyWaiters.push(() => {
+        clearTimeout(t);
+        resolve(this.privacy ?? FALLBACK_PRIVACY);
+      });
+    });
+  }
+
+  /** Microphone consent (WS8): ask once per site, remember the answer in this
+   *  browser, and tell the server before any audio is sent. */
+  private async ensureMicConsent(): Promise<boolean> {
+    const privacy = await this.awaitPrivacy();
+    if (!privacy.consent_required) return true;
+    if (!hasConsent(this.consentKey)) {
+      const ok = (await this.cb.requestConsent?.(privacy)) ?? false;
+      if (!ok) return false;
+      rememberConsent(this.consentKey);
+    }
+    this.sendConsent();
+    return true;
+  }
+
   async startVoice(): Promise<void> {
     this.connect();
     this.player?.resume();
     this.reportCurrentPage();
+    if (!(await this.ensureMicConsent())) {
+      this._active = false;
+      this.cb.onSystem('Voice is off — type to chat instead.');
+      return;
+    }
     this.startRecognition();
     const capture = new AudioCapture({
       onChunk: (pcm) => {
@@ -447,6 +503,8 @@ export class Session {
   /** Called once the socket is ready: report location, then greet if enabled. */
   private onReady(): void {
     this.reportCurrentPage();
+    // A reconnect is a new server session: repeat a consent already given.
+    if (this._active && hasConsent(this.consentKey)) this.sendConsent();
     if (this.welcomeEnabled && !this.greeted) {
       this.greeted = true;
       this.client?.sendHello(this.withLevels(this.pageProvider?.() ?? {}));

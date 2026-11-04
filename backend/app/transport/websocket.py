@@ -19,6 +19,7 @@ import time
 import uuid
 import zlib
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -35,6 +36,8 @@ from app.orchestrator.state import (
     normalize_sections,
 )
 from app.transport.envelope import Channel, make
+from app.trust.pii import PiiVault, contains_pii, redact
+from app.trust.settings import Privacy, get_privacy
 
 logger = logging.getLogger("a2ui.ws")
 router = APIRouter()
@@ -119,6 +122,12 @@ class VoiceSession:
         self._react_task: asyncio.Task | None = None
         # The tour plan handed to the client on hello; tour_say speaks only its steps.
         self._tour_plan = None
+        # Trust layer (WS8): the site's privacy settings (loaded on connect), and
+        # when the visitor allowed the microphone. Audio is ignored until then
+        # if the site requires consent.
+        self.privacy = Privacy()
+        self._consent_at: datetime | None = None
+        self._consent_asked = False
 
     # ---- low-level send -------------------------------------------------
     async def send(self, channel: str, type_: str, payload=None, sync_id=None) -> None:
@@ -127,8 +136,16 @@ class VoiceSession:
     # ---- lifecycle ------------------------------------------------------
     async def run(self) -> None:
         await self.ws.accept()
+        try:
+            async with session_scope() as db:
+                self.privacy = await get_privacy(db, self.state.site_key)
+        except Exception as exc:   # defaults keep masking and consent on
+            logger.warning("ws[%s]: privacy settings unavailable: %s",
+                           self.session_id[:8], exc)
+        self.state.pii = PiiVault(enabled=self.privacy.redact_pii)
         await self.send(Channel.EVENTS, "ready", {
             "session_id": self.session_id,
+            "privacy": self.privacy.public(),
             "config": {
                 "filler_delay_ms": self.rt.settings.ui_filler_delay_ms,
                 "sample_rate": self.rt.settings.tts_sample_rate,
@@ -149,6 +166,9 @@ class VoiceSession:
         payload = env.get("payload") or {}
 
         if channel == Channel.AUDIO:
+            if self.privacy.consent_required and self._consent_at is None:
+                await self._ask_consent()
+                return
             if type_ == "start":
                 self._audio.clear()
             elif type_ == "chunk":
@@ -163,6 +183,10 @@ class VoiceSession:
             text = (payload.get("text") or "").strip()
             if text:
                 await self._on_utterance(text)
+        elif channel == Channel.EVENTS and type_ == "consent":
+            if payload.get("mic") is True and self._consent_at is None:
+                self._consent_at = datetime.now(timezone.utc)
+                logger.info("ws[%s]: microphone consent given", self.session_id[:8])
         elif channel == Channel.EVENTS and type_ == "hello":
             await self._on_hello(payload)
         elif channel == Channel.EVENTS and type_ == "tour_say":
@@ -174,6 +198,14 @@ class VoiceSession:
                 await self._on_component_state(payload["component_state"])
             else:  # sync
                 self._update_state(payload)
+
+    async def _ask_consent(self) -> None:
+        """Mic audio arrived before the visitor allowed it: drop it and tell
+        the widget once."""
+        if not self._consent_asked:
+            self._consent_asked = True
+            await self.send(Channel.EVENTS, "consent_required",
+                            {"privacy": self.privacy.public()})
 
     def _update_state(self, payload: dict) -> None:
         if "page" in payload:
@@ -237,9 +269,10 @@ class VoiceSession:
         if (in_flight and self._last_utt_text
                 and now - self._last_utt_at < _COALESCE_WINDOW_S):
             transcript = f"{self._last_utt_text} {transcript}".strip()
-            logger.info("ws[%s]: coalesced continuation -> %r", sid, transcript[:200])
+            logger.info("ws[%s]: coalesced continuation -> %r", sid,
+                        redact(transcript)[:200])
         else:
-            logger.info("ws[%s]: user> %r", sid, transcript[:160])
+            logger.info("ws[%s]: user> %r", sid, redact(transcript)[:160])
         self._last_utt_text = transcript
         self._last_utt_at = now
         await self._cancel_response()  # supersede any in-flight response
@@ -346,17 +379,24 @@ class VoiceSession:
         except Exception as exc:
             logger.exception("welcome failed: %s", exc)
 
-    async def _respond(self, transcript: str) -> None:
+    async def _respond(self, heard: str) -> None:
+        # PII masking (WS8): from here on the router, the thinker, the history
+        # and every store see placeholders, never the visitor's details. A turn
+        # that carries them is personal, so it is neither replayed nor cached.
+        pii = self.state.pii
+        transcript = pii.mask(heard)
+        personal = transcript != heard
+
         # Cache-first (Feature 2): if we've answered a near-identical question for
         # this persona before and have enough history, replay it verbatim
         # (components + byte-exact audio) instead of re-thinking.
-        if await self._maybe_replay(transcript):
+        if not personal and await self._maybe_replay(transcript):
             return
 
         think_task: asyncio.Task | None = None
         t0 = time.monotonic()
         try:
-            await self.send(Channel.STATE, "transcript", {"text": transcript})
+            await self.send(Channel.STATE, "transcript", {"text": heard})
 
             # 1. Fast Router — instant ack (latency masking, Req 3.3.1)
             self._persona_emitted = self.state.persona
@@ -385,7 +425,7 @@ class VoiceSession:
                             related=self._related, probe=probe)
             )
 
-            await self._speak(route.ack, _sid("ack"))
+            await self._speak(pii.spoken(route.ack), _sid("ack"))
 
             if switch:
                 self._persona_emitted = self.state.persona
@@ -418,7 +458,7 @@ class VoiceSession:
             # 5. Stream the grounded answer as TTS, synced to its component
             self._answer_speaking = True  # now interruptible by a real barge-in
             try:
-                await self._speak(think.answer_text, primary_sync or _sid("utt"),
+                await self._speak(pii.spoken(think.answer_text), primary_sync or _sid("utt"),
                                   grounding=think.grounding)
             finally:
                 self._answer_speaking = False
@@ -432,7 +472,8 @@ class VoiceSession:
             # Record the full multimodal turn for future replay (fire-and-forget).
             # A patch targets this session's components, and a captured lead holds
             # one visitor's contact details, so neither turn may be replayed.
-            if not think.patches and not think.leads:
+            personal = personal or contains_pii(think.answer_text)
+            if not think.patches and not think.leads and not personal:
                 self._spawn(self._record_turn(
                     question=transcript, answer_text=think.answer_text,
                     components=think.components, actions=think.actions,
@@ -445,7 +486,8 @@ class VoiceSession:
                 served_from_cache=False, t0=t0,
             ))
             self._spawn(self._record_conversation(
-                question=transcript, answer=think.answer_text, intent=route.intent,
+                question=pii.stored(transcript), answer=pii.stored(think.answer_text),
+                intent=route.intent,
                 grounding=think.grounding.to_dict(), served_from_cache=False,
                 leads=think.leads,
             ))
@@ -607,6 +649,7 @@ class VoiceSession:
                     channel="voice", question=question, answer=answer, intent=intent,
                     persona=self.state.persona, page=self.state.page,
                     grounding=grounding, served_from_cache=served_from_cache,
+                    consent_at=self._consent_at,
                 )
         except Exception as exc:
             logger.warning("ws[%s]: conversation record failed: %s",
@@ -678,10 +721,13 @@ class VoiceSession:
         except Exception as exc:
             logger.warning("ws[%s]: replay query failed: %s", self.session_id[:8], exc)
             return False
-        # Only engage once enough history exists for this persona ("enough data").
-        if not hits or total < st.episodic_min_episodes:
+        # Only engage once enough history exists for this persona ("enough data"),
+        # unless the tenant pinned this answer (WS8).
+        if not hits:
             return False
         best = hits[0]
+        if not best.pinned and total < st.episodic_min_episodes:
+            return False
         if best.score >= st.episodic_replay_threshold:
             await self._replay(transcript, best)
             return True

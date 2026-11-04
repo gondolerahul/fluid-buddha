@@ -62,6 +62,31 @@ revision — never DDL in application code (a test enforces this):
 .venv/bin/alembic upgrade head
 ```
 
+### Privacy (trust layer)
+
+Each website has privacy settings (console → Settings → Privacy & data, or
+`/tenant/websites/{id}/privacy`):
+
+- **PII masking** (on by default): emails, phone, card, SSN and IBAN numbers
+  are swapped for placeholders (`<EMAIL_1>`) before the router, the thinker
+  and the session history see the message (`app/trust/pii.py`). Transcripts
+  store `[email]`-style labels; turns that carried PII are never cached for
+  replay. Only `capture_lead` gets the real values back, so leads keep the
+  email the visitor gave.
+- **Microphone consent** (on by default): `/ws/voice` drops mic audio until the
+  widget sends `EVENTS/consent`; the widget asks once per site and browser.
+  The time of consent is stored on the conversation.
+- **Retention**: transcripts (and auto-cached answers) default to 90 days,
+  leads are kept until deleted; a sweep runs every
+  `RETENTION_SWEEP_MINUTES` (default 60, 0 = off). Pinned and blocked cached
+  answers are never swept.
+- **Erasure**: `POST /tenant/websites/{id}/privacy/erase {email}` deletes that
+  visitor's leads and the conversations they came from.
+
+Cached answers carry a `status`: `pinned` answers always replay for their
+question (even before the "enough history" gate) and survive content
+changes; `blocked` ones never replay and their question is not cached again.
+
 ## Going live on Vertex AI
 
 1. `gcloud auth application-default login` (or set `GOOGLE_APPLICATION_CREDENTIALS`).

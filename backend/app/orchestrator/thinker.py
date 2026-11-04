@@ -33,6 +33,7 @@ from app.orchestrator.result import (
 )
 from app.orchestrator.sitemap import resolve_route
 from app.orchestrator.tools import ACTION_TOOLS, COMPONENT_TOOLS, tools_for
+from app.trust.pii import PiiVault
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,7 @@ class HeavyThinker:
         related: Optional[list] = None,
         probe: bool = False,
         on_screen: Optional[dict[str, dict]] = None,
+        pii: Optional[PiiVault] = None,
     ) -> ThinkResult:
         extreme_brief = build_extreme_brief(site_key) if intelligence == "extreme" else None
         system = build_thinker_system(
@@ -192,7 +194,7 @@ class HeavyThinker:
                     if call.name == "query_cortex":
                         cortex_calls += 1
                     tool_result = await self._handle_tool_call(
-                        call, bridge, result, site_key, on_screen
+                        call, bridge, result, site_key, on_screen, pii
                     )
                     productive = True
                 messages.append(ChatMessage(
@@ -246,6 +248,7 @@ class HeavyThinker:
     async def _handle_tool_call(
         self, call, bridge: CortexBridge, result: ThinkResult, site_key: str,
         on_screen: Optional[dict[str, dict]] = None,
+        pii: Optional[PiiVault] = None,
     ):
         name = call.name
         args = call.args or {}
@@ -322,6 +325,9 @@ class HeavyThinker:
 
         if name == "capture_lead":
             from app.leads.store import LeadError, LeadIn
+            # The model saw placeholders; the lead gets what the visitor typed.
+            if pii is not None:
+                args = pii.unmask_args(args)
             try:
                 lead = LeadIn(email=args.get("email") or "", name=args.get("name"),
                               company=args.get("company"),

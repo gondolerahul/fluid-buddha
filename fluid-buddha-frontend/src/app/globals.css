@@ -142,6 +142,9 @@ p { margin: 0; }
 /* ---- inputs ---- */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .label { font-size: 0.82rem; color: var(--text-soft); font-weight: 500; }
+.check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 0.9rem; }
+.check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--accent); flex: none; }
+.check .faint { display: block; font-size: 0.8rem; margin-top: 2px; }
 .input, .textarea, .select {
   width: 100%; background: var(--bg); border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm); color: var(--text); padding: 10px 13px;

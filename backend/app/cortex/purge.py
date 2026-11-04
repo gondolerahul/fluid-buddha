@@ -23,7 +23,7 @@ from app.config import site_entity_id
 # conversation via ON DELETE CASCADE).
 _SITE_TABLES = (
     "site_tours", "site_profiles", "conversation_cache", "answer_audio_cache", "usage_events",
-    "conversations", "leads", "site_integrations",
+    "conversations", "leads", "site_integrations", "site_privacy",
 )
 
 
@@ -50,11 +50,13 @@ async def invalidate_site_caches(db: AsyncSession, site_key: str) -> None:
     """Drop cached answers + audio for a site after its knowledge changed.
 
     A replayed answer may quote content that was just deleted or replaced, so
-    the replay caches are cleared rather than served stale.
+    the replay caches are cleared rather than served stale. Pinned and blocked
+    answers are the tenant's own decisions and stay (WS8).
     """
-    for table in ("conversation_cache", "answer_audio_cache"):
-        if await _table_exists(db, table):
-            await db.execute(text(f"DELETE FROM {table} WHERE site_key = :sk"), {"sk": site_key})
+    await db.execute(text("DELETE FROM conversation_cache "
+                          "WHERE site_key = :sk AND status = 'auto'"), {"sk": site_key})
+    await db.execute(text("DELETE FROM answer_audio_cache WHERE site_key = :sk"),
+                     {"sk": site_key})
 
 
 async def purge_site(db: AsyncSession, site_key: str) -> dict[str, int]:

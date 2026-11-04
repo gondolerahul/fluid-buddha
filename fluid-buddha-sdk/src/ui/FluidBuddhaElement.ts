@@ -19,6 +19,7 @@ import { Level3Shell } from './level3/Level3Shell';
 import { PageRenderer, EnquiryPayload } from './page/PageRenderer';
 import { AuraCanvas, AuraState } from './aura/AuraCanvas';
 import { STYLES } from './styles';
+import { consentPrompt } from './consent';
 
 const ICONS = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
@@ -189,6 +190,7 @@ export class FluidBuddhaElement extends HTMLElement {
       onPage: (p) => this.renderPage(p),
       onAgentAudio: () => shell.agentAudioTick(),
       onTourStatus: (text) => shell.setTourStatus(text),
+      requestConsent: (p) => consentPrompt(root, p),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -220,6 +222,7 @@ export class FluidBuddhaElement extends HTMLElement {
       onPage: (p) => this.renderPage(p),
       onAgentAudio: () => shell.agentAudioTick(),
       onTourStatus: (text) => shell.setTourStatus(text),
+      requestConsent: (p) => consentPrompt(root, p),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -330,6 +333,7 @@ export class FluidBuddhaElement extends HTMLElement {
       onComponent: (c) => { this.hideThinking(); this.canvas.add(c); this.markSpeaking(); this.scrollDown(); },
       onPatch: (sid, patch) => this.canvas.applyPatch(sid, patch),
       onSystem: (msg) => { this.hideThinking(); this.addMessage('system', msg); },
+      requestConsent: (p) => consentPrompt(root, p),
       onPage: (p) => { this.hideThinking(); this.renderPage(p); },
       onAgentAudio: () => this.markSpeaking(),
       onTourStatus: (text) => { this.connText = text ? 'guided tour' : 'online'; if (this.auraState === 'dormant') this.updateStatusText(); },
@@ -452,8 +456,10 @@ export class FluidBuddhaElement extends HTMLElement {
       this.session.stopVoice();
       this.micBtn.classList.remove('live');
     } else {
-      void this.session.startVoice();
       this.micBtn.classList.add('live');
+      void this.session.startVoice().then(() => {
+        if (!this.session.active) this.micBtn.classList.remove('live');
+      });
     }
   }
 
