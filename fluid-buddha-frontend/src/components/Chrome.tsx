@@ -26,6 +26,7 @@ export function AppHeader() {
           <span className="badge" style={{ marginLeft: 4 }}>Console</span>
         </Link>
         <div className="row" style={{ gap: 14 }}>
+          {tenant && <Link href="/billing" className="btn btn-ghost btn-sm">Billing</Link>}
           {tenant && <span className="muted" style={{ fontSize: "0.86rem" }}>{tenant.email}</span>}
           <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
         </div>

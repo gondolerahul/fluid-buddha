@@ -84,7 +84,9 @@ export default function AnalyticsPage() {
       {/* KPI row */}
       <div className="grid" style={{ marginBottom: 20,
         gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
-        <Kpi label="Total cost" value={t ? fmtUSD(t.total_cost) : "…"} />
+        <Kpi label="Total cost" value={t ? fmtUSD(t.total_cost) : "…"}
+          hint={perf?.cost_per_conversation != null
+            ? `${fmtUSD(perf.cost_per_conversation)} per conversation · ${perf.conversations} conversations` : ""} />
         <Kpi label="Turns" value={t ? String(t.turns) : "…"}
           hint={t ? `${t.generated_turns} generated · ${t.cached_turns} cached` : ""} />
         <Kpi label="Cache hit rate" value={perf ? `${(perf.cache_hit_rate * 100).toFixed(0)}%` : "…"}

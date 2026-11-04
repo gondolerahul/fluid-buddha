@@ -141,6 +141,18 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     release: str = ""                         # e.g. the git sha, for Sentry
 
+    # ---- Billing with Razorpay (WS12) ----
+    # Test keys (rzp_test_…) for development. Without keys the console shows
+    # the plans but checkout is off.
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
+    # Plan prices are in this currency's minor unit. USD needs international
+    # payments enabled on the Razorpay account; INR doesn't.
+    billing_currency: str = "USD"
+    # JSON overrides of app/billing/plans.py DEFAULT_CATALOG, merged per plan.
+    billing_catalog: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

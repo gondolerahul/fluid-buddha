@@ -32,7 +32,7 @@ from app.orchestrator.profile import ensure_profile
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.tour_store import load_plan
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
-from app.transport.guard import check_public_budget
+from app.transport.guard import REFUSAL_MESSAGES, check_public_budget
 from app.orchestrator.state import (
     ConversationState,
     normalize_intelligence,
@@ -299,13 +299,15 @@ class VoiceSession:
         if the guard itself errors, so a DB hiccup doesn't silence the agent."""
         try:
             async with session_scope() as db:
-                reason = await check_public_budget(db, self.state.site_key, self.rt.settings)
+                reason = await check_public_budget(db, self.state.site_key, self.rt.settings,
+                                                   session_id=self.session_id)
         except Exception as exc:
             logger.warning("ws[%s]: budget check failed: %s", self.session_id[:8], exc)
             return False
         if reason:
             logger.info("ws[%s]: turn refused (%s)", self.session_id[:8], reason)
-            await self.send(Channel.EVENTS, "error", {"reason": reason})
+            await self.send(Channel.EVENTS, "error", {
+                "reason": reason, "message": REFUSAL_MESSAGES.get(reason, "")})
             return True
         return False
 

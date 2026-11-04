@@ -169,6 +169,7 @@ async def analytics(
         "percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50_latency_ms, "
         "percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95_latency_ms, "
         "count(ttfa_ms) AS ttfa_turns, "
+        "count(DISTINCT session_id) AS conversations, "
         "percentile_cont(0.5) WITHIN GROUP (ORDER BY ttfa_ms) AS p50_ttfa_ms, "
         "percentile_cont(0.95) WITHIN GROUP (ORDER BY ttfa_ms) AS p95_ttfa_ms, "
         "coalesce(sum(total_cost) FILTER (WHERE served_from_cache), 0) AS cached_cost, "
@@ -188,6 +189,11 @@ async def analytics(
         "p50_latency_ms": round(float(tot.get("p50_latency_ms") or 0), 1),
         "p95_latency_ms": round(float(tot.get("p95_latency_ms") or 0), 1),
         "cache_hit_rate": round(cached / turns, 4) if turns else 0.0,
+        # What one conversation costs to serve (WS12), over sessions in range.
+        "conversations": int(tot.get("conversations") or 0),
+        "cost_per_conversation": (
+            round(float(tot.get("total_cost") or 0) / int(tot["conversations"]), 6)
+            if tot.get("conversations") else None),
         # Time to first audio over spoken voice turns (null when there were none).
         "ttfa_turns": int(tot.get("ttfa_turns") or 0),
         "p50_ttfa_ms": _ms(tot.get("p50_ttfa_ms")),

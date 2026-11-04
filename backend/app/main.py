@@ -18,6 +18,7 @@ from app.routes import (
     agent_profile,
     analytics,
     auth,
+    billing,
     cache,
     chat,
     design,
@@ -93,3 +94,5 @@ app.include_router(privacy.router)
 app.include_router(onboarding.router)
 app.include_router(experiments.public)
 app.include_router(experiments.admin)
+app.include_router(billing.admin)
+app.include_router(billing.webhooks)

@@ -85,7 +85,8 @@ async def chat(req: ChatRequest, request: Request) -> dict:
                 origin=request.headers.get("origin"),
             )
             # Per-site rate limit + daily spend cap (docs/defects.md D-3).
-            blocked = await check_public_budget(rdb, resolved.site_key, rt.settings)
+            blocked = await check_public_budget(rdb, resolved.site_key, rt.settings,
+                                                session_id=req.session_id)
             privacy = await get_privacy(rdb, resolved.site_key)
     except PublicAccessError as exc:
         raise HTTPException(status_code=403, detail=exc.reason)

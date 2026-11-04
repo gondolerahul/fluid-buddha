@@ -11,6 +11,9 @@ Two per-site limits, checked before each public turn:
   refused until the next day.
 
 Either limit is disabled by setting it to 0.
+
+- **Plan limit** (WS12) — a site on the Free plan stops starting new
+  conversations once its account's monthly allowance is used.
 """
 from __future__ import annotations
 
@@ -25,6 +28,14 @@ from app.config import Settings
 
 RATE_LIMITED = "rate_limited"
 SPEND_CAP_REACHED = "spend_cap_reached"
+PLAN_LIMIT_REACHED = "plan_limit_reached"
+
+# What the visitor is told (the reason codes are for logs and the client).
+REFUSAL_MESSAGES = {
+    RATE_LIMITED: "I'm getting a lot of questions right now. Please try again in a minute.",
+    SPEND_CAP_REACHED: "I'm not available for the rest of today. Please try again tomorrow.",
+    PLAN_LIMIT_REACHED: "I'm not available right now. Please contact the team directly.",
+}
 
 
 class RateLimiter:
@@ -92,7 +103,8 @@ async def spent_today_usd(db: AsyncSession, site_key: str) -> float:
 
 
 async def check_public_budget(
-    db: AsyncSession, site_key: str, settings: Settings
+    db: AsyncSession, site_key: str, settings: Settings,
+    session_id: Optional[str] = None,
 ) -> Optional[str]:
     """Return a refusal reason if this public turn must be blocked, else None.
 
@@ -104,4 +116,8 @@ async def check_public_budget(
     cap = settings.public_daily_spend_cap_usd
     if cap > 0 and await spent_today_usd(db, site_key) >= cap:
         return SPEND_CAP_REACHED
+    from app.billing.store import over_plan_limit
+
+    if await over_plan_limit(db, site_key, session_id):
+        return PLAN_LIMIT_REACHED
     return None

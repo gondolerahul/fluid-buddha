@@ -145,6 +145,34 @@ Cached answers carry a `status`: `pinned` answers always replay for their
 question (even before the "enough history" gate) and survive content
 changes; `blocked` ones never replay and their question is not cached again.
 
+## Billing (Razorpay)
+
+Plans cover every website of an account; the unit is a **conversation** (a
+visitor session with at least one answered turn, counted from `usage_events`).
+Defaults (`app/billing/plans.py`, override with `BILLING_CATALOG` /
+`BILLING_CURRENCY`): Free 100 a month (hard cap), Growth $399 for 2,000 then
+$0.20 each, Scale $1,499 for 10,000 then $0.12, Enterprise by arrangement.
+
+1. Set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` (test keys in development).
+   The Razorpay plans are created on first checkout, one per key, plan, currency
+   and price.
+2. In Razorpay Dashboard → Webhooks, add `<backend>/billing/razorpay/webhook`
+   with the `subscription.*` events and a secret, and set
+   `RAZORPAY_WEBHOOK_SECRET` to it. Webhooks are verified and applied once each.
+3. Console → Billing: choosing a plan creates a subscription and opens
+   Razorpay Checkout; the payment signature is verified server-side before the
+   plan changes. Upgrades apply now, downgrades at the cycle end; cancelling
+   keeps the plan to the end of the paid period.
+
+- **Free cap**: once the month's allowance is used, public turns that would
+  start a new conversation get `429 plan_limit_reached` (the widget says the
+  agent isn't available); conversations already under way may finish.
+- **Overage**: when Razorpay charges a new cycle (`subscription.charged`), the
+  last cycle's extra conversations are added to the subscription as an add-on,
+  billed on the next invoice, and listed in the console.
+- A failed renewal keeps the plan while Razorpay retries (`pending`); once it
+  gives up (`halted`) the account is on Free limits until it subscribes again.
+
 ## Operations
 
 - **Request ids.** Every response carries `X-Request-ID` (the caller's, if it

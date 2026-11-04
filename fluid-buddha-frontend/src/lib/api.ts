@@ -179,6 +179,38 @@ export type DesignInfo = {
   design: Record<string, unknown>;
 };
 
+/** Billing with Razorpay (WS12). Amounts are in the currency's minor unit. */
+export type BillingPlan = {
+  key: string;
+  name: string;
+  price: number;
+  included: number | null;
+  overage: number | null;
+  self_serve: boolean;
+};
+export type BillingSummary = {
+  plan: string;
+  subscribed_plan: string;
+  pending_plan: string | null;
+  status: string;
+  cancel_at_cycle_end: boolean;
+  currency: string;
+  period: { start: string; end: string };
+  usage: { conversations: number; included: number | null; extra: number;
+    overage_amount: number; capped: boolean; limit_reached: boolean };
+  sites: Array<{ website_id: string; name: string; conversations: number; turns: number;
+    cost_usd: number; cost_per_conversation_usd: number | null }>;
+  overage_history: Array<{ period_start: string; period_end: string; plan: string;
+    conversations: number; extra: number; amount: number; currency: string; addon_id: string | null }>;
+  catalog: BillingPlan[];
+  checkout_enabled: boolean;
+  key_id: string | null;
+};
+export type CheckoutResult =
+  | { action: "checkout"; plan: string; subscription_id: string; short_url: string | null;
+      key_id: string; email: string; name: string }
+  | { action: "changed"; plan: string; effective: "now" | "cycle_end" };
+
 /** Holdout A/B (WS11). */
 export type ExperimentSettings = {
   id: string | null;
@@ -265,6 +297,8 @@ export type Analytics = {
     ttfa_turns: number;
     p50_ttfa_ms: number | null;
     p95_ttfa_ms: number | null;
+    conversations: number;
+    cost_per_conversation: number | null;
   };
   cache_split: {
     cached: { turns: number; cost: number };
@@ -397,6 +431,14 @@ export const Api = {
       `/tenant/websites/${id}/ingestion/run`,
       { method: "POST" }
     ),
+
+  billing: () => api<BillingSummary>("/tenant/billing"),
+  checkout: (plan: string) =>
+    api<CheckoutResult>("/tenant/billing/checkout", { method: "POST", body: { plan } }),
+  verifyPayment: (body: { razorpay_payment_id: string; razorpay_subscription_id: string;
+    razorpay_signature: string }) =>
+    api<BillingSummary>("/tenant/billing/verify", { method: "POST", body }),
+  cancelSubscription: () => api<BillingSummary>("/tenant/billing/cancel", { method: "POST" }),
 
   getExperiment: (id: string) => api<ExperimentSettings>(`/tenant/websites/${id}/experiment`),
   saveExperiment: (id: string, body: { enabled: boolean; holdout_pct: number; goal_path: string | null }) =>
