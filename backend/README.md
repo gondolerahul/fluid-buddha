@@ -94,6 +94,32 @@ a *Preview on your site* bookmarklet that drops the widget onto any page.
 To crawl a site running on your own machine, set `INGEST_ALLOW_PRIVATE_URLS=true`
 (dev only: it turns the private-address guard off).
 
+### Holdout experiment (A/B)
+
+Console → Experiment, or `PUT /tenant/websites/{id}/experiment
+{enabled, holdout_pct, goal_path}`. While a run is on, a share of visitors (the
+holdout, 10% by default) never sees the widget; the rest get the agent. Both
+groups are measured on the site's own goal: a visit to `goal_path` (matched by
+the widget in both arms) or a `FluidBuddha.conversion("name")` call from the
+host page. Leads the agent captures are deliberately not counted, since only
+one arm can produce them.
+
+- The widget enrols each anonymous visitor id with `POST /experiment/enroll`;
+  the arm is a hash of the run id and visitor id, stored on first sight, so a
+  visitor keeps their arm. Conversions go to `POST /experiment/convert` (both
+  accept a JSON body sent as `text/plain`, so the widget can use
+  `sendBeacon`). Keys and the site's domain are checked as on `/chat`.
+- These calls come from the customer's site, so its origin must pass
+  `CORS_ORIGINS` (use `*` in production; each request is still checked
+  against the website's domain). If the browser blocks enrolment, the visitor
+  simply gets the agent and isn't counted.
+- Results (`GET …/experiment/results`, `app/experiments/stats.py`): each arm's
+  rate with a Wilson 95% interval; the difference with Newcombe's hybrid score
+  interval; relative lift with a log-scale interval; a two-proportion z-test.
+  It reads "collecting" until each arm has 30 visitors and some conversions.
+- Changing the holdout share starts a new run (results are per run); changing
+  the goal page doesn't.
+
 ### Privacy (trust layer)
 
 Each website has privacy settings (console → Settings → Privacy & data, or

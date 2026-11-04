@@ -22,6 +22,7 @@ from app.routes import (
     ingestion,
     insights,
     leads,
+    experiments,
     onboarding,
     privacy,
     tours,
@@ -81,3 +82,5 @@ app.include_router(insights.router)
 app.include_router(leads.admin)
 app.include_router(privacy.router)
 app.include_router(onboarding.router)
+app.include_router(experiments.public)
+app.include_router(experiments.admin)

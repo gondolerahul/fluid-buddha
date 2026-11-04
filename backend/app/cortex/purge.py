@@ -24,6 +24,7 @@ from app.config import site_entity_id
 _SITE_TABLES = (
     "site_tours", "site_profiles", "conversation_cache", "answer_audio_cache", "usage_events",
     "conversations", "leads", "site_integrations", "site_privacy", "site_design",
+    "experiments",  # its visitors and events go with it (ON DELETE CASCADE)
 )
 
 

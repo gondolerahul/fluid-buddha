@@ -179,6 +179,44 @@ export type DesignInfo = {
   design: Record<string, unknown>;
 };
 
+/** Holdout A/B (WS11). */
+export type ExperimentSettings = {
+  id: string | null;
+  enabled: boolean;
+  holdout_pct: number;
+  goal_path: string | null;
+  status: "running" | "stopped" | null;
+  started_at: string | null;
+  ended_at: string | null;
+  started_new_run?: boolean;
+};
+export type LiftArm = {
+  visitors: number;
+  converters: number;
+  rate: number;
+  rate_low: number;
+  rate_high: number;
+};
+export type ExperimentResults = {
+  experiment: ExperimentSettings;
+  lift: {
+    status: "collecting" | "significant" | "not_significant";
+    agent: LiftArm;
+    holdout: LiftArm;
+    /** agent − holdout, as a rate (0.012 = 1.2 points) */
+    diff: number | null;
+    diff_low: number | null;
+    diff_high: number | null;
+    relative: number | null;
+    relative_low: number | null;
+    relative_high: number | null;
+    p_value: number | null;
+  };
+  series: Array<{ day: string; agent_rate: number | null; holdout_rate: number | null;
+    agent_visitors: number; holdout_visitors: number }>;
+  goals: Array<{ name: string; arm: "agent" | "holdout"; events: number }>;
+};
+
 export type TourStop = { narration: string; move?: Record<string, unknown> | null; label?: string };
 export type TourPlan = { site_key: string; stops: TourStop[]; exists: boolean; edited: boolean };
 
@@ -355,6 +393,14 @@ export const Api = {
       `/tenant/websites/${id}/ingestion/run`,
       { method: "POST" }
     ),
+
+  getExperiment: (id: string) => api<ExperimentSettings>(`/tenant/websites/${id}/experiment`),
+  saveExperiment: (id: string, body: { enabled: boolean; holdout_pct: number; goal_path: string | null }) =>
+    api<ExperimentSettings>(`/tenant/websites/${id}/experiment`, { method: "PUT", body }),
+  restartExperiment: (id: string) =>
+    api<ExperimentSettings>(`/tenant/websites/${id}/experiment/restart`, { method: "POST" }),
+  experimentResults: (id: string) =>
+    api<ExperimentResults | null>(`/tenant/websites/${id}/experiment/results`),
 
   getTour: (id: string) => api<TourPlan>(`/tenant/websites/${id}/tour`),
   saveTour: (id: string, stops: TourStop[]) =>

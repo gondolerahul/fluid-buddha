@@ -75,6 +75,27 @@ init({
 
 You can also place `<fluid-buddha backend="…" site="…">` in markup yourself.
 
+## Holdout experiments
+
+When the site runs a holdout experiment (console → Experiment), the widget
+asks the backend which group this visitor is in before it draws anything. A
+held-out visitor gets no widget at all (the element stays empty and carries
+`data-holdout`), and calls like `openPanel()` do nothing. The group is cached
+in `localStorage` for a few hours, so later page views render at once.
+
+Both groups are measured the same way. Set a goal page in the console, or
+report a goal yourself:
+
+```js
+window.FluidBuddha.conversion('demo_booked');      // script tag
+import { conversion } from 'fluid-buddha';          // bundlers
+conversion('demo_booked', 499);                     // optional value
+```
+
+Outside an experiment it does nothing. The visitor id is an anonymous random
+string; without `localStorage` the visitor isn't part of the experiment and
+gets the agent. If enrolment fails (network, CORS), so does everyone else.
+
 ## Navigation on single-page apps
 
 When the agent takes the visitor to another page, the widget doesn't reload a

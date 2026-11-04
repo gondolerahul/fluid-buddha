@@ -379,5 +379,67 @@ ok(!coreMjs.includes('WebGLRenderer') && /import\(["']\.\/chunks\/ParticleField-
 const coreGz = zlib.gzipSync(coreJs).length;
 ok(coreGz < 42 * 1024, `script-tag core is ${(coreGz / 1024).toFixed(1)} kB gzipped (budget 42 kB)`);
 
+// ---- WS11: holdout A/B ----
+const expCalls = [];
+let enrolReply = null;
+globalThis.fetch = async (url, init) => {
+  const body = init && init.body ? JSON.parse(init.body) : {};
+  expCalls.push({ url: String(url), body });
+  if (String(url).endsWith('/experiment/enroll'))
+    return { ok: true, json: async () => enrolReply };
+  return { ok: true, json: async () => ({ counted: true }) };
+};
+const settle = () => new Promise((r) => setTimeout(r, 20));
+
+enrolReply = { experiment_id: 'exp-1', arm: 'holdout', goal_path: '/thanks' };
+const held = init({ backend: 'ws://localhost:8080', key: 'fbk_holdout_site', site: 'x' });
+ok(!held.shadowRoot, 'a keyed widget waits for its arm before drawing');
+await settle();
+const enrolCall = expCalls.find((c) => c.url.endsWith('/experiment/enroll'));
+ok(enrolCall && enrolCall.body.key === 'fbk_holdout_site' && /^[A-Za-z0-9_-]{8,64}$/.test(enrolCall.body.visitor),
+  'enrols with the widget key and an anonymous visitor id');
+ok(!held.shadowRoot && held.hasAttribute('data-holdout'), 'a holdout visitor gets no widget');
+held.openPanel(); held.ask('hi'); held.close();
+ok(!held.shadowRoot, 'host calls cannot bring the agent back for a holdout visitor');
+ok(JSON.parse(window.localStorage.getItem('fluidbuddha:exp:fbk_holdout_site')).arm === 'holdout', 'the arm is cached for later page views');
+
+window.history.pushState({}, '', '/thanks/');
+await new Promise((r) => setTimeout(r, 1100));
+const goalHit = expCalls.find((c) => c.url.endsWith('/experiment/convert') && c.body.name === 'goal_page');
+ok(goalHit && goalHit.body.experiment_id === 'exp-1' && goalHit.body.visitor === enrolCall.body.visitor,
+  'reaching the goal page counts a conversion in the holdout too');
+mod.conversion('demo_booked', 120);
+const custom = expCalls.find((c) => c.body.name === 'demo_booked');
+ok(custom && custom.body.value === 120, 'FluidBuddha.conversion() reports a named goal');
+held.remove();
+window.history.pushState({}, '', '/');
+
+// The same visitor on the next page view: decided at once from the cache.
+expCalls.length = 0;
+const again = init({ backend: 'ws://localhost:8080', key: 'fbk_holdout_site', site: 'x' });
+ok(again.hasAttribute('data-holdout') && !again.shadowRoot, 'a cached arm is applied without waiting');
+await settle();
+ok(expCalls.some((c) => c.url.endsWith('/experiment/enroll')), 'the cached arm is refreshed in the background');
+again.remove();
+
+enrolReply = { experiment_id: 'exp-2', arm: 'agent', goal_path: null };
+const agentEl = init({ backend: 'ws://localhost:8080', key: 'fbk_agent_site', site: 'x' });
+await settle();
+ok(!!agentEl.shadowRoot && !!agentEl.shadowRoot.querySelector('.trigger'), 'an agent-arm visitor gets the widget');
+agentEl.remove();
+
+enrolReply = { experiment_id: null, arm: null, goal_path: null };
+const noExp = init({ backend: 'ws://localhost:8080', key: 'fbk_no_experiment', site: 'x' });
+await settle();
+ok(!!noExp.shadowRoot && window.localStorage.getItem('fluidbuddha:exp:fbk_no_experiment') === null,
+  'without an experiment the widget shows as usual');
+noExp.remove();
+
+globalThis.fetch = async () => { throw new Error('offline'); };
+const offline = init({ backend: 'ws://localhost:8080', key: 'fbk_offline_site', site: 'x' });
+await settle();
+ok(!!offline.shadowRoot, 'if enrolment fails the visitor just gets the agent');
+offline.remove();
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -25,6 +25,10 @@ export { consentCopy, consentPrompt } from './ui/consent';
 // the binary audio frame format.
 export { SpeechGate } from './audio/SpeechGate';
 export { packAudio, unpackAudio } from './protocol';
+// Holdout A/B (WS11): report a site goal, e.g. after a demo is booked:
+//   FluidBuddha.conversion('demo_booked')
+import { conversion } from './core/Experiment';
+export { conversion };
 export type {
   FluidBuddhaConfig,
   FluidBuddhaOptions,
@@ -77,4 +81,4 @@ function autoInit(): void {
 }
 autoInit();
 
-export default { init, VERSION };
+export default { init, conversion, VERSION };

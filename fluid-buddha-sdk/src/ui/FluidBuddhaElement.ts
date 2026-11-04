@@ -10,6 +10,7 @@
 import { Grounding, PageSpec } from '../protocol';
 import { FluidBuddhaConfig, FluidBuddhaOptions, optionsFromAttributes, resolveConfig } from '../core/config';
 import { HostBridge } from '../core/HostBridge';
+import { Arm, Experiment } from '../core/Experiment';
 import { Session } from '../core/Session';
 import { applyTokens, fetchDesignSystem } from '../core/designSystem';
 import { Canvas } from './components/canvas';
@@ -65,6 +66,7 @@ export class FluidBuddhaElement extends HTMLElement {
   private thinkingEl: HTMLDivElement | null = null;
   private textarea!: HTMLTextAreaElement;
   private built = false;
+  private experiment?: Experiment;
   private open = false;
 
   // ---- state-of-light machine ----
@@ -86,9 +88,37 @@ export class FluidBuddhaElement extends HTMLElement {
     this.style.setProperty('--fb-accent', this.config.accent);
     this.setAttribute('data-position', this.config.position);
     this.setAttribute('data-design', this.config.design);
-    this.build();
     this.built = true;
 
+    // Holdout A/B (WS11): a keyed site may be running an experiment, in which
+    // case some visitors don't get the agent at all. Decide before drawing.
+    const exp = new Experiment(this.config);
+    this.experiment = exp;
+    if (!exp.eligible) {
+      this.show();
+      return;
+    }
+    const cached = exp.cached();
+    if (cached) {
+      this.decide(cached);
+      void exp.enroll(); // refresh for the next page view
+      return;
+    }
+    void exp.enroll().then((arm) => this.decide(arm));
+  }
+
+  /** null: no experiment; holdout: measured, but no widget. */
+  private decide(arm: Arm | null): void {
+    if (arm) this.experiment?.start();
+    if (arm === 'holdout') {
+      this.setAttribute('data-holdout', '');
+      return;
+    }
+    this.show();
+  }
+
+  private show(): void {
+    this.build();
     if (this.config.design === 'level1' && this.config.autoStart) {
       requestAnimationFrame(() => this.openPanel());
     }
@@ -101,6 +131,7 @@ export class FluidBuddhaElement extends HTMLElement {
     this.level2?.dispose();
     this.level3?.dispose();
     this.session?.destroy();
+    this.experiment?.stop();
   }
 
   // ---- build the shadow UI ----
@@ -507,7 +538,10 @@ export class FluidBuddhaElement extends HTMLElement {
   }
 
   // ---- public control surface (for host CTAs) ----
+  // Each is a no-op until the UI exists: for a holdout visitor (WS11) it never
+  // does, so a host's "Ask Pragya" button can't bring the agent back.
   ask(text: string): void {
+    if (!this.shadowRoot) return;
     if (this.config.design === 'level1') this.openPanel();
     this.submitText(text);
   }
@@ -519,7 +553,7 @@ export class FluidBuddhaElement extends HTMLElement {
   }
 
   openPanel(): void {
-    if (this.config.design !== 'level1') return;
+    if (this.config.design !== 'level1' || !this.shadowRoot) return;
     this.open = true;
     this.trigger.classList.add('hidden');
     this.panel.classList.remove('hidden');
@@ -529,6 +563,7 @@ export class FluidBuddhaElement extends HTMLElement {
   }
 
   close(): void {
+    if (!this.shadowRoot) return;
     this.open = false;
     this.session?.abortTour();
     if (this.reactRaf) { cancelAnimationFrame(this.reactRaf); this.reactRaf = 0; }
