@@ -19,6 +19,12 @@ as ``trending`` ("promising, keep it running"), not as a finding.
 
 ``sample_size`` plans how many visitors that verdict needs for a given lift.
 
+Variant tests (M2-4) compare each of 2-4 variants with the control (variant
+``a``). Each comparison is a ``lift`` at a split error budget (Bonferroni:
+alpha / number of comparisons), so the chance of *any* false winner, however
+often the results are read, stays at or under 5 %. ``variant_verdict`` turns
+those comparisons into a winner, and ``sample_size_arms`` plans the run.
+
 Standard library only.
 """
 from __future__ import annotations
@@ -190,7 +196,9 @@ def _arm(x: int, n: int) -> Arm:
     return Arm(visitors=n, converters=x, rate=x / n if n else 0.0, rate_low=lo, rate_high=hi)
 
 
-def lift(agent_x: int, agent_n: int, hold_x: int, hold_n: int) -> Lift:
+def lift(agent_x: int, agent_n: int, hold_x: int, hold_n: int, alpha: float = ALPHA) -> Lift:
+    """``agent`` vs ``holdout`` (or a variant vs the control). ``alpha`` is the
+    always-valid interval's error budget; a split one widens it."""
     out = Lift(status="collecting", agent=_arm(agent_x, agent_n), holdout=_arm(hold_x, hold_n))
     if agent_n == 0 or hold_n == 0:
         return out
@@ -199,7 +207,7 @@ def lift(agent_x: int, agent_n: int, hold_x: int, hold_n: int) -> Lift:
     if rel:
         out.relative, out.relative_low, out.relative_high = rel
     out.p_value = two_proportion_p(agent_x, agent_n, hold_x, hold_n)
-    seq = sequential_diff(agent_x, agent_n, hold_x, hold_n)
+    seq = sequential_diff(agent_x, agent_n, hold_x, hold_n, alpha=alpha)
     if seq:
         out.seq_low, out.seq_high, out.seq_p_value = seq
     if min(agent_n, hold_n) < MIN_VISITORS_PER_ARM or agent_x + hold_x < MIN_CONVERSIONS:
@@ -211,3 +219,59 @@ def lift(agent_x: int, agent_n: int, hold_x: int, hold_n: int) -> Lift:
     else:
         out.status = "not_significant"
     return out
+
+
+# ---- variant tests (M2-4) -------------------------------------------------------
+
+def split_alpha(arms: int, alpha: float = ALPHA) -> float:
+    """The error budget of each variant-vs-control comparison."""
+    return alpha / max(1, arms - 1)
+
+
+def sample_size_arms(baseline: float, relative_mde: float, arms: int,
+                     holdout_share: float = 0.0) -> Optional[dict]:
+    """Visitors needed (all arms, holdout included) for each variant-vs-control
+    comparison to find a ``relative_mde`` lift at the split error budget with
+    80 % power. Variants share the non-holdout traffic equally."""
+    if arms < 2 or not 0 <= holdout_share < 1:
+        return None
+    pair = sample_size(baseline, relative_mde, 0.5, alpha=split_alpha(arms))
+    if pair is None:
+        return None
+    per_arm = math.ceil(pair["total"] / 2)
+    total = math.ceil(per_arm * arms / (1 - holdout_share))
+    return {"total": total, "per_variant": per_arm, "holdout": total - per_arm * arms}
+
+
+def variant_verdict(arms: list[tuple[str, int, int]], plan_reached: bool = False) -> dict:
+    """``arms``: ``[(key, visitors, converters)]``, the control first. Returns
+    each variant's comparison with the control and the run's verdict:
+
+    * ``winner`` — a variant beat the control with the always-valid interval
+      at the split budget (the best such one), or the control beat every
+      variant;
+    * ``no_difference`` — the planned sample is in and nothing separated;
+    * ``keep_running`` — otherwise.
+    """
+    (ck, cn, cx), rest = arms[0], arms[1:]
+    alpha = split_alpha(len(arms))
+    comparisons: dict[str, dict] = {}
+    better: list[tuple[float, str]] = []
+    worse = 0
+    for key, n, x in rest:
+        cmp_ = lift(x, n, cx, cn, alpha=alpha)
+        comparisons[key] = cmp_.to_dict()
+        if cmp_.status == "significant":
+            if (cmp_.diff or 0) > 0:
+                better.append((x / n if n else 0.0, key))
+            else:
+                worse += 1
+    if better:
+        status, winner = "winner", max(better)[1]
+    elif rest and worse == len(rest):
+        status, winner = "winner", ck
+    elif plan_reached:
+        status, winner = "no_difference", None
+    else:
+        status, winner = "keep_running", None
+    return {"status": status, "winner": winner, "alpha": alpha, "comparisons": comparisons}

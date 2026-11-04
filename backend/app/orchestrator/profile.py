@@ -67,6 +67,13 @@ class SiteProfile:
     closing_use_case: str = ""
     routes: list[str] = field(default_factory=list)
     dynamic_prefixes: list[str] = field(default_factory=list)
+    # What the agent says first when opened; empty = a page-aware welcome
+    # written by the model. A greeting test's winner lands here (M2-4).
+    greeting: str = ""
+    # The persona a conversation starts in (a slug of ``personas``), and
+    # whether the guided tour is offered: both settable by a test's winner.
+    default_persona: str = ""
+    tour_enabled: bool = True
 
     @property
     def persona_slugs(self) -> list[str]:
@@ -103,6 +110,10 @@ class SiteProfile:
             closing_use_case=str(merged.get("closing_use_case") or ""),
             routes=_clean_routes(merged.get("routes") or []),
             dynamic_prefixes=[str(p) for p in merged.get("dynamic_prefixes") or []],
+            greeting=str(merged.get("greeting") or "").strip(),
+            default_persona=(str(merged.get("default_persona") or "")
+                             if merged.get("default_persona") in {p.slug for p in personas} else ""),
+            tour_enabled=merged.get("tour_enabled") is not False,
         )
 
 

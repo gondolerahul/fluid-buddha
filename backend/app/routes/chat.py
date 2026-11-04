@@ -18,6 +18,7 @@ from typing import Any
 
 from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
+from app.experiments.apply import session_settings
 from app.design.system import ensure_design
 from app.live import visitor as live
 from app.orchestrator.profile import ensure_profile
@@ -71,6 +72,9 @@ class ChatRequest(BaseModel):
     page: str | None = None         # current route, for grounding/context
     # scroll targets on the page: ["plans"] or [{"id","label"}]
     sections: list[Any] | None = None
+    # The visitor's test variant, {"id", "arm"} (M2-4): sets the persona a new
+    # conversation starts in.
+    exp: dict[str, Any] | None = None
 
 
 @router.post("/chat")
@@ -99,6 +103,10 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
 
     sid, state = await sessions.load(req.session_id, site_key=resolved.site_key)
+    if req.session_id != sid and not req.icp:
+        start = await session_settings(resolved.site_key, req.exp)
+        if start["persona"]:
+            state.persona = start["persona"]
     await live.present(resolved.site_key, sid, "text", persona=req.icp or state.persona,
                        page=req.page or state.page, announce=req.session_id != sid)
     try:

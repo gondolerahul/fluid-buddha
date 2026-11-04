@@ -57,6 +57,9 @@ class ProfileUpdate(BaseModel):
     closing_use_case: Optional[str] = Field(None, max_length=800)
     routes: Optional[list[str]] = Field(None, max_length=500)
     dynamic_prefixes: Optional[list[str]] = Field(None, max_length=20)
+    greeting: Optional[str] = Field(None, max_length=300)
+    default_persona: Optional[str] = Field(None, max_length=40)
+    tour_enabled: Optional[bool] = None
 
     @field_validator("personas")
     @classmethod

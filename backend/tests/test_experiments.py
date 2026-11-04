@@ -167,7 +167,8 @@ def test_experiment_flow_measures_lift():
         assert client.get(f"{base}/results", headers=h).json() is None
         # Before an experiment runs, enrolment is a no-op and the widget shows.
         off = _beacon(client, "/experiment/enroll", {"key": key, "visitor": "visitor-aaaa"}).json()
-        assert off == {"experiment_id": None, "arm": None, "goal_path": None}
+        assert off == {"experiment_id": None, "arm": None, "goal_path": None, "overrides": {},
+                       "defaults": {"greeting": None, "design": "level1"}}
 
         bad = client.put(base, json={"enabled": True, "goal_path": "thanks"}, headers=h)
         assert bad.status_code == 422

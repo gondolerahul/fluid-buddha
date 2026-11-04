@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.db import session_scope
+from app.experiments.apply import session_settings
 from app.live import store as live_store
 from app.live import visitor as live
 from app.live.bus import bus as live_bus, session_topic, site_topic
@@ -131,6 +132,8 @@ class VoiceSession:
         self._response_task: asyncio.Task | None = None
         self._persona_emitted: str | None = None
         self._greeted = False
+        # The site's (or the visitor's test variant's) fixed greeting (M2-4).
+        self._opener: str | None = None
         self._last_utt_text = ""
         self._last_utt_at = 0.0
         # True only while the ANSWER (not the ack) is being spoken — barge-in
@@ -474,9 +477,17 @@ class VoiceSession:
         self._greeted = True
         await self._cancel_response()
 
-        # Only offer the tour if the client hasn't opted out (data-tour="false");
-        # otherwise the visitor still gets the spoken welcome.
-        if payload.get("tour", True) is not False:
+        # The greeting, starting persona and tour switch: the visitor's test
+        # variant, else the site's defaults (M2-4).
+        start = await session_settings(self.state.site_key, payload.get("exp"))
+        self._opener = start["greeting"]
+        if start["persona"] and not payload.get("persona"):
+            self.state.persona = start["persona"]
+
+        # Only offer the tour if the client hasn't opted out (data-tour="false")
+        # and the site hasn't switched it off; otherwise the visitor still gets
+        # the spoken welcome.
+        if payload.get("tour", True) is not False and start["tour"]:
             plan = await self._load_tour()
             if plan is not None:
                 self._tour_plan = plan
@@ -541,6 +552,9 @@ class VoiceSession:
             logger.exception("ws[%s]: tour_say failed: %s", self.session_id[:8], exc)
 
     async def _welcome(self) -> None:
+        if self._opener:
+            await self._say_opener(self._opener)
+            return
         try:
             async with session_scope() as db:
                 bridge = self.rt.bridge(db, self.state.site_key)
@@ -563,6 +577,25 @@ class VoiceSession:
             raise
         except Exception as exc:
             logger.exception("welcome failed: %s", exc)
+
+    async def _say_opener(self, text: str) -> None:
+        """The site's fixed greeting, spoken as written (no model call)."""
+        try:
+            self._answer_speaking = True
+            try:
+                await self._speak(text, _sid("welcome"))
+            finally:
+                self._answer_speaking = False
+            self.state.add_turn("(visitor arrived on the page)", text)
+            self._spawn(self._record_turn(
+                question="(visitor arrived on the page)", answer_text=text,
+                components=[], actions=[], channel="welcome",
+            ))
+        except asyncio.CancelledError:
+            await self.send(Channel.EVENTS, "interrupted", {})
+            raise
+        except Exception as exc:
+            logger.exception("opener failed: %s", exc)
 
     async def _respond(self, heard: str) -> None:
         # PII masking (WS8): from here on the router, the thinker, the history
