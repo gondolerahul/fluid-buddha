@@ -144,6 +144,8 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
   const [greeting, setGreeting] = useState(initial.greeting ?? "");
   const [startPersona, setStartPersona] = useState(initial.default_persona ?? "");
   const [tourOn, setTourOn] = useState(initial.tour_enabled ?? true);
+  const [ctaLabel, setCtaLabel] = useState(initial.cta_label ?? "");
+  const [ctaUrl, setCtaUrl] = useState(initial.cta_url ?? "");
   const [personas, setPersonas] = useState<Persona[]>(initial.personas);
   const [routes, setRoutes] = useState(initial.routes.join("\n"));
   const [prefixes, setPrefixes] = useState(initial.dynamic_prefixes.join("\n"));
@@ -168,6 +170,8 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
         greeting: greeting.trim(),
         default_persona: startPersona,
         tour_enabled: tourOn,
+        cta_label: ctaLabel.trim(),
+        cta_url: ctaUrl.trim(),
         personas: personas
           .filter((p) => p.slug.trim() || p.label.trim())
           .map((p) => ({
@@ -236,6 +240,18 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
           <input type="checkbox" checked={tourOn} onChange={(e) => setTourOn(e.target.checked)} />
           Offer the guided tour when the agent is opened
         </label>
+      </div>
+      <div className="grid grid-2" style={{ gap: 14 }}>
+        <div className="field">
+          <label className="label" htmlFor="p-cta-label">Next step button <span className="faint">(on recap pages)</span></label>
+          <input id="p-cta-label" className="input" value={ctaLabel} maxLength={60} placeholder="Book a demo"
+            onChange={(e) => setCtaLabel(e.target.value)} />
+        </div>
+        <div className="field">
+          <label className="label" htmlFor="p-cta-url">Its link</label>
+          <input id="p-cta-url" className="input" type="url" value={ctaUrl} maxLength={500}
+            placeholder="https://yoursite.com/demo" onChange={(e) => setCtaUrl(e.target.value)} />
+        </div>
       </div>
       <div className="field">
         <label className="label" htmlFor="p-closing">
@@ -423,6 +439,7 @@ function IntegrationsForm({ id, initial }: { id: string; initial: Integrations }
 
 const TRANSCRIPT_DAYS = [30, 90, 180, 365, 0];
 const LEAD_DAYS = [90, 180, 365, 730, 0];
+const RECAP_DAYS = [7, 30, 90, 180, 365];
 const daysLabel = (d: number) => (d === 0 ? "Keep until deleted" : d >= 365 ? `${d / 365} year${d > 365 ? "s" : ""}` : `${d} days`);
 
 function PrivacySection({ id }: { id: string }) {
@@ -523,6 +540,16 @@ function PrivacyForm({ id, initial }: { id: string; initial: Privacy }) {
               onChange={(e) => set("lead_retention_days", Number(e.target.value))}>
               {LEAD_DAYS.map((d) => <option key={d} value={d}>{daysLabel(d)}</option>)}
             </select>
+          </div>
+          <div className="field">
+            <label className="label">Recap links work for</label>
+            <select className="select" value={cfg.recap_days ?? 90}
+              onChange={(e) => set("recap_days", Number(e.target.value))}>
+              {RECAP_DAYS.map((d) => <option key={d} value={d}>{daysLabel(d)}</option>)}
+            </select>
+            <p className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+              A recap also goes when its conversation is deleted.
+            </p>
           </div>
         </div>
         <div className="row" style={{ justifyContent: "flex-end" }}>

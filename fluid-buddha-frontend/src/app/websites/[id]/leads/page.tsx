@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Api, ApiError, Lead, LeadStatus } from "@/lib/api";
+import { Api, ApiError, Lead, LeadStatus, Recap } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { Modal, fmtDate, useToast } from "@/components/ui";
 import { TranscriptModal } from "@/components/TranscriptModal";
 
@@ -69,7 +70,12 @@ export default function LeadsPage() {
                       <div className="faint mono" style={{ fontSize: "0.8rem" }}>{l.email}</div>
                     </td>
                     <td>{l.company || "—"}</td>
-                    <td>{l.source}</td>
+                    <td>
+                      {l.source}
+                      {l.recap && <div className="faint" style={{ fontSize: "0.78rem" }}>
+                        recap: {l.recap.views} view{l.recap.views === 1 ? "" : "s"}
+                        {l.recap.forwards ? `, ${l.recap.forwards} forward${l.recap.forwards === 1 ? "" : "s"}` : ""}</div>}
+                    </td>
                     <td>
                       <select className="select" value={l.status} aria-label="Lead status"
                         onChange={(e) => setStatus(l, e.target.value as LeadStatus)}>
@@ -99,6 +105,10 @@ export default function LeadsPage() {
               {open.phone && <div><span className="eyebrow">Phone</span><div>{open.phone}</div></div>}
               {open.summary && <div><span className="eyebrow">Summary</span><div className="muted">{open.summary}</div></div>}
               {open.message && <div><span className="eyebrow">Message</span><div style={{ whiteSpace: "pre-wrap" }}>{open.message}</div></div>}
+              {open.recap && <div><span className="eyebrow">Recap</span><div>
+                Opened {open.recap.views} time{open.recap.views === 1 ? "" : "s"}
+                {open.recap.forwards ? `, forwarded to ${open.recap.forwards} more ${open.recap.forwards === 1 ? "person" : "people"}` : ""}
+                {open.recap.last_viewed_at ? ` · last ${fmtDate(open.recap.last_viewed_at)}` : ""}</div></div>}
             </div>
             <div className="faint" style={{ fontSize: "0.8rem" }}>
               {open.delivery_error ? `Delivery failed: ${open.delivery_error}`
@@ -114,7 +124,59 @@ export default function LeadsPage() {
           </div>
         </Modal>
       )}
+      <RecapsCard id={id} onOpen={setTranscript} />
       {transcript && <TranscriptModal id={id} cid={transcript} onClose={() => setTranscript(null)} />}
+    </div>
+  );
+}
+
+/** Shared recaps (M2-6): links visitors made, with views and forwards. */
+function RecapsCard({ id, onOpen }: { id: string; onOpen: (cid: string) => void }) {
+  const toast = useToast();
+  const { can } = useAuth();
+  const [items, setItems] = useState<Recap[] | null>(null);
+  const load = useCallback(() => {
+    Api.recaps(id).then((r) => setItems(r.recaps)).catch(() => setItems([]));
+  }, [id]);
+  useEffect(() => { load(); }, [load]);
+  const revoke = async (r: Recap) => {
+    if (!window.confirm("Take this recap link down? Anyone who has it will see that it's no longer available.")) return;
+    try { await Api.revokeRecap(id, r.id); toast("Recap link taken down"); load(); }
+    catch { toast("Could not take it down", "err"); }
+  };
+  return (
+    <div className="card" style={{ marginTop: 20 }}>
+      <h3 style={{ marginBottom: 4 }}>Shared recaps</h3>
+      <p className="muted" style={{ fontSize: "0.84rem", marginBottom: 14 }}>
+        When a visitor types &ldquo;send me this&rdquo;, they get a link to a recap of the conversation they can
+        forward to their team. Each new person who opens it is counted as a forward and raises the lead&apos;s score.
+      </p>
+      {items === null ? <div className="skeleton" style={{ height: 100 }} />
+        : items.length === 0 ? <div className="empty">No recaps yet.</div> : (
+          <table className="table">
+            <thead><tr><th>Recap</th><th>Lead</th><th>Views</th><th>Forwards</th><th>Last opened</th><th /></tr></thead>
+            <tbody>
+              {items.map((r) => (
+                <tr key={r.id} style={{ opacity: r.expired ? 0.55 : 1 }}>
+                  <td style={{ maxWidth: 320 }}>
+                    <div style={{ fontSize: "0.86rem" }}>{r.summary || "—"}</div>
+                    <div className="faint" style={{ fontSize: "0.76rem" }}>
+                      {r.expired ? "expired" : `works until ${fmtDate(r.expires_at)}`}</div>
+                  </td>
+                  <td className="mono" style={{ fontSize: "0.82rem" }}>{r.lead_email || "—"}</td>
+                  <td className="mono">{r.views}</td>
+                  <td className="mono">{r.forwards}</td>
+                  <td className="faint">{r.last_viewed_at ? fmtDate(r.last_viewed_at) : "—"}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {!r.expired && <a className="btn btn-ghost btn-sm" href={r.url} target="_blank" rel="noopener noreferrer">Open</a>}
+                    <button className="btn btn-ghost btn-sm" onClick={() => onOpen(r.conversation_id)}>Conversation</button>
+                    {can("editor") && <button className="btn btn-ghost btn-sm" onClick={() => revoke(r)}>Take down</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
     </div>
   );
 }

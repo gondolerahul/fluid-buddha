@@ -145,6 +145,9 @@ export type AgentProfile = {
   tour_enabled?: boolean;
   /** Products visitors compare this one with (Insights counts mentions, M2-5). */
   competitors?: string[];
+  /** The next step a recap page offers (M2-6). */
+  cta_label?: string;
+  cta_url?: string;
 };
 
 export type WidgetConfig = {
@@ -465,6 +468,13 @@ export type Lead = {
   delivered_at: string | null;
   delivery_error: string | null;
   created_at: string;
+  /** The conversation's shared recap, if the visitor asked for one (M2-6). */
+  recap?: { views: number; forwards: number; last_viewed_at: string | null } | null;
+};
+export type Recap = {
+  id: string; url: string; conversation_id: string; created_at: string; updated_at: string;
+  expires_at: string; expired: boolean; views: number; viewers: number; forwards: number;
+  last_viewed_at: string | null; summary: string | null; lead_email: string | null;
 };
 export type Privacy = {
   redact_pii: boolean;
@@ -473,6 +483,8 @@ export type Privacy = {
   /** 0 keeps data until deleted. */
   transcript_retention_days: number;
   lead_retention_days: number;
+  /** How long a shared recap link works (M2-6). */
+  recap_days?: number;
 };
 export type Integrations = {
   webhook_url: string | null;
@@ -721,6 +733,9 @@ export const Api = {
     api<{ ok: boolean; error: string | null }>(`/tenant/websites/${id}/integrations/test`,
       { method: "POST" }),
 
+  recaps: (id: string) => api<{ recaps: Recap[] }>(`/tenant/websites/${id}/recaps`),
+  revokeRecap: (id: string, rid: string) =>
+    api<void>(`/tenant/websites/${id}/recaps/${rid}`, { method: "DELETE" }),
   getPrivacy: (id: string) => api<Privacy>(`/tenant/websites/${id}/privacy`),
   savePrivacy: (id: string, body: Privacy) =>
     api<Privacy>(`/tenant/websites/${id}/privacy`, { method: "PUT", body }),
