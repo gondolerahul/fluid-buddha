@@ -48,3 +48,15 @@ async def get_analytics(
         db, site_key=site.site_key, group_by=group_by,
         frm=_parse_dt(frm, "from"), to=_parse_dt(to, "to"),
     )
+
+
+@router.get("/cost-alerts")
+async def cost_alerts(
+    days: int = Query(7, ge=1, le=90),
+    site: store.Website = Depends(owned_website),
+    db: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Cost alerts raised for this site recently (F-3), newest first."""
+    from app.analytics import alerts
+
+    return await alerts.recent(db, site.site_key, days)

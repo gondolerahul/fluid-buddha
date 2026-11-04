@@ -106,6 +106,8 @@ class IntegrationsIn(BaseModel):
     webhook_url: Optional[str] = None
     slack_webhook_url: Optional[str] = None
     hot_lead_score: int = Field(60, ge=0, le=100)
+    # Alert (Slack + console) when the site's AI cost for the day passes this, in USD.
+    cost_alert_usd: Optional[float] = Field(None, gt=0, le=1_000_000)
     rotate_secret: bool = False
 
     @field_validator("webhook_url")
@@ -134,7 +136,7 @@ async def put_integrations(
     return await leads.save_integrations(
         db, site.site_key, webhook_url=body.webhook_url,
         slack_webhook_url=body.slack_webhook_url, hot_lead_score=body.hot_lead_score,
-        rotate_secret=body.rotate_secret)
+        cost_alert_usd=body.cost_alert_usd, rotate_secret=body.rotate_secret)
 
 
 @admin.post("/integrations/test")

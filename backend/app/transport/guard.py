@@ -10,7 +10,9 @@ Two per-site limits, checked before each public turn:
   the current UTC day reaches ``public_daily_spend_cap_usd``, further turns are
   refused until the next day.
 
-Either limit is disabled by setting it to 0.
+Either limit is disabled by setting it to 0. The same check raises the
+site's cost alerts (80 % and 100 % of the cap, and its own threshold) —
+see ``app/analytics/alerts.py``.
 
 - **Plan limit** (WS12) — a site on the Free plan stops starting new
   conversations once its account's monthly allowance is used.
@@ -113,9 +115,15 @@ async def check_public_budget(
     """
     if not await _allow(site_key, settings.public_rate_limit_per_min):
         return RATE_LIMITED
+    from app.analytics import alerts
+
     cap = settings.public_daily_spend_cap_usd
-    if cap > 0 and await spent_today_usd(db, site_key) >= cap:
-        return SPEND_CAP_REACHED
+    threshold = await alerts.site_threshold(db, site_key)
+    if cap > 0 or threshold:
+        spent = await spent_today_usd(db, site_key)
+        alerts.schedule(site_key, spent, cap, threshold)   # background; once a day each
+        if cap > 0 and spent >= cap:
+            return SPEND_CAP_REACHED
     from app.billing.store import over_plan_limit
 
     if await over_plan_limit(db, site_key, session_id):

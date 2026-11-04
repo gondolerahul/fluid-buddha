@@ -5,8 +5,8 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { Analytics, Api } from "@/lib/api";
-import { fmtUSD } from "@/components/ui";
+import { Analytics, Api, CostAlert } from "@/lib/api";
+import { fmtDate, fmtUSD } from "@/components/ui";
 
 type Group = "day" | "hour" | "session";
 
@@ -80,6 +80,8 @@ export default function AnalyticsPage() {
           ))}
         </div>
       </div>
+
+      <CostAlerts id={id} />
 
       {/* KPI row */}
       <div className="grid" style={{ marginBottom: 20,
@@ -231,5 +233,37 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
       <div className="metric" style={{ marginTop: 8 }}>{value}</div>
       {hint && <div className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>{hint}</div>}
     </div>
+  );
+}
+
+const ALERT_TEXT: Record<CostAlert["level"], string> = {
+  threshold: "passed your cost alert of",
+  cap_80: "reached 80% of the daily cap of",
+  cap_100: "hit the daily cap of",
+};
+
+/** Cost alerts of the last week (F-3); nothing at all when there are none. */
+function CostAlerts({ id }: { id: string }) {
+  const [rows, setRows] = useState<CostAlert[]>([]);
+  useEffect(() => {
+    let live = true;
+    Api.costAlerts(id).then((r) => { if (live) setRows(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [id]);
+  if (rows.length === 0) return null;
+  return (
+    <section className="card" style={{ marginBottom: 20 }}>
+      <h3 style={{ marginBottom: 8 }}>Cost alerts (last 7 days)</h3>
+      <ul className="stack" style={{ gap: 6, listStyle: "none", padding: 0, margin: 0 }}>
+        {rows.map((a) => (
+          <li key={`${a.day}-${a.level}`} style={{ fontSize: "0.88rem" }}>
+            <span className={`badge ${a.level === "cap_100" ? "err" : ""}`}>{a.day}</span>{" "}
+            AI cost {ALERT_TEXT[a.level]} {fmtUSD(a.limit_usd)} ({fmtUSD(a.spent_usd)} at {fmtDate(a.at)})
+            {a.error ? <span className="faint"> · Slack failed: {a.error}</span>
+              : a.delivered ? <span className="faint"> · sent to Slack</span> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

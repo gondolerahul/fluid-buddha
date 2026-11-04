@@ -410,6 +410,18 @@ export type Integrations = {
   webhook_secret: string;
   slack_webhook_url: string | null;
   hot_lead_score: number;
+  /** Alert when the site's AI cost for the day passes this (USD); null = off. */
+  cost_alert_usd: number | null;
+};
+/** A per-site cost alert (F-3), raised at most once per kind per UTC day. */
+export type CostAlert = {
+  day: string;
+  level: "threshold" | "cap_80" | "cap_100";
+  spent_usd: number;
+  limit_usd: number;
+  delivered: boolean;
+  error: string | null;
+  at: string;
 };
 
 // ---- endpoint helpers ------------------------------------------------------
@@ -523,8 +535,10 @@ export const Api = {
   getIntegrations: (id: string) => api<Integrations>(`/tenant/websites/${id}/integrations`),
   saveIntegrations: (id: string, body: {
     webhook_url: string | null; slack_webhook_url: string | null;
-    hot_lead_score: number; rotate_secret?: boolean;
+    hot_lead_score: number; cost_alert_usd: number | null; rotate_secret?: boolean;
   }) => api<Integrations>(`/tenant/websites/${id}/integrations`, { method: "PUT", body }),
+  costAlerts: (id: string, days = 7) =>
+    api<CostAlert[]>(`/tenant/websites/${id}/cost-alerts?days=${days}`),
   testIntegrations: (id: string) =>
     api<{ ok: boolean; error: string | null }>(`/tenant/websites/${id}/integrations/test`,
       { method: "POST" }),
