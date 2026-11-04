@@ -20,7 +20,7 @@
 //  (L3).
 // ════════════════════════════════════════════════════════════════════════════
 
-export const STYLES = `
+export const CORE_STYLES = `
 :host {
   /* — configurable anchor — */
   --fb-accent: #c9a24a;
@@ -476,6 +476,9 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .tabs-tab:active { transform: scale(.96); }
 .tabs-panel { font-size: 13px; line-height: 1.5; color: var(--fb-fg); white-space: pre-wrap; }
 
+`;
+
+export const L2_STYLES = `
 /* ════════════════════════════════════════════════════════════════════
    DESIGN LEVEL 2 — "The Presence": an Aura you step inside.
    The volumetric smoke field (ParticleField) is the star; the HUD is a
@@ -608,6 +611,9 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .l2-send:active { transform: scale(.93); }
 .l2-send svg { width: 20px; height: 20px; }
 
+`;
+
+export const L3_STYLES = `
 /* ════════════════════════════════════════════════════════════════════
    DESIGN LEVEL 3 — "The Atmosphere": an Aura dissolved into the page.
    No widget. The agent is the light in the room: a breathing edge-aura, a
@@ -722,6 +728,9 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
   .l2-input, .l3-caps { bottom: calc(26px + env(safe-area-inset-bottom, 0px)); }
 }
 
+`;
+
+export const EXTREME_STYLES = `
 /* ════════════════════════════════════════════════════════════════════
    EXTREME — runtime-generated full-page surface. Themed by the site's
    design tokens (--ds-*), with molten-obsidian fallbacks.
@@ -784,6 +793,9 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .fbpage-media { max-width: 100%; border-radius: var(--ds-radius, 16px); }
 .fbpage-caption { font-size: .85rem; opacity: .6; margin-top: 6px; }
 
+`;
+
+export const COMMON_STYLES = `
 /* ════════════════════════════════════════════════════════════════════
    ACCESSIBILITY — focus rings, contrast, reduced motion (non-negotiable).
    ════════════════════════════════════════════════════════════════════ */
@@ -849,3 +861,14 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 }
 .fb-callbar button:focus-visible { outline: 2px solid var(--fb-gold-bright); outline-offset: 2px; }
 `;
+
+/** The stylesheet for one widget: the shared material and Level 1 surfaces
+ *  (other levels reuse some of them) plus only the parts this design level
+ *  and intelligence tier use. Level 3 builds on Level 2's input styles. */
+export function stylesFor(design: string, extreme: boolean): string {
+  return CORE_STYLES
+    + (design === 'level2' || design === 'level3' ? L2_STYLES : '')
+    + (design === 'level3' ? L3_STYLES : '')
+    + (extreme ? EXTREME_STYLES : '')
+    + COMMON_STYLES;
+}

@@ -9,7 +9,26 @@
 //     which the core fetches from next to itself (src/ui/particles/load.global.ts);
 //   - CJS keeps it inline (Node/bundler consumers that can't split anyway).
 import { build } from 'esbuild';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+
+// The widget's stylesheet lives in template strings in src/ui/styles.ts, full
+// of design notes. esbuild can't minify CSS inside JS strings, so strip the
+// comments and collapse whitespace here (no interpolation is used in them).
+const minifyCss = {
+  name: 'minify-css-strings',
+  setup(b) {
+    b.onLoad({ filter: /[\\/]ui[\\/]styles\.ts$/ }, async (args) => {
+      const src = await readFile(args.path, 'utf8');
+      const contents = src.replace(/= `([\s\S]*?)`;/g, (_, css) => '= `' + css
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/\s*([{};])\s*/g, '$1')
+        .trim() + '`;');
+      return { contents, loader: 'ts' };
+    });
+  },
+};
 
 const shared = {
   entryPoints: ['src/index.ts'],
@@ -17,6 +36,7 @@ const shared = {
   target: ['es2019'],
   sourcemap: true,
   logLevel: 'info',
+  plugins: [minifyCss],
 };
 
 // For the <script> build, resolve the particle loader to its script-tag variant.
@@ -31,7 +51,7 @@ const scriptTagLoader = {
 
 await Promise.all([
   build({ ...shared, format: 'iife', globalName: 'FluidBuddha', minify: true,
-          plugins: [scriptTagLoader], outfile: 'dist/fluid-buddha.global.js' }),
+          plugins: [minifyCss, scriptTagLoader], outfile: 'dist/fluid-buddha.global.js' }),
   build({ ...shared, entryPoints: ['src/ui/particles/global.ts'], format: 'iife',
           globalName: 'FluidBuddhaParticles', minify: true,
           outfile: 'dist/fluid-buddha-particles.global.js' }),

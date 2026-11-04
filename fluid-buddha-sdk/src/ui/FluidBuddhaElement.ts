@@ -19,7 +19,7 @@ import { Level2Shell } from './level2/Level2Shell';
 import { Level3Shell } from './level3/Level3Shell';
 import { PageRenderer, EnquiryPayload } from './page/PageRenderer';
 import { AuraCanvas, AuraState } from './aura/AuraCanvas';
-import { STYLES } from './styles';
+import { stylesFor } from './styles';
 import { callBar, callPrompt } from './call';
 import { consentPrompt } from './consent';
 
@@ -139,7 +139,7 @@ export class FluidBuddhaElement extends HTMLElement {
   private build(): void {
     const root = this.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
-    style.textContent = STYLES;
+    style.textContent = stylesFor(this.config.design, this.config.intelligence === 'extreme');
     root.appendChild(style);
 
     // A single film-grain film over the whole overlay — the "shot on film" luxe.
