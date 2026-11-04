@@ -1,5 +1,5 @@
 /**
- * Typed client for the Fluid-Buddha backend admin API. Attaches the JWT bearer
+ * Typed client for the FluidBuddha backend admin API. Attaches the JWT bearer
  * token to every request and throws a friendly ApiError on non-2xx responses.
  */
 export const API_BASE =

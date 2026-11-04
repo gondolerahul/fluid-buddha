@@ -27,7 +27,7 @@ export default function Dashboard() {
         <div className="row between page-head">
           <div>
             <h1 className="h-page">Your websites</h1>
-            <p className="muted">Each website runs a Fluid-Buddha voice agent you control here.</p>
+            <p className="muted">Each website runs a FluidBuddha voice agent you control here.</p>
           </div>
           <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Add website</button>
         </div>
@@ -80,7 +80,7 @@ function AddWebsiteModal({
   const [domain, setDomain] = useState("");
   const [intelligence, setIntelligence] = useState("advance");
   const [design, setDesign] = useState("level1");
-  const [accent, setAccent] = useState("#ffd23f");
+  const [accent, setAccent] = useState("#c9a24a");
   const [busy, setBusy] = useState(false);
   const router = useRouter();
 

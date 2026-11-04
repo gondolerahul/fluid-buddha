@@ -1,4 +1,4 @@
-# Fluid-Buddha — Product & Go-to-Market Roadmap
+# FluidBuddha — Product & Go-to-Market Roadmap
 
 > Written from two seats at once: the **visionary founder**, who asks what this becomes, and
 > the **expert marketer**, who asks who pays for it, why now, and how they find out.
@@ -11,7 +11,7 @@
 
 ## 0. The one-paragraph thesis
 
-Websites are about to stop being documents and become **conversations**. Fluid-Buddha
+Websites are about to stop being documents and become **conversations**. FluidBuddha
 already has something most "AI chat widget" companies don't:
 
 - an agent that **talks, shows, and acts on the page at the same time**: voice, generated
@@ -63,7 +63,7 @@ and a small sales team.**
 
 - Their bottleneck is the *demo*. High-intent visitors land on pricing, integrations and
   security pages, have nuanced questions, and won't book a call to get them answered.
-- Fluid-Buddha's exact strengths map onto that bottleneck: integration flowcharts, ROI
+- FluidBuddha's exact strengths map onto that bottleneck: integration flowcharts, ROI
   configurators, security grounding, guided product tours, and enterprise-vs-startup
   persona switching.
 - Value is **measurable in pipeline dollars**, which justifies premium pricing.
@@ -76,7 +76,7 @@ Atmosphere is ideal there).
 - **Category to own:** *"The Agentic Website"*. It is not a chatbot, not an interactive-demo
   tool, and not a voice bot. It is the website itself becoming an agent.
 - **Positioning statement:** *For B2B SaaS teams whose buyers want answers before they'll
-  talk to sales, Fluid-Buddha turns your website into a live solutions engineer: it talks,
+  talk to sales, FluidBuddha turns your website into a live solutions engineer: it talks,
   shows, and personalises the page in real time, grounded only in your content, and hands
   you qualified, booked pipeline.*
 - **Headline candidates** (test these):
@@ -91,6 +91,8 @@ Atmosphere is ideal there).
 - **This is a voice product, so its name must survive being said out loud.** "flUIdBuddha"
   fails that test. Standardise on **Fluid Buddha** (or a shorter platform name) and keep
   **Pragya** as the default agent persona, renamable per tenant.
+  *Decided 2026-11-04: the written brand is **FluidBuddha** (one word), matching the
+  `FluidBuddha` JavaScript API; technical names such as the `<fluid-buddha>` tag stay.*
 - One spelling everywhere (code, docs, console, site), and one default accent (the SDK uses
   `#c9a24a` but the console uses `#ffd23f`).
 - **Review the "Buddha" name before expanding globally.** Some markets consider religious
@@ -199,7 +201,7 @@ Even when only 5–15 % of visitors talk, *what they say* is gold:
   visit, or a reverse-IP match to a target account.
 - **The website as an agent endpoint.** AI assistants will increasingly browse and buy on
   behalf of humans. Expose the same grounded knowledge and actions over an **MCP / agent
-  API**, so Fluid-Buddha serves *both* human visitors and the AI agents researching for
+  API**, so FluidBuddha serves *both* human visitors and the AI agents researching for
   them. Being "agent-ready" is a story enterprise buyers will pay for.
 - **Omnichannel brain**: the same tenant knowledge and persona on phone (Twilio),
   WhatsApp, and email follow-up.
@@ -355,7 +357,7 @@ minutes for a new site.
 - **Enterprise**: VPC or on-prem deployment, bring-your-own-model and keys (OpenAI and
   Anthropic alongside Vertex; the engine interfaces in `app/ai/base.py` already make this
   clean), SOC 2 Type II, and a 99.9 % SLA.
-- **Partner programme**: agencies resell and white-label Fluid Buddha.
+- **Partner programme**: agencies resell and white-label FluidBuddha.
 
 ---
 
@@ -392,7 +394,7 @@ product below cheap text chatbots.
 ### 5.2 Recommended model: platform fee plus conversation allowance, with value-based upside
 | Plan | Price | For | Includes |
 |---|---|---|---|
-| **Free** | $0 | Try it, viral loop | 50 conversations/month, text plus voice, L1, "Powered by Fluid Buddha" badge |
+| **Free** | $0 | Try it, viral loop | 50 conversations/month, text plus voice, L1, "Powered by FluidBuddha" badge |
 | **Growth** | $399/month | Startups to Series A | 1,000 conversations, all design levels, advance tier, lead capture, booking, HubSpot, insights v1. Overage $0.35/conversation |
 | **Scale** | $1,499/month | Series B–C SaaS | 5,000 conversations, A/B and holdout, Salesforce, Slack takeover, custom components, SSO. Overage $0.25 |
 | **Enterprise** | from $40k/year | Regulated or large | Extreme tier and generative pages, VPC/BYO-model, residency, SOC 2 pack, SLA, success manager |

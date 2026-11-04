@@ -9,8 +9,8 @@ const body = Hanken_Grotesk({ subsets: ["latin"], variable: "--font-body", weigh
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", weight: ["400", "500"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Fluid-Buddha — Console",
-  description: "Manage your Fluid-Buddha voice agents: ingestion, tours, cached responses, and cost analytics.",
+  title: "FluidBuddha — Console",
+  description: "Manage your FluidBuddha voice agents: ingestion, tours, cached responses, and cost analytics.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

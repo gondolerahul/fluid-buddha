@@ -1,6 +1,6 @@
 # fluid-buddha-frontend
 
-The multi-tenant **admin console** for Fluid-Buddha (Next.js 16 + React 19, App Router).
+The multi-tenant **admin console** for FluidBuddha (Next.js 16 + React 19, App Router).
 A tenant registers, logs in, and manages the voice agents running on their websites:
 
 | Page | Path | Requirement |

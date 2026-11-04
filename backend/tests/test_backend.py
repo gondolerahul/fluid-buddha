@@ -101,7 +101,7 @@ def test_extreme_thinker_generates_grounded_page():
         site_key = "fluidbuddha"
 
         async def search(self, query, top_k=5):
-            return [{"content": "Fluid Buddha builds calm, voice-first sites.",
+            return [{"content": "FluidBuddha builds calm, voice-first sites.",
                      "score": 0.72, "document_title": "about", "section_title": "About"}]
 
     th = HeavyThinker(MockLLMClient(), get_settings())

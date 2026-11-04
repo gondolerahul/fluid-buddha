@@ -1,4 +1,4 @@
-# Fluid-Buddha — Comprehensive Implementation Plan
+# FluidBuddha — Comprehensive Implementation Plan
 
 **Date:** 2026-11-03
 **Author:** Durwanku Rai Lab (durwankurailab@gmail.com), with Claude Code

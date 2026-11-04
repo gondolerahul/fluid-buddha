@@ -89,7 +89,7 @@ export default function BillingPage() {
       const rzp = new Razorpay({
         key: r.key_id,
         subscription_id: r.subscription_id,
-        name: "Fluid-Buddha",
+        name: "FluidBuddha",
         description: r.scheduled_for
           ? `${plan.name} plan, from ${day(r.scheduled_for)}`
           : `${plan.name} plan`,

@@ -22,7 +22,7 @@ export function AppHeader() {
       >
         <Link href="/dashboard" className="brand" style={{ margin: 0 }}>
           <span className="brand-dot" />
-          <span className="brand-name">Fluid-Buddha</span>
+          <span className="brand-name">FluidBuddha</span>
           <span className="badge" style={{ marginLeft: 4 }}>Console</span>
         </Link>
         <div className="row" style={{ gap: 14 }}>

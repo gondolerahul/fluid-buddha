@@ -1,4 +1,4 @@
-# Fluid-Buddha — Defect List (from a local install, run and test)
+# FluidBuddha — Defect List (from a local install, run and test)
 
 **Date:** 2026-11-03
 **Author:** Durwanku Rai Lab (durwankurailab@gmail.com), with Claude Code

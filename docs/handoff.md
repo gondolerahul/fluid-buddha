@@ -1,4 +1,4 @@
-# Fluid-Buddha — development handoff
+# FluidBuddha — development handoff
 
 *As of 4 November 2026 · branch `phase1/beta` · nothing beyond `main` is pushed yet*
 
@@ -17,7 +17,7 @@ each item lives in three companion documents:
 
 ## 1. Where things stand
 
-Fluid-Buddha is a voice-first AI sales agent that a business embeds on its website
+FluidBuddha is a voice-first AI sales agent that a business embeds on its website
 with one script tag. It has three parts in this repository:
 
 | Part | Folder | What it is |
