@@ -1,6 +1,6 @@
 # FluidBuddha — development handoff
 
-*As of 4 November 2026 · branch `phase1/beta` · nothing beyond `main` is pushed yet*
+*As of 4 November 2026 · `phase1/beta` is merged into `main`; follow-up work is on branch `phase1/finish` (local)*
 
 This is the starting point for whoever continues the work. It says what exists,
 how to run and check it, and what is left, in priority order. The detail behind
@@ -36,7 +36,7 @@ A/B (WS11), production plumbing (F-3). Partly done: revenue layer (WS7, the
 integrations need real accounts) and billing (WS12, needs deployment and pricing
 decisions). See §6 for everything left.
 
-**Health at handoff:** backend 150 tests pass (2 Redis tests skip unless a Redis is
+**Health at handoff:** backend 157 tests pass (2 Redis tests skip unless a Redis is
 running), SDK typecheck, build and smoke tests all pass (core bundle 39.8 kB
 gzipped against a 42 kB budget), console lint/typecheck/build clean, `pip-audit` and
 `npm audit` clean.
@@ -128,14 +128,14 @@ hygiene, dependency upgrades, and a CI gate. Defect-by-defect status is in
 
 | Area | What it does now |
 |---|---|
-| **F-3 Migrations** | Alembic migrations `0001`–`0011` replace per-request DDL; applied at startup. |
+| **F-3 Migrations** | Alembic migrations `0001`–`0013` replace per-request DDL; applied at startup. |
 | **WS8 Trust** | Answer citations in every design level; PII masked before the model and storage (leads still get the real email); microphone consent enforced server-side; per-site retention sweep and visitor erasure; pin/block cached answers. |
 | **WS10 Insights** | Conversations and transcripts, top questions, knowledge gaps with "Answer this", visitor → engaged → lead funnel. |
 | **WS7 Leads (v1)** | Leads from the enquiry form and the agent's `capture_lead` tool, with a score and summary; signed webhook delivery with retries; Slack alerts. |
 | **WS5 Engine** | SPA-friendly navigation; AudioWorklet capture with pre-roll (first word not clipped); binary audio frames; streamed, pipelined TTS; Three.js only for Level 2 (core 612 → 141 kB); Level 2 reopens; follow-up questions use the previous question for retrieval. |
 | **WS9 Onboarding** | "Crawl your website" (robots.txt, sitemap, depth/page limits, SSRF-guarded); PDF/DOCX uploads; personas from audience pages; brand colours/fonts from the site's CSS; preview bookmarklet. |
-| **WS11 Holdout A/B** | A share of visitors get no widget; both groups measured on the site's own goal; Experiment tab with lift and a 95% confidence interval. |
-| **F-3 Plumbing** | Request ids in every response and log line; Prometheus `/metrics` incl. time to first audio; TTFA on Analytics; optional OpenTelemetry and Sentry (PII scrubbed); `REDIS_URL` shares chat sessions and the rate limit across replicas. |
+| **WS11 Holdout A/B** | A share of visitors get no widget; both groups measured on the site's own goal; Experiment tab with lift and an always-valid 95% interval (safe to check daily), a sample-size planner, and bots kept out. |
+| **F-3 Plumbing** | Request ids in every response and log line; Prometheus `/metrics` incl. time to first audio; TTFA on Analytics; optional OpenTelemetry and Sentry (PII scrubbed); `REDIS_URL` shares chat sessions and the rate limit across replicas; per-site cost alerts (own threshold, 80 %/100 % of the daily cap) to Slack and the Analytics tab. |
 | **WS12 Billing (Razorpay)** | Plans (Free / Growth / Scale / Enterprise), Razorpay subscriptions and Checkout, signed idempotent webhooks, Free cap, overage billing (add-on, or a payment link for UPI Autopay), plan changes (in place for cards, scheduled for the renewal for UPI), sync with Razorpay when webhooks are missing, cost per conversation. Razorpay was chosen over Stripe. |
 
 New configuration introduced in Phase 1 is listed, commented, in
@@ -173,8 +173,8 @@ Beyond the automated gates, each workstream was exercised live on this machine
 
 ### 6.1 Before the first deployment (blocking)
 
-1. **Push and review.** Push `phase1/beta` (it contains Phase 0) and open a pull
-   request to `main`; let CI run on it.
+1. **Push and review.** Phase 0 and Phase 1 are merged into `main` (CI green).
+   Push `phase1/finish` and open a pull request for the follow-up work.
 2. **Production configuration** (all in `.env.example`):
    - `APP_ENV` set to a non-dev value and a strong `JWT_SECRET` (startup refuses the
      default outside dev).
@@ -191,31 +191,30 @@ Beyond the automated gates, each workstream was exercised live on this machine
 4. **Run against real Vertex once** before customers: streaming Gemini TTS, the LLM
    persona suggestion and real embedding quality have only run in mock mode.
 
-### 6.2 Decisions needed (not code)
+### 6.2 Decisions (all made, 4 Nov 2026)
 
-- **Billing numbers.** The plan prices come from the roadmap; the included
-  conversations (100 / 2,000 / 10,000) and overage rates ($0.20 / $0.12) are
-  placeholders. The local `.env` already carries INR prices (Growth ₹33,000, Scale
-  ₹1,25,000, overage ₹17 / ₹10) — confirm the currency and numbers.
-- **Website copy.** `docs/website-copies/*` (the fluidbuddha marketing site, which
-  carries most of the unsupported claims such as "2.4×", "74 %", "0 % hallucination")
-  is deleted in the working tree but not committed. Either restore and rewrite it
-  under the claims policy, or commit the deletion.
-- **Product name.** "Fluid-Buddha", "fluid-buddha" and "FluidBuddha" are all in use;
-  the agent is called "Pragya" by default. A brand decision.
-- **UPI Autopay** — decided: keep it (see the WS12 row of the implementation plan).
+- **Billing numbers:** INR is the default catalog — Free 100 conversations,
+  Growth ₹33,000 for 2,000 then ₹17 each, Scale ₹1,25,000 for 10,000 then ₹10.
+  USD remains possible through `BILLING_CURRENCY` / `BILLING_CATALOG` once
+  international payments are enabled on Razorpay.
+- **Website copy:** `docs/website-copies/*` removed from the repo; the marketing
+  site's text lives elsewhere and must follow the claims policy.
+- **Product name:** written **FluidBuddha** everywhere customers see it; technical
+  names (`<fluid-buddha>`, package and folder names) unchanged; the default agent
+  is still "Pragya". New websites default to the widget gold `#c9a24a`.
+- **UPI Autopay:** keep it (see the WS12 row of the implementation plan).
 
 ### 6.3 Remaining Phase 1 work
 
 | Workstream | Left to do | Needs |
 |---|---|---|
 | WS7 Revenue | Native HubSpot, then Salesforce sync; inline meeting booking (Calendly / HubSpot Meetings); live takeover of a text chat by a human. | Real sandbox accounts for each service. |
-| WS12 Billing | Real webhooks once deployed; tax (GST) invoices and a billing contact are on Razorpay's side; no payment-failure reminder emails of our own. | Deployment; pricing decision. |
-| F-3 Plumbing | Per-site cost alerts (e.g. Slack when a site nears its daily cap); time to first audio measured in the browser (network + playback), not just the server. | — |
+| WS12 Billing | Real webhooks once deployed; tax (GST) invoices and a billing contact are on Razorpay's side; no payment-failure reminder emails of our own. | Deployment. |
+| F-3 Plumbing | Time to first audio measured in the browser (network + playback), not just the server. | — |
 | WS8 Trust | Detect names and street addresses (masking is pattern-based today); a privacy notice for visitors who only type; apply retention to the agent's long-term (CORTEX episodic) memory. | — |
 | WS5 Engine | Split the widget stylesheet per design level (about a third of the core bundle); an optional model-based rewrite for follow-ups the heuristic misses. | — |
 | WS9 Onboarding | Client-rendered sites yield little text (needs a headless-browser fetch); a re-crawl doesn't remove pages that disappeared. | — |
-| WS11 Holdout | Bot filtering; a sample-size planner; guard against stopping a test early (no sequential-testing correction). | — |
+| WS11 Holdout | Comparing results across runs; bot filtering is by User-Agent and `navigator.webdriver` only (no behavioural signals). | — |
 | WS10 Insights | The "meetings" stage of the funnel. | WS7 booking. |
 
 ### 6.4 Not yet verified
