@@ -116,7 +116,22 @@ one arm can produce them.
 - Results (`GET …/experiment/results`, `app/experiments/stats.py`): each arm's
   rate with a Wilson 95% interval; the difference with Newcombe's hybrid score
   interval; relative lift with a log-scale interval; a two-proportion z-test.
-  It reads "collecting" until each arm has 30 visitors and some conversions.
+  It reads "collecting" until each arm has 30 visitors and both together have
+  10 conversions.
+- **Peeking is safe.** The verdict comes from an always-valid 95% interval
+  (mSPRT, pooled variance): it stays correct however often the dashboard is
+  read, so stopping the day it turns green doesn't inflate false wins (in
+  simulation, ≤ 5% against 38% for the plain interval read every 200 visitors).
+  When only the plain interval excludes zero the result is `trending`
+  ("promising, keep it running"), not `significant`.
+- **Planner** (`GET …/experiment/plan?baseline=&mde=&holdout_pct=`): visitors
+  needed for 80% power to show a relative lift `mde` over `baseline` (default:
+  the holdout's own rate once it has 30 visitors, else 3%), and the days left at
+  the run's traffic so far.
+- **Bots** aren't enrolled (`app/experiments/bots.py`): a crawler, monitor,
+  HTTP-library or headless User-Agent, or the widget reporting
+  `navigator.webdriver`. They get the widget, aren't counted, and each run
+  shows how many were turned away.
 - Changing the holdout share starts a new run (results are per run); changing
   the goal page doesn't.
 
@@ -150,8 +165,10 @@ changes; `blocked` ones never replay and their question is not cached again.
 Plans cover every website of an account; the unit is a **conversation** (a
 visitor session with at least one answered turn, counted from `usage_events`).
 Defaults (`app/billing/plans.py`, override with `BILLING_CATALOG` /
-`BILLING_CURRENCY`): Free 100 a month (hard cap), Growth $399 for 2,000 then
-$0.20 each, Scale $1,499 for 10,000 then $0.12, Enterprise by arrangement.
+`BILLING_CURRENCY`): Free 100 a month (hard cap), Growth ₹33,000 for 2,000 then
+₹17 each, Scale ₹1,25,000 for 10,000 then ₹10, Enterprise by arrangement.
+Prices are in INR; USD (e.g. $399 / $1,499) needs international payments
+enabled on the Razorpay account and a `BILLING_CATALOG` override.
 
 1. Set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` (test keys in development).
    The Razorpay plans are created on first checkout, one per key, plan, currency
@@ -202,9 +219,16 @@ $0.20 each, Scale $1,499 for 10,000 then $0.12, Enterprise by arrangement.
     `fb_stage_seconds{stage}` (route, retrieval, think_lean, think_heavy, tts),
     `fb_engine_errors_total{engine}`, `fb_http_requests_total` /
     `fb_http_request_seconds{method,route}`, `fb_ws_connections`,
-    `fb_crawl_jobs_total{status}`.
+    `fb_crawl_jobs_total{status}`, `fb_cost_alerts_total{level}`.
   Time to first audio is also stored per voice turn (`usage_events.ttfa_ms`)
   and shown per site on the console's Analytics tab (median and p95).
+- **Cost alerts** (`app/analytics/alerts.py`): each site can set a daily AI-cost
+  alert (Console → Settings → Lead integrations, USD); with a daily spend cap
+  (`PUBLIC_DAILY_SPEND_CAP_USD`) every site is also alerted at 80% and 100% of
+  it. Each kind goes out at most once per site per UTC day: posted to the
+  site's Slack webhook, listed on its Analytics tab (`GET …/cost-alerts`),
+  logged and counted. The check runs with the spend cap before a public turn
+  and sends in the background, so a turn never waits on Slack.
 - **Tracing** (optional): set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP
   collector. Each HTTP request is a span, with the turn (`voice.turn`,
   `chat.turn`) and its stages (`stage.route`, `stage.retrieval`,

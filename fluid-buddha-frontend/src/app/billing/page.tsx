@@ -60,8 +60,9 @@ export default function BillingPage() {
 
   if (auth.loading || !auth.tenant) return <LoadingScreen />;
 
-  const money = (minor: number) => new Intl.NumberFormat(undefined, {
-    style: "currency", currency: data?.currency ?? "USD",
+  const cur = data?.currency ?? "INR";
+  const money = (minor: number) => new Intl.NumberFormat(cur === "INR" ? "en-IN" : undefined, {
+    style: "currency", currency: cur,
     maximumFractionDigits: minor % 100 === 0 ? 0 : 2,
   }).format(minor / 100);
 
@@ -88,7 +89,7 @@ export default function BillingPage() {
       const rzp = new Razorpay({
         key: r.key_id,
         subscription_id: r.subscription_id,
-        name: "Fluid-Buddha",
+        name: "FluidBuddha",
         description: r.scheduled_for
           ? `${plan.name} plan, from ${day(r.scheduled_for)}`
           : `${plan.name} plan`,

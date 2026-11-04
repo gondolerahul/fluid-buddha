@@ -295,15 +295,21 @@ function IntegrationsForm({ id, initial }: { id: string; initial: Integrations }
   const [webhook, setWebhook] = useState(initial.webhook_url || "");
   const [slack, setSlack] = useState(initial.slack_webhook_url || "");
   const [hot, setHot] = useState(initial.hot_lead_score);
+  const [costAlert, setCostAlert] = useState(initial.cost_alert_usd == null ? "" : String(initial.cost_alert_usd));
   const [secret, setSecret] = useState(initial.webhook_secret);
   const [busy, setBusy] = useState<"save" | "rotate" | "test" | null>(null);
 
   const save = async (rotate = false) => {
+    const alertUsd = Number(costAlert);
+    if (costAlert.trim() && !(alertUsd > 0)) {
+      toast("The cost alert must be an amount above zero, or empty", "err");
+      return;
+    }
     setBusy(rotate ? "rotate" : "save");
     try {
       const cfg = await Api.saveIntegrations(id, {
         webhook_url: webhook.trim() || null, slack_webhook_url: slack.trim() || null,
-        hot_lead_score: hot, rotate_secret: rotate,
+        hot_lead_score: hot, cost_alert_usd: costAlert.trim() ? alertUsd : null, rotate_secret: rotate,
       });
       setSecret(cfg.webhook_secret);
       toast(rotate ? "Signing secret rotated" : "Integrations saved");
@@ -363,6 +369,15 @@ function IntegrationsForm({ id, initial }: { id: string; initial: Integrations }
             <input className="input" type="number" min={0} max={100} value={hot}
               onChange={(e) => setHot(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} />
           </div>
+        </div>
+        <div className="field">
+          <label className="label">Cost alert <span className="faint">(optional, USD per day)</span></label>
+          <input className="input" inputMode="decimal" value={costAlert} placeholder="e.g. 5"
+            aria-label="Daily cost alert in USD" onChange={(e) => setCostAlert(e.target.value)} />
+          <p className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+            Ping Slack (and list it on Analytics) the first time a day this site&apos;s AI cost passes this
+            amount. You are also alerted at 80% and 100% of the daily spend cap, if one is set.
+          </p>
         </div>
         <div className="row" style={{ gap: 10, justifyContent: "flex-end" }}>
           <button type="button" className="btn" onClick={test} disabled={busy !== null}>

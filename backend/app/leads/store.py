@@ -178,21 +178,25 @@ async def get_integrations(db: AsyncSession, site_key: str) -> dict[str, Any]:
     row = (await db.execute(text(
         "INSERT INTO site_integrations (site_key, webhook_secret) VALUES (:s, :sec) "
         "ON CONFLICT (site_key) DO UPDATE SET site_key = EXCLUDED.site_key "
-        "RETURNING webhook_url, webhook_secret, slack_webhook_url, hot_lead_score"
+        "RETURNING webhook_url, webhook_secret, slack_webhook_url, hot_lead_score, cost_alert_usd"
     ), {"s": site_key, "sec": new_secret()})).mappings().one()
     return dict(row)
 
 
 async def save_integrations(db: AsyncSession, site_key: str, *, webhook_url: Optional[str],
                             slack_webhook_url: Optional[str], hot_lead_score: int,
+                            cost_alert_usd: Optional[float] = None,
                             rotate_secret: bool = False) -> dict[str, Any]:
+    from app.analytics.alerts import forget_threshold
+
     await get_integrations(db, site_key)
+    forget_threshold(site_key)
     row = (await db.execute(text(
         "UPDATE site_integrations SET webhook_url = :w, slack_webhook_url = :sl, "
-        "hot_lead_score = :h, updated_at = now()"
+        "hot_lead_score = :h, cost_alert_usd = :c, updated_at = now()"
         + (", webhook_secret = :sec" if rotate_secret else "") +
         " WHERE site_key = :s "
-        "RETURNING webhook_url, webhook_secret, slack_webhook_url, hot_lead_score"
-    ), {"w": webhook_url, "sl": slack_webhook_url, "h": hot_lead_score,
+        "RETURNING webhook_url, webhook_secret, slack_webhook_url, hot_lead_score, cost_alert_usd"
+    ), {"w": webhook_url, "sl": slack_webhook_url, "h": hot_lead_score, "c": cost_alert_usd,
         "sec": new_secret(), "s": site_key})).mappings().one()
     return dict(row)

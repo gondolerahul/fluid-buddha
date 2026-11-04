@@ -147,9 +147,9 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
-    # Plan prices are in this currency's minor unit. USD needs international
-    # payments enabled on the Razorpay account; INR doesn't.
-    billing_currency: str = "USD"
+    # Plan prices are in this currency's minor unit. INR is the default; USD
+    # needs international payments enabled on the Razorpay account.
+    billing_currency: str = "INR"
     # JSON overrides of app/billing/plans.py DEFAULT_CATALOG, merged per plan.
     billing_catalog: str = ""
 

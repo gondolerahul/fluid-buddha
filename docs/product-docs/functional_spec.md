@@ -1,4 +1,4 @@
-# Fluid-Buddha: Functional Specification
+# FluidBuddha: Functional Specification
 
 This document provides a comprehensive functional specification for **fluid-buddha**, a framework-agnostic, voice-first agentic UI overlay designed to deliver context-aware, immersive digital assistants.
 
@@ -102,7 +102,7 @@ The visual theme changes how the Aura behaves, scaling from a small floating but
 ## 5. User Interaction Models
 
 ### 5.1 Voice Capture & Energy VAD
-Fluid-Buddha continuously tracks incoming voice data. Using a local volume envelope evaluator, it begins packing and streaming PCM data when energy crosses the VAD threshold.
+FluidBuddha continuously tracks incoming voice data. Using a local volume envelope evaluator, it begins packing and streaming PCM data when energy crosses the VAD threshold.
 
 ### 5.2 Barge-In (Interruption handling)
 * **Concept**: If the visitor starts speaking while Pragya is outputting audio or generating a card, the system immediately cuts off.

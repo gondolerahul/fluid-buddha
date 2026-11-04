@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import {
   CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { Api, ApiError, ExperimentResults, ExperimentSettings, LiftArm } from "@/lib/api";
+import { Api, ApiError, ExperimentPlan, ExperimentResults, ExperimentSettings, LiftArm } from "@/lib/api";
 import { Spinner, fmtDate, useToast } from "@/components/ui";
 
 // Series colours, validated as a pair on the card surface (#12151c): lightness
@@ -12,6 +12,7 @@ import { Spinner, fmtDate, useToast } from "@/components/ui";
 const AGENT = "#c98500";
 const HOLDOUT = "#3987e5";
 const SHARES = [5, 10, 20, 30, 50];
+const LIFTS = [0.1, 0.2, 0.3, 0.5, 1];
 
 const subscribeNoop = () => () => {};
 const pct = (x: number | null | undefined, d = 1) => (x == null ? "—" : `${(x * 100).toFixed(d)}%`);
@@ -74,6 +75,8 @@ export default function ExperimentPage() {
 
       {res === undefined ? <div className="skeleton" style={{ height: 260 }} /> :
         res === null ? null : <Results res={res} />}
+
+      {cfg && <Planner id={id} cfg={cfg} />}
     </div>
   );
 }
@@ -162,12 +165,15 @@ function headline(res: ExperimentResults): { tone: string; text: string } {
         "Results firm up once each group has at least 30 visitors and some conversions.",
     };
   }
-  const ci = `(95% CI ${pts(l.diff_low)} to ${pts(l.diff_high)})`;
+  const ci = `(95% CI ${pts(l.seq_low)} to ${pts(l.seq_high)})`;
   const rel = l.relative != null ? `, ${l.relative >= 0 ? "+" : "−"}${Math.abs(l.relative * 100).toFixed(0)}% relative` : "";
   if (l.status === "significant" && (l.diff ?? 0) > 0)
     return { tone: "ok", text: `The agent lifts conversion by ${pts(l.diff)} ${ci}${rel}.` };
   if (l.status === "significant")
     return { tone: "err", text: `Visitors with the agent convert less: ${pts(l.diff)} ${ci}${rel}.` };
+  if (l.status === "trending")
+    return { tone: "", text: `${(l.diff ?? 0) > 0 ? "Promising" : "Leaning negative"}: ${pts(l.diff)}${rel}, but not ` +
+      `conclusive yet ${ci}. Keep the experiment running — stopping now risks a false result.` };
   return { tone: "", text: `No clear difference yet: ${pts(l.diff)} ${ci}. Keep the experiment running.` };
 }
 
@@ -185,12 +191,25 @@ function Results({ res }: { res: ExperimentResults }) {
           color: h.tone === "ok" ? "var(--ok)" : h.tone === "err" ? "var(--err)" : undefined }}>
           {h.tone === "ok" ? "✓ " : h.tone === "err" ? "! " : ""}{h.text}
         </p>
-        {l.p_value != null && l.status !== "collecting" && (
+        {l.seq_p_value != null && l.status !== "collecting" && (
           <p className="faint" style={{ fontSize: "0.8rem", marginTop: 4 }}>
-            {l.p_value < 0.001 ? "p < 0.001" : `p = ${l.p_value.toFixed(3)}`} · {res.experiment.holdout_pct}% held out
+            {l.seq_p_value < 0.001 ? "p < 0.001" : l.seq_p_value > 0.5 ? "p > 0.5"
+              : `p = ${l.seq_p_value.toFixed(3)}`} · {res.experiment.holdout_pct}% held out
           </p>
         )}
-        {l.diff != null && <DiffStrip low={l.diff_low!} diff={l.diff} high={l.diff_high!} />}
+        {res.experiment.bots_ignored > 0 && (
+          <p className="faint" style={{ fontSize: "0.8rem", marginTop: 2 }}>
+            {res.experiment.bots_ignored} bot visit{res.experiment.bots_ignored === 1 ? "" : "s"} kept out of the test
+          </p>
+        )}
+        {l.diff != null && l.seq_low != null && l.seq_high != null &&
+          <DiffStrip low={l.seq_low} diff={l.diff} high={l.seq_high} />}
+        {l.status !== "collecting" && (
+          <p className="faint" style={{ fontSize: "0.78rem", marginTop: 8 }}>
+            This interval stays valid however often you look, so checking daily is fine. It is wider than a
+            one-look test: that is the price of being able to stop as soon as the answer is clear.
+          </p>
+        )}
       </section>
 
       <div className="grid grid-2">
@@ -300,4 +319,84 @@ function groupGoals(rows: ExperimentResults["goals"]) {
     by.set(r.name, g);
   }
   return [...by.values()];
+}
+
+/** How many visitors the test needs to show a given lift, and how long that takes. */
+function Planner({ id, cfg }: { id: string; cfg: ExperimentSettings }) {
+  const [mde, setMde] = useState(0.2);
+  const [baselineText, setBaselineText] = useState("");
+  const [plan, setPlan] = useState<ExperimentPlan | null>(null);
+
+  const typed = Number(baselineText);
+  const baseline = baselineText.trim() && typed > 0 && typed < 100 ? typed / 100 : undefined;
+  useEffect(() => {
+    let live = true;
+    Api.experimentPlan(id, { mde, baseline, holdout_pct: cfg.holdout_pct })
+      .then((p) => { if (live) setPlan(p); }).catch(() => {});
+    return () => { live = false; };
+  }, [id, mde, baseline, cfg.holdout_pct]);
+
+  const n = plan?.needed;
+  const progress = plan && n ? Math.min(1, plan.visitors_so_far / n.total) : 0;
+  const days = plan?.days_left;
+  const source = plan?.baseline_source === "observed" ? "the held-out group's rate so far"
+    : plan?.baseline_source === "given" ? "your figure" : "a typical 3% until your holdout has data";
+  let pace = "";
+  if (plan?.reached) pace = " This run has reached that size.";
+  else if (days != null && plan?.visitors_per_day) {
+    const d = Math.ceil(days);
+    pace = ` At ${Math.round(plan.visitors_per_day).toLocaleString()} visitors a day that is roughly ` +
+      (days < 1 ? "under a day." : `${d} more day${d === 1 ? "" : "s"}.`);
+  }
+
+  return (
+    <section className="card">
+      <span className="eyebrow">Planner</span>
+      <h3 style={{ marginTop: 6 }}>How long will it take?</h3>
+      <div className="grid grid-2" style={{ gap: 14, marginTop: 12 }}>
+        <div className="field">
+          <label className="label">Lift to detect</label>
+          <select className="select" value={mde} aria-label="Lift to detect"
+            onChange={(e) => setMde(Number(e.target.value))}>
+            {LIFTS.map((m) => <option key={m} value={m}>+{Math.round(m * 100)}% more conversions</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label className="label">Goal rate without the agent <span className="faint">(optional, %)</span></label>
+          <input className="input" inputMode="decimal" value={baselineText} aria-label="Goal rate without the agent"
+            placeholder={plan ? (plan.baseline * 100).toFixed(1) : "3"}
+            onChange={(e) => setBaselineText(e.target.value)} />
+          <p className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+            {plan ? `Using ${(plan.baseline * 100).toFixed(1)}% — ${source}.` : " "}
+          </p>
+        </div>
+      </div>
+      {!plan ? <div className="skeleton" style={{ height: 60, marginTop: 8 }} /> : !n ? (
+        <p className="muted" style={{ marginTop: 8 }}>That lift would push the rate past 100%; pick a smaller one.</p>
+      ) : (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ lineHeight: 1.5 }}>
+            About <strong>{n.total.toLocaleString()}</strong> visitors ({n.holdout.toLocaleString()} held out,{" "}
+            {n.agent.toLocaleString()} with the agent) to show a +{Math.round(plan.mde * 100)}% lift with 80% confidence
+            {cfg.enabled ? "." : ` at a ${plan.holdout_pct}% holdout.`}{pace}
+          </p>
+          {plan.visitors_so_far > 0 && (
+            <div style={{ marginTop: 10 }} role="img"
+              aria-label={`${plan.visitors_so_far} of ${n.total} visitors so far`}>
+              <div style={{ height: 8, borderRadius: 4, background: "var(--line)" }}>
+                <div style={{ width: `${progress * 100}%`, height: 8, borderRadius: 4, background: "var(--accent)" }} />
+              </div>
+              <div className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+                {plan.visitors_so_far.toLocaleString()} of {n.total.toLocaleString()} visitors so far
+              </div>
+            </div>
+          )}
+          <p className="faint" style={{ fontSize: "0.78rem", marginTop: 8 }}>
+            Smaller lifts, rarer goals and smaller holdouts all need more visitors. A larger holdout gets an
+            answer sooner, at the cost of more visitors without the agent meanwhile.
+          </p>
+        </div>
+      )}
+    </section>
+  );
 }

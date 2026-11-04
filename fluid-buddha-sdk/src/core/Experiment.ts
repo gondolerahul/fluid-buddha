@@ -115,7 +115,12 @@ export class Experiment {
       const res = await fetch(`${this.config.api.replace(/\/$/, '')}/experiment/enroll`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ key: this.config.key, site: this.config.site, visitor: this.visitorId }),
+        // `automated`: a browser driven by Selenium/Puppeteer/Playwright says so;
+        // the server then keeps it out of the experiment (bots dilute both arms).
+        body: JSON.stringify({
+          key: this.config.key, site: this.config.site, visitor: this.visitorId,
+          automated: typeof navigator !== 'undefined' && navigator.webdriver === true,
+        }),
         signal: ctrl?.signal,
       });
       if (!res.ok) return null;

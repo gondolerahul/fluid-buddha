@@ -204,7 +204,7 @@ async def razorpay_plan_id(db: AsyncSession, rzp: Razorpay, plan_key: str) -> st
     if found:
         return found
     created = await rzp.create_plan(
-        name=f"Fluid-Buddha {p.name}", amount=p.price, currency=cur,
+        name=f"FluidBuddha {p.name}", amount=p.price, currency=cur,
         description=f"{p.included:,} conversations a month" if p.included else p.name,
     )
     await db.execute(text(
@@ -552,7 +552,7 @@ async def charge_pending_overage(db: AsyncSession, rzp: Optional[Razorpay],
             try:
                 link = await rzp.create_payment_link(
                     amount=r["amount"], currency=r["currency"],
-                    description=f"Fluid-Buddha extra conversations — {what}",
+                    description=f"FluidBuddha extra conversations — {what}",
                     email=owner["email"], name=owner["name"] or owner["email"],
                     reference_id=f"ovg_{r['period_start']:%Y%m%d}_{acct.tenant_id.hex[:12]}",
                     notes={"tenant_id": str(acct.tenant_id),

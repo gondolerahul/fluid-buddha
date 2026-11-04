@@ -192,14 +192,16 @@ def _webhook(client, event: str, sub: dict, event_id: str | None = None, secret_
 def test_catalog_defaults_and_overrides():
     s = get_settings()
     cat = catalog.catalog(s)
-    assert cat["growth"].price == 39_900 and cat["scale"].price == 149_900
+    assert cat["growth"].price == 3_300_000 and cat["scale"].price == 12_500_000
+    assert cat["free"].included == 100 and cat["growth"].included == 2_000 and cat["scale"].included == 10_000
     assert cat["free"].overage is None and not cat["enterprise"].self_serve
-    assert catalog.overage_amount(cat["growth"], 2_150) == (150, 3_000)
-    assert catalog.overage_amount(cat["free"], 500) == (0, 0)
-    s.billing_catalog = json.dumps({"growth": {"price": 2_999_00, "overage": 1_500}})
-    s.billing_currency = "inr"
-    assert catalog.plan("growth", s).price == 299_900 and catalog.plan("growth", s).included == 2_000
     assert catalog.currency(s) == "INR"
+    assert catalog.overage_amount(cat["growth"], 2_150) == (150, 255_000)
+    assert catalog.overage_amount(cat["free"], 500) == (0, 0)
+    s.billing_catalog = json.dumps({"growth": {"price": 39_900, "overage": 20}})
+    s.billing_currency = "usd"
+    assert catalog.plan("growth", s).price == 39_900 and catalog.plan("growth", s).included == 2_000
+    assert catalog.currency(s) == "USD"
 
 
 def test_signatures():
@@ -224,7 +226,7 @@ def test_subscription_lifecycle_and_overage(fake):
         # A plan remembered from another account / an earlier run is recreated.
         _sql("DELETE FROM razorpay_plans WHERE key_id = :k", k=KEY_ID)
         _sql("INSERT INTO razorpay_plans (key_id, plan, currency, amount, razorpay_plan_id) "
-             "VALUES (:k, 'growth', 'USD', 39900, 'plan_gone')", k=KEY_ID)
+             "VALUES (:k, 'growth', 'INR', 3300000, 'plan_gone')", k=KEY_ID)
         b = client.get("/tenant/billing", headers=h).json()
         assert b["plan"] == "free" and b["status"] == "none" and b["checkout_enabled"]
         assert b["usage"]["included"] == 100 and b["usage"]["capped"]
@@ -235,7 +237,7 @@ def test_subscription_lifecycle_and_overage(fake):
         assert co["action"] == "checkout" and co["key_id"] == KEY_ID and co["email"].endswith("@example.com")
         sub_id = co["subscription_id"]
         plan_amounts = {p["item"]["amount"] for p in fake.plans.values()}
-        assert plan_amounts == {39_900}
+        assert plan_amounts == {3_300_000}
         # Still Free until the payment is verified.
         assert client.get("/tenant/billing", headers=h).json()["plan"] == "free"
 

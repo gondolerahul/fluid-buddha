@@ -1,4 +1,4 @@
-# Fluid-Buddha — Built Functionality Report
+# FluidBuddha — Built Functionality Report
 
 > **Scope.** This report is based on a line-by-line read of every source, config, test and
 > doc file in this repository (~16.3k lines of code) as of commit `83f4bcc` (2026-11-03): the FastAPI backend
@@ -13,7 +13,7 @@
 
 ## 1. Executive summary
 
-**What it is.** Fluid-Buddha is a voice-first AI website agent ("Pragya") delivered as one
+**What it is.** FluidBuddha is a voice-first AI website agent ("Pragya") delivered as one
 `<script>` tag. A visitor talks to the website or types. The agent answers out loud,
 grounds its answers in the site's own content, draws interactive diagrams and calculators
 while it speaks, scrolls and navigates the page, silently re-themes the site for the

@@ -1,4 +1,4 @@
-# Fluid-Buddha: Marketing & Product Positioning Brief
+# FluidBuddha: Marketing & Product Positioning Brief
 
 This brief outlines the positioning, target market segments, core value propositions, and branding guidelines for **fluid-buddha**.
 
@@ -24,7 +24,7 @@ It acts as the ultimate digital Sales Development Representative (SDR)—helping
 
 ## 3. Ideal Customer Profile (ICP) & Marketing Personas
 
-Fluid-Buddha automatically detects and adjusts its voice tone and messaging focus to align with the visitor's business segment.
+FluidBuddha automatically detects and adjusts its voice tone and messaging focus to align with the visitor's business segment.
 
 ```
        [Visitor Inquiry] ──► [Classification Engine]
@@ -109,7 +109,7 @@ Fluid-Buddha automatically detects and adjusts its voice tone and messaging focu
 
 ## 6. Branding & Style Guidelines
 
-Fluid-Buddha relies on premium design aesthetics to build visitor trust. Implementations should avoid generic styling templates:
+FluidBuddha relies on premium design aesthetics to build visitor trust. Implementations should avoid generic styling templates:
 * **The Color Concept**: "Liquid light on molten obsidian." Uses dark backgrounds combined with bright accent gradients (default gold: `#c9a24a`).
 * **Visual Transitions**: UI cards use soft, physics-based slide animations. The background dims gently, and spotlight animations direct the user's eye to referenced elements.
 * **Zero Clutter**: Avoid filling panels with complex chrome, status bars, or buttons. The system expresses its listening, thinking, and speaking states entirely through the breathing rhythms of the central Aura light.

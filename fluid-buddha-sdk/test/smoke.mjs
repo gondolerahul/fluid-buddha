@@ -398,6 +398,7 @@ await settle();
 const enrolCall = expCalls.find((c) => c.url.endsWith('/experiment/enroll'));
 ok(enrolCall && enrolCall.body.key === 'fbk_holdout_site' && /^[A-Za-z0-9_-]{8,64}$/.test(enrolCall.body.visitor),
   'enrols with the widget key and an anonymous visitor id');
+ok(enrolCall.body.automated === false, 'reports whether the browser is automated (bots are kept out)');
 ok(!held.shadowRoot && held.hasAttribute('data-holdout'), 'a holdout visitor gets no widget');
 held.openPanel(); held.ask('hi'); held.close();
 ok(!held.shadowRoot, 'host calls cannot bring the agent back for a holdout visitor');

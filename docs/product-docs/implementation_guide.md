@@ -1,4 +1,4 @@
-# Fluid-Buddha: Implementation & Operations Guide
+# FluidBuddha: Implementation & Operations Guide
 
 This guide provides step-by-step instructions for developers setting up, configuring, and operating **fluid-buddha** in both local development and production Google Cloud Vertex AI environments.
 

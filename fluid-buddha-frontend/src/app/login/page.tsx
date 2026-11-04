@@ -37,7 +37,7 @@ export default function LoginPage() {
       <div className="card fade-in" style={{ width: 400, maxWidth: "100%" }}>
         <div className="brand" style={{ marginBottom: 8 }}>
           <span className="brand-dot" />
-          <span className="brand-name">Fluid-Buddha</span>
+          <span className="brand-name">FluidBuddha</span>
         </div>
         <h1 style={{ fontSize: "1.4rem", marginBottom: 4 }}>Welcome back</h1>
         <p className="muted" style={{ marginBottom: 22 }}>Sign in to your console.</p>

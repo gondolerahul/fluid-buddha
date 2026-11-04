@@ -1,4 +1,4 @@
-# Fluid-Buddha: Technical Specification
+# FluidBuddha: Technical Specification
 
 This document details the software architecture, communications protocol, data schemas, and backend configurations that make up the **fluid-buddha** system.
 
