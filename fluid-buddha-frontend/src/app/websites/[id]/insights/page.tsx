@@ -5,6 +5,7 @@ import { Api, ApiError, ConversationSummary, Insights, QuestionStat } from "@/li
 import { fmtDate, useToast } from "@/components/ui";
 import { AddSourceModal } from "@/components/AddSourceModal";
 import { TranscriptModal } from "@/components/TranscriptModal";
+import { DealSignals } from "@/components/DealSignals";
 
 const RANGES = [7, 30, 90];
 
@@ -45,7 +46,7 @@ export default function InsightsPage() {
         <div>
           <h2>Insights</h2>
           <p className="muted" style={{ fontSize: "0.88rem" }}>
-            What visitors ask, what the agent couldn&apos;t answer, and every conversation.
+            What visitors ask, what holds them back, who they compare you with, and every conversation.
           </p>
         </div>
         <div className="tabs" style={{ border: "none", margin: 0 }}>
@@ -66,6 +67,8 @@ export default function InsightsPage() {
           value={data ? (data.grounded_rate === null ? "—" : `${Math.round(data.grounded_rate * 100)}%`) : "…"}
           hint="Grounded in your sources" />
       </div>
+
+      <DealSignals id={id} days={days} onOpen={setOpenConv} />
 
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
         <div className="card">

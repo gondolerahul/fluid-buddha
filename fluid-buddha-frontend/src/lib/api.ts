@@ -143,6 +143,8 @@ export type AgentProfile = {
   greeting?: string;
   default_persona?: string;
   tour_enabled?: boolean;
+  /** Products visitors compare this one with (Insights counts mentions, M2-5). */
+  competitors?: string[];
 };
 
 export type WidgetConfig = {
@@ -298,6 +300,22 @@ export type ExperimentPlan = {
   days_left: number | null;
   reached: boolean;
 };
+
+/** Insights v2 (M2-5). */
+export type SignalExample = { question: string; at: string; conversation_id: string };
+export type ObjectionStat = { type: string; label: string; count: number; previous: number; examples: SignalExample[] };
+export type CompetitorStat = { name: string; count: number; previous: number; examples: SignalExample[] };
+export type FeatureRequest = { text: string; count: number; last_at: string; examples: (SignalExample & { text: string })[] };
+export type Signals = {
+  days: number; classified: number; pending: number;
+  objections: ObjectionStat[]; competitors: CompetitorStat[]; requests: FeatureRequest[];
+  buying_signals: { turns: number; conversations: number };
+};
+export type DigestSettings = {
+  enabled: boolean; timezone: string; chosen: boolean; next_send: string; you: string;
+  recipients: { email: string; unsubscribed: boolean }[];
+};
+export type DigestPreview = { subject: string; text: string; html: string };
 
 /** Variant tests (M2-4). */
 export type TestSubject = "greeting" | "trigger" | "tour" | "persona" | "design";
@@ -528,6 +546,15 @@ export const Api = {
     candidate?: RTCIceCandidateInit }) =>
     api<{ sent: boolean }>(`/tenant/websites/${wid}/live/${sid}/call`, { method: "POST", body }),
 
+  signals: (wid: string, days = 30) => api<Signals>(`/tenant/websites/${wid}/insights/signals?days=${days}`),
+  sendRequest: (wid: string, body: { channel: "slack" | "webhook" | "email"; text: string; count: number;
+    examples: string[]; email?: string }) =>
+    api<{ sent: boolean }>(`/tenant/websites/${wid}/insights/requests/send`, { method: "POST", body }),
+  digest: () => api<DigestSettings>("/tenant/digest"),
+  saveDigest: (body: { enabled: boolean; recipients: string[]; timezone: string }) =>
+    api<DigestSettings>("/tenant/digest", { method: "PUT", body }),
+  previewDigest: () => api<DigestPreview>("/tenant/digest/preview"),
+  sendTestDigest: () => api<{ queued: number; to: string }>("/tenant/digest/send-test", { method: "POST" }),
   tests: (wid: string) =>
     api<{ tests: VariantTest[]; holdout_running: boolean }>(`/tenant/websites/${wid}/tests`),
   startTest: (wid: string, body: VariantTestIn) =>

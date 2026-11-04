@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRequireAuth } from "@/lib/auth";
 import { Api, ApiError, Member, ROLES, Role, SSOConfig, Team } from "@/lib/api";
 import { AppHeader } from "@/components/Chrome";
+import { DigestCard } from "@/components/DigestCard";
 import { LoadingScreen, Spinner, fmtDate, useToast } from "@/components/ui";
 
 const ROLE_HELP: Record<Role, string> = {
@@ -86,6 +87,7 @@ export default function TeamPage() {
           </section>
         )}
 
+        {isAdmin && <DigestCard />}
         {isAdmin && <SSOCard isOwner={auth.role === "owner"} />}
       </main>
     </>
