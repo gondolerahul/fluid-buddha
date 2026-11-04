@@ -442,6 +442,18 @@ export type CostAlert = {
   at: string;
 };
 
+/** Live takeover (M2-2). */
+export type LiveTakeover = { id?: string; operator_name: string; operator_user_id?: string | null; started_at?: string };
+export type LiveSession = { site_key: string; session_id: string; channel: "voice" | "text";
+  persona: string | null; page: string | null; started_at: string; last_seen: string;
+  conversation_id: string | null; turns: number; last_question: string | null; lead_score: number | null;
+  hot: boolean; takeover: LiveTakeover | null; website_id: string; website_name: string };
+export type LiveLine = { id?: number; sender: "visitor" | "agent" | "operator" | "system";
+  author?: string | null; text: string; at: string };
+export type LiveConversation = { session_id: string; live: boolean; takeover: LiveTakeover | null;
+  events: LiveLine[] };
+export type IceServer = { urls: string | string[]; username?: string; credential?: string };
+
 // ---- endpoint helpers ------------------------------------------------------
 export const Api = {
   register: (email: string, password: string, name?: string) =>
@@ -459,6 +471,20 @@ export const Api = {
       { method: "POST", body, auth: signedIn }),
   ssoStart: (provider: "google" | "oidc", email?: string) =>
     api<{ url: string }>("/auth/sso/start", { method: "POST", auth: false, body: { provider, email } }),
+
+  live: () => api<LiveSession[]>("/tenant/live"),
+  liveIce: () => api<{ ice_servers: IceServer[] }>("/tenant/live/ice"),
+  liveConversation: (wid: string, sid: string) =>
+    api<LiveConversation>(`/tenant/websites/${wid}/live/${sid}`),
+  takeOver: (wid: string, sid: string) =>
+    api<LiveTakeover>(`/tenant/websites/${wid}/live/${sid}/takeover`, { method: "POST" }),
+  sendLive: (wid: string, sid: string, text: string) =>
+    api<LiveLine>(`/tenant/websites/${wid}/live/${sid}/message`, { method: "POST", body: { text } }),
+  releaseLive: (wid: string, sid: string) =>
+    api<{ released: boolean }>(`/tenant/websites/${wid}/live/${sid}/release`, { method: "POST" }),
+  callSignal: (wid: string, sid: string, body: { type: "offer" | "ice" | "hangup"; sdp?: string;
+    candidate?: RTCIceCandidateInit }) =>
+    api<{ sent: boolean }>(`/tenant/websites/${wid}/live/${sid}/call`, { method: "POST", body }),
 
   team: () => api<Team>("/tenant/team"),
   invite: (email: string, role: Role) =>
