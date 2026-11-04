@@ -130,6 +130,19 @@ class Settings(BaseSettings):
     # Base URL of the console, for links in emails (invitations, digests).
     console_url: str = "http://localhost:3001"
 
+    # ---- Teams and single sign-on (M2-1) ----
+    # This backend's public base URL: SSO redirect URIs are built from it
+    # (register <PUBLIC_API_URL>/auth/sso/callback with the identity provider).
+    public_api_url: str = "http://localhost:8080"
+    # "Sign in with Google" (a Google Cloud OAuth client, type Web application).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Proving an SSO domain: TXT records are read over DNS-over-HTTPS.
+    dns_over_https_url: str = "https://dns.google/resolve"
+    # Fernet key(s) for stored secrets (app/security/secrets.py); comma-separated
+    # to rotate, newest first. Empty: derived from JWT_SECRET (dev only).
+    secrets_key: str = ""
+
     # ---- Self-serve onboarding (WS9) ----
     crawl_max_pages: int = 50                 # hard cap per crawl
     crawl_max_depth: int = 3

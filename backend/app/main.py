@@ -29,6 +29,7 @@ from app.routes import (
     leads,
     onboarding,
     privacy,
+    sso,
     team,
     tours,
     websites,
@@ -99,3 +100,5 @@ app.include_router(experiments.admin)
 app.include_router(billing.admin)
 app.include_router(billing.webhooks)
 app.include_router(team.router)
+app.include_router(sso.public)
+app.include_router(sso.admin)

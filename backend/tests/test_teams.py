@@ -228,9 +228,11 @@ def test_require_sso_blocks_passwords_for_the_domain_but_not_the_owner():
                           json={"email": email, "role": "editor"}).json()
         client.post(f"/auth/invitations/{inv['link'].split('token=')[1]}/accept",
                     json={"password": PW})
-        _sql("INSERT INTO tenant_sso (tenant_id, issuer, client_id, allowed_domains, require_sso) "
-             "VALUES (:t, 'https://idp.example', 'cid', ARRAY[:d], true)",
-             t=uuid.UUID(owner["tenant"]["id"]), d=domain)
+        tid = uuid.UUID(owner["tenant"]["id"])
+        _sql("INSERT INTO tenant_sso (tenant_id, issuer, client_id, require_sso) "
+             "VALUES (:t, 'https://idp.example', 'cid', true)", t=tid)
+        _sql("INSERT INTO sso_domains (domain, tenant_id, token, verified_at) "
+             "VALUES (:d, :t, 'tok', now())", t=tid, d=domain)
         r = client.post("/auth/login", json={"email": email, "password": PW})
         assert r.status_code == 403 and "single sign-on" in r.json()["detail"]
         assert client.post("/auth/login", json={"email": f"boss@{domain}",

@@ -89,10 +89,10 @@ async def _sso_required(db: AsyncSession, m: team.Member) -> bool:
     Owner keeps password access, so a broken IdP can't lock everyone out)."""
     if m.role == "owner":
         return False
-    row = (await db.execute(text(
-        "SELECT allowed_domains FROM tenant_sso WHERE tenant_id = :t AND enabled "
-        "AND require_sso"), {"t": m.tenant.id})).first()
-    return bool(row) and m.email.rpartition("@")[2] in (row[0] or [])
+    return bool((await db.execute(text(
+        "SELECT 1 FROM tenant_sso s JOIN sso_domains d ON d.tenant_id = s.tenant_id "
+        "WHERE s.tenant_id = :t AND s.enabled AND s.require_sso AND d.verified_at IS NOT NULL "
+        "AND d.domain = :d"), {"t": m.tenant.id, "d": m.email.rpartition("@")[2]})).first())
 
 
 @router.post("/login", response_model=TokenResponse)
