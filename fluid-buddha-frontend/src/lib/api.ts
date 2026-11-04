@@ -227,6 +227,8 @@ export type ExperimentSettings = {
   status: "running" | "stopped" | null;
   started_at: string | null;
   ended_at: string | null;
+  /** Automated visits (crawlers, headless browsers) turned away from this run. */
+  bots_ignored: number;
   started_new_run?: boolean;
 };
 export type LiftArm = {
@@ -239,7 +241,9 @@ export type LiftArm = {
 export type ExperimentResults = {
   experiment: ExperimentSettings;
   lift: {
-    status: "collecting" | "significant" | "not_significant";
+    /** significant: the always-valid interval excludes 0. trending: only the
+     *  fixed-horizon one does — promising, keep the test running. */
+    status: "collecting" | "significant" | "trending" | "not_significant";
     agent: LiftArm;
     holdout: LiftArm;
     /** agent − holdout, as a rate (0.012 = 1.2 points) */
@@ -250,10 +254,27 @@ export type ExperimentResults = {
     relative_low: number | null;
     relative_high: number | null;
     p_value: number | null;
+    /** Always-valid (mSPRT) interval and p-value: safe to read at any time. */
+    seq_low: number | null;
+    seq_high: number | null;
+    seq_p_value: number | null;
   };
   series: Array<{ day: string; agent_rate: number | null; holdout_rate: number | null;
     agent_visitors: number; holdout_visitors: number }>;
   goals: Array<{ name: string; arm: "agent" | "holdout"; events: number }>;
+};
+export type ExperimentPlan = {
+  baseline: number;
+  baseline_source: "given" | "observed" | "default";
+  observed_baseline: number | null;
+  /** relative lift to detect: 0.2 = +20 % */
+  mde: number;
+  holdout_pct: number;
+  needed: { total: number; holdout: number; agent: number } | null;
+  visitors_so_far: number;
+  visitors_per_day: number | null;
+  days_left: number | null;
+  reached: boolean;
 };
 
 export type TourStop = { narration: string; move?: Record<string, unknown> | null; label?: string };
@@ -454,6 +475,12 @@ export const Api = {
     api<ExperimentSettings>(`/tenant/websites/${id}/experiment/restart`, { method: "POST" }),
   experimentResults: (id: string) =>
     api<ExperimentResults | null>(`/tenant/websites/${id}/experiment/results`),
+  experimentPlan: (id: string, q: { baseline?: number; mde: number; holdout_pct?: number }) => {
+    const p = new URLSearchParams({ mde: String(q.mde) });
+    if (q.baseline != null) p.set("baseline", String(q.baseline));
+    if (q.holdout_pct != null) p.set("holdout_pct", String(q.holdout_pct));
+    return api<ExperimentPlan>(`/tenant/websites/${id}/experiment/plan?${p}`);
+  },
 
   getTour: (id: string) => api<TourPlan>(`/tenant/websites/${id}/tour`),
   saveTour: (id: string, stops: TourStop[]) =>

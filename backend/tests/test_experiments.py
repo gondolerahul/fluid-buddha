@@ -9,7 +9,10 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from app.experiments.stats import lift, newcombe_diff, relative_lift, two_proportion_p, wilson
+from app.experiments.bots import is_bot
+from app.experiments.stats import (
+    lift, newcombe_diff, relative_lift, sample_size, sequential_diff, two_proportion_p, wilson,
+)
 from app.experiments.store import assign_arm, clean_goal_path
 
 
@@ -43,6 +46,75 @@ def test_lift_status_and_relative_interval():
     # No holdout conversions: the ratio is unbounded, the difference still works.
     assert relative_lift(5, 100, 0, 100) is None
     assert lift(0, 50, 0, 50).status == "collecting"
+    assert lift(5, 50, 3, 50).status == "collecting"      # fewer than 10 conversions
+
+
+def test_peeking_guard_reports_trending_until_the_always_valid_interval_agrees():
+    # 6 % vs 4 % on 3000 / 1000 visitors: the fixed-horizon interval excludes
+    # zero (p ~ 0.02) but a test read every day can't call that yet.
+    early = lift(180, 3000, 40, 1000)
+    assert early.diff_low > 0 and early.p_value < 0.05
+    assert early.seq_low < 0 < early.seq_high
+    assert early.status == "trending"
+    # The same rates on ten times the traffic: now a finding.
+    later = lift(1800, 30000, 400, 10000)
+    assert later.status == "significant" and later.seq_low > 0
+    # The always-valid interval is always the wider one.
+    assert later.seq_low < later.diff_low and later.seq_high > later.diff_high
+    assert sequential_diff(0, 100, 0, 100) is None
+
+
+def test_always_valid_interval_keeps_false_wins_down_when_peeking():
+    # No real effect, read after every 200 visitors: the fixed-horizon interval
+    # "wins" far more often than 5 %, the always-valid one doesn't.
+    import random
+    rng = random.Random(7)
+    runs, seq_wins, naive_wins = 120, 0, 0
+    for _ in range(runs):
+        xa = na = xh = nh = 0
+        seq = naive = False
+        for i in range(1, 10_001):
+            if rng.random() < 0.2:
+                nh += 1
+                xh += rng.random() < 0.05
+            else:
+                na += 1
+                xa += rng.random() < 0.05
+            if i % 200 == 0:
+                st = lift(xa, na, xh, nh).status
+                seq |= st == "significant"
+                naive |= st in ("significant", "trending")
+        seq_wins += seq
+        naive_wins += naive
+    assert seq_wins / runs <= 0.08
+    assert naive_wins > 2 * seq_wins
+
+
+def test_sample_size_planner():
+    small = sample_size(0.05, 0.5, 0.2)
+    assert small and small["total"] == small["holdout"] + small["agent"]
+    assert 0.19 < small["holdout"] / small["total"] < 0.21
+    # Smaller effects, rarer goals and smaller holdouts all need more visitors.
+    assert sample_size(0.05, 0.2, 0.2)["total"] > small["total"]
+    assert sample_size(0.02, 0.5, 0.2)["total"] > small["total"]
+    assert sample_size(0.05, 0.5, 0.1)["total"] > small["total"]
+    assert sample_size(0.0, 0.5, 0.2) is None and sample_size(0.8, 0.5, 0.2) is None
+
+
+def test_bot_detection():
+    chrome = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+    assert not is_bot(chrome)
+    assert not is_bot("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
+                      "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")
+    assert is_bot(chrome, automated=True)
+    assert not is_bot(chrome, automated="true")   # only a real boolean counts
+    for ua in ("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+               "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+               "HeadlessChrome/130.0.0.0 Safari/537.36",
+               "curl/8.4.0", "python-requests/2.32", "facebookexternalhit/1.1",
+               "Mozilla/5.0 (compatible; UptimeRobot/2.0)", "", None):
+        assert is_bot(ua), ua
 
 
 def test_assignment_is_stable_and_near_the_share():
@@ -117,12 +189,12 @@ def test_experiment_flow_measures_lift():
         again = _beacon(client, "/experiment/enroll", {"key": key, "visitor": holdouts[0]}).json()
         assert again["arm"] == "holdout"
 
-        # Agent visitors convert at 25 %, holdout visitors at ~5 %.
+        # Agent visitors convert at 50 %, holdout visitors at ~5 %.
         def convert(v, name="goal_page", exp=exp_id):
             return _beacon(client, "/experiment/convert", {
                 "key": key, "visitor": v, "experiment_id": exp, "name": name}).json()["counted"]
         for i, v in enumerate(agents):
-            if i % 4 == 0:
+            if i % 2 == 0:
                 assert convert(v)
         for i, v in enumerate(holdouts):
             if i % 20 == 0:
@@ -140,8 +212,29 @@ def test_experiment_flow_measures_lift():
         lift_ = res["lift"]
         assert lift_["agent"]["visitors"] == len(agents)
         assert lift_["holdout"]["visitors"] == len(holdouts)
-        assert lift_["agent"]["converters"] == len(range(0, len(agents), 4))
-        assert lift_["status"] == "significant" and lift_["diff_low"] > 0
+        assert lift_["agent"]["converters"] == len(range(0, len(agents), 2))
+        assert lift_["status"] == "significant" and lift_["diff_low"] > 0 and lift_["seq_low"] > 0
+
+        # Bots are turned away and counted, never enrolled.
+        bot = client.post("/experiment/enroll", content=f'{{"key": "{key}", "visitor": "visitor-bot-001"}}',
+                          headers={"Content-Type": "text/plain", "User-Agent": "Googlebot/2.1"}).json()
+        assert bot["arm"] is None
+        auto = _beacon(client, "/experiment/enroll",
+                       {"key": key, "visitor": "visitor-bot-002", "automated": True}).json()
+        assert auto["arm"] is None
+        assert client.get(base, headers=h).json()["bots_ignored"] == 2
+        assert client.get(f"{base}/results", headers=h).json()["lift"]["agent"]["visitors"] == len(agents)
+
+        # The planner: from the holdout's own rate, at this run's traffic.
+        plan = client.get(f"{base}/plan", headers=h).json()
+        assert plan["baseline_source"] == "observed"
+        assert plan["baseline"] == pytest.approx(lift_["holdout"]["rate"])
+        assert plan["visitors_so_far"] == 400 and plan["needed"]["total"] > 0
+        assert plan["visitors_per_day"] == pytest.approx(400)   # under a day counts as one
+        given = client.get(f"{base}/plan", params={"baseline": 0.03, "mde": 0.2, "holdout_pct": 50},
+                           headers=h).json()
+        assert given["baseline_source"] == "given" and given["holdout_pct"] == 50
+        assert client.get(f"{base}/plan", params={"baseline": 2}, headers=h).status_code == 422
         assert res["series"][-1]["agent_visitors"] == len(agents)
         goals = {(g["name"], g["arm"]): g["events"] for g in res["goals"]}
         assert goals[("demo_booked", "agent")] == 1

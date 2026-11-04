@@ -13,6 +13,10 @@ difference between them is the agent's effect.
   agent captures are not counted: the holdout can't produce them, so counting
   them would build the answer into the measurement.
 * Changing the holdout share starts a new run; results are per run.
+* Bots aren't enrolled (``bots.py``); a run only counts how many were refused.
+* The verdict uses an always-valid interval, so the dashboard can be read
+  daily without inflating false wins (``stats.py``); ``plan`` says how many
+  visitors a given lift needs and how long that takes at the current traffic.
 """
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.experiments.stats import lift
+from app.experiments.stats import lift, sample_size
 
 DEFAULT_HOLDOUT_PCT = 10
 VISITOR_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -44,6 +48,7 @@ class Experiment:
     status: str
     started_at: datetime
     ended_at: Optional[datetime]
+    bots_ignored: int = 0
 
     @property
     def running(self) -> bool:
@@ -58,16 +63,21 @@ class Experiment:
             "status": self.status,
             "started_at": self.started_at.isoformat(),
             "ended_at": self.ended_at.isoformat() if self.ended_at else None,
+            "bots_ignored": self.bots_ignored,
         }
 
 
-_COLS = "id, site_key, holdout_pct, goal_path, status, started_at, ended_at"
+_FIELDS = ("id", "site_key", "holdout_pct", "goal_path", "status", "started_at",
+           "ended_at", "bots_ignored")
+_COLS = ", ".join(_FIELDS)
+# Planner defaults: a 3 % goal rate until the holdout shows its own, and a
+# +20 % relative lift to look for.
+DEFAULT_BASELINE = 0.03
+DEFAULT_MDE = 0.20
 
 
 def _row(r) -> Experiment:
-    return Experiment(**{k: r[k] for k in
-                         ("id", "site_key", "holdout_pct", "goal_path", "status",
-                          "started_at", "ended_at")})
+    return Experiment(**{k: r[k] for k in _FIELDS})
 
 
 def assign_arm(experiment_id: uuid.UUID, visitor_id: str, holdout_pct: int) -> str:
@@ -152,10 +162,18 @@ async def _stop(db: AsyncSession, experiment_id: uuid.UUID) -> None:
 
 # ---- the widget's side ---------------------------------------------------------
 
-async def enroll(db: AsyncSession, site_key: str, visitor_id: str) -> Optional[dict]:
-    """Put a visitor in an arm of the running experiment (idempotent)."""
+async def enroll(db: AsyncSession, site_key: str, visitor_id: str,
+                 bot: bool = False) -> Optional[dict]:
+    """Put a visitor in an arm of the running experiment (idempotent). A bot
+    is counted as turned away and not enrolled."""
     exp = await current(db, site_key)
     if exp is None or not exp.running:
+        return None
+    if bot:
+        await db.execute(
+            text("UPDATE experiments SET bots_ignored = bots_ignored + 1 WHERE id = :id"),
+            {"id": exp.id})
+        await db.commit()
         return None
     arm = assign_arm(exp.id, visitor_id, exp.holdout_pct)
     await db.execute(
@@ -196,20 +214,9 @@ async def record_conversion(
 # ---- results --------------------------------------------------------------------
 
 async def results(db: AsyncSession, exp: Experiment) -> dict:
-    counts = {
-        r["arm"]: r for r in (await db.execute(
-            text("SELECT arm, count(*) AS visitors, "
-                 "count(first_conversion_at) AS converters "
-                 "FROM experiment_visitors WHERE experiment_id = :e GROUP BY arm"),
-            {"e": exp.id},
-        )).mappings().all()
-    }
-
-    def n(arm: str, col: str) -> int:
-        return int(counts[arm][col]) if arm in counts else 0
-
-    summary = lift(n("agent", "converters"), n("agent", "visitors"),
-                   n("holdout", "converters"), n("holdout", "visitors"))
+    counts = await _counts(db, exp)
+    (av, ac), (hv, hc) = counts.get("agent", (0, 0)), counts.get("holdout", (0, 0))
+    summary = lift(ac, av, hc, hv)
 
     # Cumulative rates by day, so the dashboard can show the gap settling.
     days = (await db.execute(
@@ -240,3 +247,47 @@ async def results(db: AsyncSession, exp: Experiment) -> dict:
 
     return {"experiment": exp.public(), "lift": summary.to_dict(),
             "series": series, "goals": goals}
+
+
+async def _counts(db: AsyncSession, exp: Experiment) -> dict[str, tuple[int, int]]:
+    """``{arm: (visitors, converters)}`` for a run."""
+    rows = (await db.execute(
+        text("SELECT arm, count(*) AS visitors, count(first_conversion_at) AS converters "
+             "FROM experiment_visitors WHERE experiment_id = :e GROUP BY arm"),
+        {"e": exp.id},
+    )).mappings().all()
+    return {r["arm"]: (int(r["visitors"]), int(r["converters"])) for r in rows}
+
+
+async def plan(db: AsyncSession, exp: Optional[Experiment], *,
+               baseline: Optional[float] = None, mde: float = DEFAULT_MDE,
+               holdout_pct: Optional[int] = None) -> dict:
+    """How many visitors the run needs to show a ``mde`` relative lift over
+    ``baseline`` (default: the holdout's own rate once it has 30 visitors and
+    a conversion, else 3 %), and how long that takes at the run's traffic."""
+    counts = await _counts(db, exp) if exp else {}
+    hv, hc = counts.get("holdout", (0, 0))
+    av, _ = counts.get("agent", (0, 0))
+    observed = hc / hv if hv >= 30 and hc > 0 else None
+    if baseline is not None:
+        base, source = baseline, "given"
+    elif observed is not None:
+        base, source = observed, "observed"
+    else:
+        base, source = DEFAULT_BASELINE, "default"
+    pct = holdout_pct or (exp.holdout_pct if exp else DEFAULT_HOLDOUT_PCT)
+    need = sample_size(base, mde, pct / 100)
+    so_far = hv + av
+    per_day = days_left = None
+    if exp is not None and so_far:
+        end = exp.ended_at or datetime.now(exp.started_at.tzinfo)
+        days = max((end - exp.started_at).total_seconds() / 86_400, 1.0)
+        per_day = so_far / days
+        if need:
+            days_left = max(0.0, (need["total"] - so_far) / per_day)
+    return {
+        "baseline": base, "baseline_source": source, "observed_baseline": observed,
+        "mde": mde, "holdout_pct": pct, "needed": need,
+        "visitors_so_far": so_far, "visitors_per_day": per_day, "days_left": days_left,
+        "reached": bool(need) and so_far >= need["total"],
+    }

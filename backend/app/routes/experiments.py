@@ -17,6 +17,11 @@ Tenant (console):
     PUT  /tenant/websites/{id}/experiment          {enabled, holdout_pct, goal_path}
     POST /tenant/websites/{id}/experiment/restart  a fresh run, same settings
     GET  /tenant/websites/{id}/experiment/results  lift vs holdout with CIs
+    GET  /tenant/websites/{id}/experiment/plan     ?baseline=&mde=&holdout_pct=
+                                                   visitors needed and days left
+
+Enrolment turns bots away (their User-Agent, or ``automated`` — the widget's
+``navigator.webdriver``); see ``app/experiments/bots.py``.
 """
 from __future__ import annotations
 
@@ -25,12 +30,13 @@ import math
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session, session_scope
 from app.experiments import store as exp_store
+from app.experiments.bots import is_bot
 from app.tenancy import store
 from app.tenancy.deps import owned_website
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
@@ -80,7 +86,8 @@ async def enroll(request: Request) -> dict:
     visitor = _visitor(data)
     async with session_scope() as db:
         site_key = await _site_key(db, data, request)
-        result = await exp_store.enroll(db, site_key, visitor) if site_key else None
+        bot = is_bot(request.headers.get("user-agent"), data.get("automated"))
+        result = await exp_store.enroll(db, site_key, visitor, bot=bot) if site_key else None
     return result or {"experiment_id": None, "arm": None, "goal_path": None}
 
 
@@ -121,7 +128,8 @@ class ExperimentUpdate(BaseModel):
 def _settings(exp: Optional[exp_store.Experiment]) -> dict:
     if exp is None:
         return {"id": None, "enabled": False, "holdout_pct": exp_store.DEFAULT_HOLDOUT_PCT,
-                "goal_path": None, "status": None, "started_at": None, "ended_at": None}
+                "goal_path": None, "status": None, "started_at": None, "ended_at": None,
+                "bots_ignored": 0}
     return exp.public()
 
 
@@ -168,3 +176,15 @@ async def experiment_results(
     if exp is None:
         return None
     return await exp_store.results(db, exp)
+
+
+@admin.get("/experiment/plan")
+async def experiment_plan(
+    baseline: Optional[float] = Query(None, gt=0, lt=1),
+    mde: float = Query(exp_store.DEFAULT_MDE, gt=0, le=10),
+    holdout_pct: Optional[int] = Query(None, ge=1, le=50),
+    site: store.Website = Depends(owned_website),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    exp = await exp_store.current(db, site.site_key)
+    return await exp_store.plan(db, exp, baseline=baseline, mde=mde, holdout_pct=holdout_pct)
