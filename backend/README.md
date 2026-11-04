@@ -222,6 +222,17 @@ Client secrets are encrypted with `SECRETS_KEY`.
 The audit log (`app/audit.py`) records every successful change through the
 console API plus sign-ins; Console → Audit log, CSV export, kept a year.
 
+## Proactive triggers
+
+Website → Triggers: rules for when the agent speaks up first — after time on
+a page, past a scroll depth, when the visitor is about to leave (desktop),
+or on a return visit — on chosen pages, as a bubble by the launcher or by
+opening the agent. The widget fetches them from `GET /widget/triggers?key=`
+(key and domain checked), evaluates them in the browser with caps (one per
+page view, a daily cap per visitor and rule, silence for the visit after a
+dismiss or once the visitor talks) and reports shown / clicked / dismissed /
+engaged to `POST /widget/triggers/event`; the tab shows each rule's numbers.
+
 ## Live takeover and voice handoff
 
 Console → Live lists who is talking to the agent right now on the account's
