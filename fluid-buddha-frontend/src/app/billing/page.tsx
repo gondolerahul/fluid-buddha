@@ -165,11 +165,11 @@ export default function BillingPage() {
                   {next && switchApproved && (
                     <p className="faint" style={{ fontSize: "0.82rem", marginTop: 4 }}>
                       Moves to {nextPlan?.name}{data.next?.starts_at ? ` on ${day(data.next.starts_at)}` : " at your next renewal"}
-                      — the new UPI Autopay mandate is approved.</p>
+                      {" — its payment is approved."}</p>
                   )}
                   {next && !switchApproved && nextPlan && (
                     <div className="notice warn row between wrap" style={{ marginTop: 8, gap: 10 }}>
-                      <span>Approve the UPI Autopay mandate to move to {nextPlan.name}
+                      <span>Approve the new plan&apos;s payment in Razorpay to move to {nextPlan.name}
                         {data.next?.starts_at ? ` on ${day(data.next.starts_at)}` : " at your next renewal"}.</span>
                       <button className="btn btn-primary btn-sm" disabled={busy !== null}
                         onClick={() => choose(nextPlan)}>
@@ -186,7 +186,7 @@ export default function BillingPage() {
                       Choose a plan below to subscribe again.</div>
                   )}
                 </div>
-                {paid && !data.cancel_at_cycle_end && (
+                {paid && (!data.cancel_at_cycle_end || switchApproved) && (
                   <button className="btn btn-sm btn-danger" onClick={cancel} disabled={busy !== null}>
                     {busy === "cancel" ? <Spinner /> : "Cancel subscription"}</button>
                 )}
