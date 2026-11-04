@@ -58,6 +58,11 @@ async def _summary(db: AsyncSession, acct: billing.Account) -> dict:
         "plan": acct.effective_plan,
         "subscribed_plan": acct.plan,
         "pending_plan": acct.pending_plan,
+        # A switch at the next renewal (UPI Autopay): created = mandate still to
+        # approve in Checkout; authenticated = approved, starts at renewal.
+        "next": ({"plan": acct.next_plan, "status": acct.next_status,
+                  "starts_at": acct.current_end.isoformat() if acct.current_end else None}
+                 if acct.next_subscription_id else None),
         "status": acct.status,
         "cancel_at_cycle_end": acct.cancel_at_cycle_end,
         "currency": catalog.currency(),
@@ -90,9 +95,12 @@ async def get_billing(
     rzp = client_from_settings(get_settings())
     if rzp:
         try:
-            if acct.subscription_id and acct.status in billing.SYNC_STATUSES:
+            if billing.needs_sync(acct):
                 acct = await billing.apply_subscription(
-                    db, acct, await rzp.fetch_subscription(acct.subscription_id))
+                    db, acct, await rzp.fetch_subscription(acct.subscription_id), rzp=rzp)
+            if acct.next_subscription_id:
+                acct = await billing.apply_subscription(
+                    db, acct, await rzp.fetch_subscription(acct.next_subscription_id), rzp=rzp)
             await billing.sync_payment_links(db, rzp, tenant.id)
         except Exception as exc:
             logger.warning("billing sync skipped: %s", exc)

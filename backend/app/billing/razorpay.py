@@ -71,12 +71,17 @@ class Razorpay:
         return await self._call("GET", f"/plans/{plan_id}")
 
     async def create_subscription(self, *, plan_id: str, notes: dict[str, str],
-                                  total_count: int = 120) -> dict:
+                                  total_count: int = 120, start_at: Optional[int] = None) -> dict:
         # total_count: how many monthly charges before it ends (10 years).
-        return await self._call("POST", "/subscriptions", {
+        # start_at (unix): first charge later, e.g. at the current plan's renewal;
+        # the customer approves the mandate now.
+        body: dict[str, Any] = {
             "plan_id": plan_id, "total_count": total_count, "quantity": 1,
             "customer_notify": 1, "notes": notes,
-        })
+        }
+        if start_at:
+            body["start_at"] = start_at
+        return await self._call("POST", "/subscriptions", body)
 
     async def fetch_subscription(self, subscription_id: str) -> dict:
         return await self._call("GET", f"/subscriptions/{subscription_id}")

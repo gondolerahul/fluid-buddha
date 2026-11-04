@@ -39,6 +39,19 @@ LIVE_STATUSES = ("created", *PAID_STATUSES)
 SYNC_STATUSES = ("created", "authenticated", "pending")
 
 
+def needs_sync(acct: "Account", now: Optional[datetime] = None) -> bool:
+    """Whether the console should re-read the current subscription from
+    Razorpay: a payment outstanding, or a period that ended while a switch or
+    cancellation was due (in case its webhook hasn't arrived)."""
+    if not acct.subscription_id:
+        return False
+    if acct.status in SYNC_STATUSES:
+        return True
+    now = now or datetime.now(timezone.utc)
+    return bool(acct.current_end and acct.current_end <= now
+                and (acct.cancel_at_cycle_end or acct.next_subscription_id))
+
+
 class BillingError(ValueError):
     """A request the account can't make (shown to the tenant)."""
 
@@ -53,12 +66,21 @@ class Account:
     current_start: Optional[datetime] = None
     current_end: Optional[datetime] = None
     cancel_at_cycle_end: bool = False
+    # A switch scheduled for the next renewal: a second Razorpay subscription
+    # that starts when this period ends (UPI Autopay can't change plans in place).
+    next_subscription_id: Optional[str] = None
+    next_plan: Optional[str] = None
+    next_status: Optional[str] = None
 
     @property
     def effective_plan(self) -> str:
         if self.status == "manual":
             return self.plan
         return self.plan if self.status in PAID_STATUSES else "free"
+
+    @property
+    def switch_approved(self) -> bool:
+        return bool(self.next_subscription_id) and self.next_status in ("authenticated", "active")
 
     def period(self, now: Optional[datetime] = None) -> tuple[datetime, datetime]:
         now = now or datetime.now(timezone.utc)
@@ -71,8 +93,10 @@ class Account:
         return start, end
 
 
-_COLS = ("tenant_id, plan, pending_plan, status, subscription_id, current_start, "
-         "current_end, cancel_at_cycle_end")
+_FIELDS = ("tenant_id", "plan", "pending_plan", "status", "subscription_id", "current_start",
+           "current_end", "cancel_at_cycle_end", "next_subscription_id", "next_plan",
+           "next_status")
+_COLS = ", ".join(_FIELDS)
 
 
 async def get_account(db: AsyncSession, tenant_id: uuid.UUID) -> Account:
@@ -83,14 +107,11 @@ async def get_account(db: AsyncSession, tenant_id: uuid.UUID) -> Account:
 
 
 async def save_account(db: AsyncSession, a: Account) -> None:
+    values = ", ".join(f":{f}" for f in _FIELDS)
+    updates = ", ".join(f"{f} = :{f}" for f in _FIELDS if f != "tenant_id")
     await db.execute(text(
-        f"INSERT INTO tenant_billing ({_COLS}, updated_at) VALUES (:tenant_id, :plan, "
-        ":pending_plan, :status, :subscription_id, :current_start, :current_end, "
-        ":cancel_at_cycle_end, now()) ON CONFLICT (tenant_id) DO UPDATE SET "
-        "plan = :plan, pending_plan = :pending_plan, status = :status, "
-        "subscription_id = :subscription_id, current_start = :current_start, "
-        "current_end = :current_end, cancel_at_cycle_end = :cancel_at_cycle_end, "
-        "updated_at = now()"
+        f"INSERT INTO tenant_billing ({_COLS}, updated_at) VALUES ({values}, now()) "
+        f"ON CONFLICT (tenant_id) DO UPDATE SET {updates}, updated_at = now()"
     ), a.__dict__)
     await db.commit()
     forget_cap(a.tenant_id)
@@ -211,40 +232,16 @@ async def _plan_key_for(db: AsyncSession, razorpay_plan_id: Optional[str]) -> Op
     )).scalar()
 
 
-async def start_checkout(db: AsyncSession, rzp: Razorpay, tenant_id: uuid.UUID,
-                         plan_key: str) -> dict:
-    p = catalog.catalog().get(plan_key)
-    if p is None or plan_key not in catalog.PAID_PLANS or not p.self_serve:
-        raise BillingError("That plan can't be bought online.")
-    acct = await get_account(db, tenant_id)
+async def _new_subscription(db: AsyncSession, rzp: Razorpay, tenant_id: uuid.UUID,
+                            plan_key: str, *, start_at: Optional[datetime] = None,
+                            replaces: Optional[str] = None) -> dict:
     plan_id = await razorpay_plan_id(db, rzp, plan_key)
-
-    if acct.subscription_id and acct.status in PAID_STATUSES:
-        if acct.plan == plan_key and not acct.cancel_at_cycle_end:
-            raise BillingError(f"You're already on {p.name}.")
-        # Upgrades apply now (prorated by Razorpay); downgrades at the cycle end.
-        upgrade = p.price > catalog.plan(acct.plan).price
-        try:
-            await rzp.change_plan(acct.subscription_id, plan_id, now=upgrade)
-        except RazorpayError as exc:
-            if "upi" in exc.description.lower():
-                # Razorpay can't modify a subscription paid by UPI autopay.
-                raise BillingError(
-                    "Your subscription is paid by UPI Autopay, which Razorpay doesn't let us "
-                    "change. Cancel it (you keep your plan to the end of this period), then "
-                    "choose the new plan.")
-            raise BillingError(f"Razorpay couldn't change the plan: {exc.description}")
-        if upgrade:
-            acct.plan, acct.pending_plan = plan_key, None
-        else:
-            acct.pending_plan = plan_key
-        acct.cancel_at_cycle_end = False
-        await save_account(db, acct)
-        return {"action": "changed", "plan": plan_key, "effective": "now" if upgrade else "cycle_end"}
-
     notes = {"tenant_id": str(tenant_id), "plan": plan_key}
+    if replaces:
+        notes["replaces"] = replaces
+    start = int(start_at.timestamp()) if start_at else None
     try:
-        sub = await rzp.create_subscription(plan_id=plan_id, notes=notes)
+        return await rzp.create_subscription(plan_id=plan_id, notes=notes, start_at=start)
     except RazorpayError as exc:
         # The remembered plan may be gone from Razorpay (deleted, or another
         # account behind the same key id): forget it, make a fresh one, retry.
@@ -254,39 +251,131 @@ async def start_checkout(db: AsyncSession, rzp: Razorpay, tenant_id: uuid.UUID,
                          {"id": plan_id})
         await db.commit()
         try:
-            sub = await rzp.create_subscription(
-                plan_id=await razorpay_plan_id(db, rzp, plan_key), notes=notes)
+            return await rzp.create_subscription(
+                plan_id=await razorpay_plan_id(db, rzp, plan_key), notes=notes, start_at=start)
         except RazorpayError as exc2:
             raise BillingError(f"Razorpay couldn't start the subscription: {exc2.description}")
+
+
+def _checkout(rzp: Razorpay, plan_key: str, sub: dict, **extra: Any) -> dict:
+    return {"action": "checkout", "plan": plan_key, "subscription_id": sub["id"],
+            "short_url": sub.get("short_url"), "key_id": rzp.key_id, **extra}
+
+
+async def start_checkout(db: AsyncSession, rzp: Razorpay, tenant_id: uuid.UUID,
+                         plan_key: str) -> dict:
+    p = catalog.catalog().get(plan_key)
+    if p is None or plan_key not in catalog.PAID_PLANS or not p.self_serve:
+        raise BillingError("That plan can't be bought online.")
+    acct = await get_account(db, tenant_id)
+
+    if acct.subscription_id and acct.status in PAID_STATUSES:
+        if acct.switch_approved:
+            raise BillingError(
+                f"A move to {catalog.plan(acct.next_plan).name} is already set for your next "
+                "renewal. Cancel your subscription first to choose differently.")
+        if acct.plan == plan_key and not acct.cancel_at_cycle_end:
+            raise BillingError(f"You're already on {p.name}.")
+        # A switch whose mandate wasn't approved yet: reopen it, or replace it.
+        if acct.next_subscription_id and acct.next_status == "created":
+            if acct.next_plan == plan_key:
+                sub = await rzp.fetch_subscription(acct.next_subscription_id)
+                return _checkout(rzp, plan_key, sub, scheduled_for=_iso(acct.current_end))
+            await _drop_next(rzp, acct)
+        # Upgrades apply now (prorated by Razorpay); downgrades at the cycle end.
+        upgrade = p.price > catalog.plan(acct.plan).price
+        plan_id = await razorpay_plan_id(db, rzp, plan_key)
+        try:
+            await rzp.change_plan(acct.subscription_id, plan_id, now=upgrade)
+        except RazorpayError as exc:
+            if "upi" in exc.description.lower():
+                # UPI Autopay subscriptions can't be changed: schedule a new one.
+                return await _schedule_switch(db, rzp, acct, plan_key)
+            raise BillingError(f"Razorpay couldn't change the plan: {exc.description}")
+        if upgrade:
+            acct.plan, acct.pending_plan = plan_key, None
+        else:
+            acct.pending_plan = plan_key
+        acct.cancel_at_cycle_end = False
+        await save_account(db, acct)
+        return {"action": "changed", "plan": plan_key, "effective": "now" if upgrade else "cycle_end"}
+
+    sub = await _new_subscription(db, rzp, tenant_id, plan_key)
     acct.subscription_id = sub["id"]
     acct.status = sub.get("status") or "created"
     acct.pending_plan = plan_key
     acct.cancel_at_cycle_end = False
     await save_account(db, acct)
-    return {"action": "checkout", "plan": plan_key, "subscription_id": sub["id"],
-            "short_url": sub.get("short_url"), "key_id": rzp.key_id}
+    return _checkout(rzp, plan_key, sub)
+
+
+def _iso(v: Optional[datetime]) -> Optional[str]:
+    return v.isoformat() if v else None
+
+
+async def _schedule_switch(db: AsyncSession, rzp: Razorpay, acct: Account,
+                           plan_key: str) -> dict:
+    """A new subscription for ``plan_key`` starting when this period ends. The
+    customer approves its mandate in Checkout now; once approved, the current
+    subscription is cancelled at the cycle end (``_retire_current``)."""
+    now = datetime.now(timezone.utc)
+    if not acct.current_end or acct.current_end <= now:
+        raise BillingError("Your renewal date isn't known yet. Try again in a few minutes.")
+    sub = await _new_subscription(db, rzp, acct.tenant_id, plan_key, start_at=acct.current_end,
+                                  replaces=acct.subscription_id)
+    acct.next_subscription_id = sub["id"]
+    acct.next_plan = plan_key
+    acct.next_status = sub.get("status") or "created"
+    await save_account(db, acct)
+    return _checkout(rzp, plan_key, sub, scheduled_for=_iso(acct.current_end))
+
+
+async def _drop_next(rzp: Optional[Razorpay], acct: Account) -> None:
+    """Abandon a scheduled switch that hasn't started (its mandate is cancelled)."""
+    if rzp and acct.next_subscription_id and acct.next_status not in ("cancelled", "completed"):
+        try:
+            await rzp.cancel_subscription(acct.next_subscription_id, at_cycle_end=False)
+        except RazorpayError as exc:
+            logger.warning("couldn't cancel scheduled subscription %s: %s",
+                           acct.next_subscription_id, exc.description)
+    acct.next_subscription_id = acct.next_plan = acct.next_status = None
+
+
+async def _retire_current(rzp: Razorpay, acct: Account) -> None:
+    """The switch is approved: end the current subscription with this period."""
+    if acct.cancel_at_cycle_end or not acct.subscription_id:
+        return
+    try:
+        await rzp.cancel_subscription(acct.subscription_id, at_cycle_end=True)
+        acct.cancel_at_cycle_end = True
+    except RazorpayError as exc:
+        logger.error("couldn't end subscription %s for the switch: %s",
+                     acct.subscription_id, exc.description)
 
 
 async def confirm_checkout(db: AsyncSession, rzp: Razorpay, tenant_id: uuid.UUID, *,
                            payment_id: str, subscription_id: str, signature: str) -> Account:
     acct = await get_account(db, tenant_id)
-    if subscription_id != acct.subscription_id:
+    if subscription_id not in (acct.subscription_id, acct.next_subscription_id):
         raise BillingError("That payment isn't for this account's subscription.")
     if not rzp.checkout_signature_ok(payment_id=payment_id, subscription_id=subscription_id,
                                      signature=signature):
         raise BillingError("The payment signature didn't verify.")
     sub = await rzp.fetch_subscription(subscription_id)
-    return await apply_subscription(db, acct, sub)
+    return await apply_subscription(db, acct, sub, rzp=rzp)
 
 
 async def cancel(db: AsyncSession, rzp: Razorpay, tenant_id: uuid.UUID) -> Account:
     acct = await get_account(db, tenant_id)
     if not acct.subscription_id or acct.status not in LIVE_STATUSES:
         raise BillingError("There's no subscription to cancel.")
-    try:
-        await rzp.cancel_subscription(acct.subscription_id, at_cycle_end=acct.status != "created")
-    except RazorpayError as exc:
-        raise BillingError(f"Razorpay couldn't cancel: {exc.description}")
+    await _drop_next(rzp, acct)
+    if not acct.cancel_at_cycle_end:
+        try:
+            await rzp.cancel_subscription(acct.subscription_id,
+                                          at_cycle_end=acct.status != "created")
+        except RazorpayError as exc:
+            raise BillingError(f"Razorpay couldn't cancel: {exc.description}")
     if acct.status == "created":   # never paid: drop it outright
         acct.status, acct.pending_plan = "cancelled", None
     else:
@@ -299,10 +388,28 @@ def _ts(v: Any) -> Optional[datetime]:
     return datetime.fromtimestamp(int(v), tz=timezone.utc) if v else None
 
 
-async def apply_subscription(db: AsyncSession, acct: Account, sub: dict) -> Account:
-    """Bring the account in line with a Razorpay subscription entity."""
-    acct.status = sub.get("status") or acct.status
-    acct.subscription_id = sub.get("id") or acct.subscription_id
+async def apply_subscription(db: AsyncSession, acct: Account, sub: dict, *,
+                             rzp: Optional[Razorpay] = None) -> Account:
+    """Bring the account in line with a Razorpay subscription entity — the
+    current one, or the one scheduled to replace it."""
+    sid = sub.get("id")
+    before = (acct.effective_plan, acct.current_start, acct.current_end)
+    if acct.next_subscription_id and sid == acct.next_subscription_id:
+        acct = await _apply_next(db, acct, sub, rzp)
+        await _bill_rollover(db, rzp, acct, before)
+        return acct
+    if acct.subscription_id and sid and sid != acct.subscription_id:
+        logger.info("ignoring update for retired subscription %s", sid)
+        return acct
+    status = sub.get("status") or acct.status
+    if status in ("cancelled", "completed", "expired") and acct.switch_approved:
+        # The expected end of the old subscription: the approved replacement
+        # takes over when Razorpay starts it, so don't drop to Free meanwhile.
+        acct.cancel_at_cycle_end = True
+        await save_account(db, acct)
+        return acct
+    acct.status = status
+    acct.subscription_id = sid or acct.subscription_id
     acct.current_start = _ts(sub.get("current_start")) or acct.current_start
     acct.current_end = _ts(sub.get("current_end")) or acct.current_end
     key = await _plan_key_for(db, sub.get("plan_id"))
@@ -314,6 +421,40 @@ async def apply_subscription(db: AsyncSession, acct: Account, sub: dict) -> Acco
             acct.pending_plan = None
     if acct.status in ("cancelled", "completed", "expired"):
         acct.plan, acct.pending_plan, acct.cancel_at_cycle_end = "free", None, False
+        await _drop_next(None, acct)
+    await save_account(db, acct)
+    await _bill_rollover(db, rzp, acct, before)
+    return acct
+
+
+async def _bill_rollover(db: AsyncSession, rzp: Optional[Razorpay], acct: Account,
+                         before: tuple) -> None:
+    """A new cycle began (by webhook or by the console's sync): bill the
+    conversations over the allowance in the one that just ended."""
+    plan_key, start, end = before
+    if start and end and acct.current_start and acct.current_start > start:
+        await bill_overage(db, rzp, acct, plan_key=plan_key, start=start, end=end)
+
+
+async def _apply_next(db: AsyncSession, acct: Account, sub: dict,
+                      rzp: Optional[Razorpay]) -> Account:
+    status = sub.get("status") or acct.next_status
+    acct.next_status = status
+    if status == "active":
+        # Razorpay started it at the renewal: it is the subscription now.
+        acct.subscription_id = sub["id"]
+        acct.status = status
+        acct.plan = await _plan_key_for(db, sub.get("plan_id")) or acct.next_plan or acct.plan
+        acct.current_start = _ts(sub.get("current_start")) or acct.current_start
+        acct.current_end = _ts(sub.get("current_end")) or acct.current_end
+        acct.pending_plan = None
+        acct.cancel_at_cycle_end = False
+        acct.next_subscription_id = acct.next_plan = acct.next_status = None
+    elif status == "authenticated":
+        if rzp is not None:
+            await _retire_current(rzp, acct)
+    elif status in ("cancelled", "completed", "expired", "halted"):
+        acct.next_subscription_id = acct.next_plan = acct.next_status = None
     await save_account(db, acct)
     return acct
 
@@ -332,7 +473,8 @@ async def handle_webhook(db: AsyncSession, rzp: Optional[Razorpay], event_id: st
     if not event.startswith("subscription.") or not sub.get("id"):
         return "ignored"
     tenant_id = (await db.execute(
-        text("SELECT tenant_id FROM tenant_billing WHERE subscription_id = :s"), {"s": sub["id"]},
+        text("SELECT tenant_id FROM tenant_billing "
+             "WHERE subscription_id = :s OR next_subscription_id = :s"), {"s": sub["id"]},
     )).scalar()
     if tenant_id is None:
         note = (sub.get("notes") or {}).get("tenant_id")
@@ -351,14 +493,8 @@ async def handle_webhook(db: AsyncSession, rzp: Optional[Razorpay], event_id: st
         return "duplicate"
 
     acct = await get_account(db, tenant_id)
-    before = (acct.effective_plan, acct.current_start, acct.current_end)
-    acct = await apply_subscription(db, acct, sub)
-    # A new cycle began: bill the conversations over the allowance in the last one.
-    if (event == "subscription.charged" and before[1] and before[2]
-            and acct.current_start and acct.current_start > before[1]):
-        await bill_overage(db, rzp, acct, plan_key=before[0], start=before[1], end=before[2])
-    else:
-        await charge_pending_overage(db, rzp, acct)  # retry anything left unbilled
+    acct = await apply_subscription(db, acct, sub, rzp=rzp)  # bills a finished cycle
+    await charge_pending_overage(db, rzp, acct)  # retry anything left unbilled
     return event
 
 

@@ -174,8 +174,13 @@ $0.20 each, Scale $1,499 for 10,000 then $0.12, Enterprise by arrangement.
   billed on the next invoice, and listed in the console.
 - **UPI Autopay**: Razorpay refuses add-ons and plan changes on subscriptions
   paid by UPI. Their overage is sent as a Razorpay Payment Link (emailed, with a
-  "Pay now" button in the console; `payment_link.paid` marks it paid), and a
-  plan change asks the customer to cancel and subscribe to the new plan.
+  "Pay now" button in the console; `payment_link.paid` marks it paid). A plan
+  change is scheduled instead: a new subscription for the new plan starting at
+  the renewal (`start_at`), whose mandate the customer approves in Checkout now
+  (Razorpay takes a refundable ₹5). Once approved, the current subscription is
+  cancelled at the cycle end; its cancellation doesn't drop the account to Free,
+  and the new one's first charge hands the account over (and bills the old
+  cycle's overage). Cancelling withdraws a scheduled switch.
   Overage that couldn't be billed at all stays pending and is retried on the
   next subscription event.
 - A failed renewal keeps the plan while Razorpay retries (`pending`); once it

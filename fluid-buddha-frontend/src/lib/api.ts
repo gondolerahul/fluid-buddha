@@ -193,6 +193,9 @@ export type BillingSummary = {
   subscribed_plan: string;
   pending_plan: string | null;
   status: string;
+  /** A switch at the next renewal (UPI Autopay can't change plans in place):
+   *  created = mandate still to approve; authenticated = approved. */
+  next: { plan: string; status: string; starts_at: string | null } | null;
   cancel_at_cycle_end: boolean;
   currency: string;
   period: { start: string; end: string };
@@ -210,7 +213,9 @@ export type BillingSummary = {
 };
 export type CheckoutResult =
   | { action: "checkout"; plan: string; subscription_id: string; short_url: string | null;
-      key_id: string; email: string; name: string }
+      key_id: string; email: string; name: string;
+      /** Set when the plan starts at the next renewal (UPI Autopay). */
+      scheduled_for?: string | null }
   | { action: "changed"; plan: string; effective: "now" | "cycle_end" };
 
 /** Holdout A/B (WS11). */

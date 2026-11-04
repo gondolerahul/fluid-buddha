@@ -60,7 +60,8 @@ class FakeRazorpay:
             if body["plan_id"] not in self.plans:
                 return httpx.Response(400, json={"error": {"description": "plan not found"}})
             sub = {"id": self._id("sub"), "status": "created", "plan_id": body["plan_id"],
-                   "notes": body["notes"], "short_url": "https://rzp.io/i/fake"}
+                   "notes": body["notes"], "short_url": "https://rzp.io/i/fake",
+                   "start_at": body.get("start_at")}
             self.subs[sub["id"]] = sub
             return httpx.Response(200, json=sub)
         if request.method == "POST" and path == "/payment_links":
@@ -95,7 +96,10 @@ class FakeRazorpay:
                     sub["scheduled_plan_id"] = body["plan_id"]
                 return httpx.Response(200, json=sub)
             if parts[-1] == "cancel":
-                sub["status"] = "active" if body["cancel_at_cycle_end"] else "cancelled"
+                if body["cancel_at_cycle_end"]:
+                    sub["cancel_scheduled"] = True
+                else:
+                    sub["status"] = "cancelled"
                 return httpx.Response(200, json=sub)
             if parts[-1] == "addons" and sub.get("payment_method") == "upi":
                 return httpx.Response(400, json={"error": {"description":
@@ -355,13 +359,126 @@ def test_upi_subscription_overage_goes_by_payment_link(fake):
             "Content-Type": "application/json", "X-Razorpay-Signature": _sign(body)}).json()
         assert r["outcome"] == "overage_paid"
         assert client.get("/tenant/billing", headers=h).json()["overage_history"][0]["status"] == "paid"
-        # Razorpay can't change the plan of a UPI-autopay subscription.
-        r = client.post("/tenant/billing/checkout", json={"plan": "scale"}, headers=h)
-        assert r.status_code == 409 and "UPI Autopay" in r.json()["detail"]
-        assert client.get("/tenant/billing", headers=h).json()["plan"] == "growth"
         # Nothing is billed twice.
         _webhook(client, "subscription.updated", fake.subs[sub_id])
         assert len(fake.links) == 1
+
+
+def _sign_checkout(payment_id: str, sub_id: str) -> str:
+    return hmac.new(KEY_SECRET.encode(), f"{payment_id}|{sub_id}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def test_upi_plan_change_is_scheduled_for_renewal(fake):
+    """Razorpay can't change a UPI-Autopay subscription's plan: a new
+    subscription starts at the renewal, its mandate approved now; the old one
+    ends with the period, and the account hands over without a gap."""
+    from app.main import app
+
+    get_settings().billing_catalog = json.dumps({"growth": {"included": 1, "overage": 50}})
+    with TestClient(app) as client:
+        h, site = _tenant(client)
+        old_id = client.post("/tenant/billing/checkout", json={"plan": "growth"},
+                             headers=h).json()["subscription_id"]
+        start = datetime.now(timezone.utc) - timedelta(days=20)
+        fake.activate(old_id, start)
+        fake.subs[old_id]["payment_method"] = "upi"
+        _webhook(client, "subscription.activated", fake.subs[old_id])
+        _usage(site["site_key"], ["v1", "v2", "v3"], at=start + timedelta(days=1))
+        renewal = start + timedelta(days=30)
+
+        co = client.post("/tenant/billing/checkout", json={"plan": "scale"}, headers=h).json()
+        assert co["action"] == "checkout" and co["scheduled_for"].startswith(renewal.date().isoformat())
+        new_id = co["subscription_id"]
+        assert new_id != old_id and fake.subs[new_id]["start_at"] == int(renewal.timestamp())
+        assert fake.subs[new_id]["notes"]["replaces"] == old_id
+        b = client.get("/tenant/billing", headers=h).json()
+        assert b["plan"] == "growth" and b["next"]["plan"] == "scale" and b["next"]["status"] == "created"
+        # Not approved yet: choosing Scale again reopens the same mandate.
+        again = client.post("/tenant/billing/checkout", json={"plan": "scale"}, headers=h).json()
+        assert again["subscription_id"] == new_id
+
+        # Approved in Checkout: verified, and the old subscription ends with the period.
+        fake.subs[new_id]["status"] = "authenticated"
+        ok = client.post("/tenant/billing/verify", headers=h, json={
+            "razorpay_payment_id": "pay_auth", "razorpay_subscription_id": new_id,
+            "razorpay_signature": _sign_checkout("pay_auth", new_id)}).json()
+        assert ok["plan"] == "growth" and ok["next"]["status"] == "authenticated"
+        assert ok["cancel_at_cycle_end"] and fake.subs[old_id].get("cancel_scheduled")
+        assert client.post("/tenant/billing/checkout", json={"plan": "growth"},
+                           headers=h).status_code == 409
+
+        # The renewal: the old one's cancellation doesn't drop the account to Free...
+        fake.subs[old_id]["status"] = "cancelled"
+        _webhook(client, "subscription.cancelled", fake.subs[old_id])
+        assert client.get("/tenant/billing", headers=h).json()["plan"] == "growth"
+        # ...and the new one's first charge hands over and bills the old cycle.
+        fake.activate(new_id, renewal)
+        fake.subs[new_id]["payment_method"] = "upi"
+        _webhook(client, "subscription.charged", fake.subs[new_id])
+        b = client.get("/tenant/billing", headers=h).json()
+        assert b["plan"] == "scale" and b["status"] == "active" and b["next"] is None
+        assert not b["cancel_at_cycle_end"]
+        hist = b["overage_history"][0]
+        assert hist["extra"] == 2 and hist["status"] == "link"   # UPI: by payment link
+        # Late events for the retired subscription change nothing.
+        _webhook(client, "subscription.completed", {**fake.subs[old_id], "status": "completed"})
+        assert client.get("/tenant/billing", headers=h).json()["plan"] == "scale"
+
+
+def test_scheduled_switch_hands_over_without_webhooks(fake):
+    """No webhooks (e.g. a laptop): the Billing page notices the approval and,
+    after the renewal, the handover — and still bills the old cycle."""
+    from app.main import app
+
+    get_settings().billing_catalog = json.dumps({"growth": {"included": 1, "overage": 50}})
+    with TestClient(app) as client:
+        h, site = _tenant(client)
+        old_id = client.post("/tenant/billing/checkout", json={"plan": "growth"},
+                             headers=h).json()["subscription_id"]
+        start = datetime.now(timezone.utc) - timedelta(days=20)
+        fake.activate(old_id, start)
+        fake.subs[old_id]["payment_method"] = "upi"
+        client.post("/tenant/billing/verify", headers=h, json={
+            "razorpay_payment_id": "pay_1", "razorpay_subscription_id": old_id,
+            "razorpay_signature": _sign_checkout("pay_1", old_id)})
+        _usage(site["site_key"], ["w1", "w2"], at=start + timedelta(days=1))
+        new_id = client.post("/tenant/billing/checkout", json={"plan": "scale"},
+                             headers=h).json()["subscription_id"]
+
+        fake.subs[new_id]["status"] = "authenticated"   # approved; Checkout closed early
+        b = client.get("/tenant/billing", headers=h).json()
+        assert b["next"]["status"] == "authenticated" and fake.subs[old_id].get("cancel_scheduled")
+
+        # The renewal passes with no webhook at all.
+        renewal = datetime.now(timezone.utc) - timedelta(minutes=5)
+        _sql("UPDATE tenant_billing SET current_end = :e WHERE subscription_id = :s",
+             e=renewal, s=old_id)
+        fake.subs[old_id]["status"] = "cancelled"
+        fake.activate(new_id, renewal)
+        b = client.get("/tenant/billing", headers=h).json()
+        assert b["plan"] == "scale" and b["next"] is None
+        assert b["overage_history"][0]["extra"] == 1
+
+
+def test_abandoned_switch_is_dropped_on_cancel(fake):
+    from app.main import app
+
+    with TestClient(app) as client:
+        h, _ = _tenant(client)
+        old_id = client.post("/tenant/billing/checkout", json={"plan": "growth"},
+                             headers=h).json()["subscription_id"]
+        fake.activate(old_id, datetime.now(timezone.utc) - timedelta(days=3))
+        fake.subs[old_id]["payment_method"] = "upi"
+        client.post("/tenant/billing/verify", headers=h, json={
+            "razorpay_payment_id": "pay_2", "razorpay_subscription_id": old_id,
+            "razorpay_signature": _sign_checkout("pay_2", old_id)})
+        new_id = client.post("/tenant/billing/checkout", json={"plan": "scale"},
+                             headers=h).json()["subscription_id"]
+        c = client.post("/tenant/billing/cancel", headers=h).json()
+        assert c["next"] is None and c["cancel_at_cycle_end"]
+        assert fake.subs[new_id]["status"] == "cancelled"        # mandate withdrawn
+        assert fake.subs[old_id].get("cancel_scheduled")          # current ends with the period
 
 
 def test_billing_needs_keys_for_checkout():

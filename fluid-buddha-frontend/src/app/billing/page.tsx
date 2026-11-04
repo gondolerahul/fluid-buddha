@@ -89,13 +89,16 @@ export default function BillingPage() {
         key: r.key_id,
         subscription_id: r.subscription_id,
         name: "Fluid-Buddha",
-        description: `${plan.name} plan`,
+        description: r.scheduled_for
+          ? `${plan.name} plan, from ${day(r.scheduled_for)}`
+          : `${plan.name} plan`,
         prefill: { email: r.email, name: r.name },
         theme: { color: "#ffd23f" },
         handler: async (resp: RazorpayResponse) => {
           try {
             setData(await Api.verifyPayment(resp));
-            toast(`You're on ${plan.name}`);
+            toast(r.scheduled_for ? `${plan.name} starts on ${day(r.scheduled_for)}`
+              : `You're on ${plan.name}`);
           } catch (e) {
             toast(e instanceof ApiError ? e.message : "Payment received; confirming shortly", "err");
             load();
@@ -110,7 +113,8 @@ export default function BillingPage() {
   };
 
   const cancel = async () => {
-    if (!window.confirm("Cancel your subscription? You keep your plan until the end of this billing period, then move to Free.")) return;
+    if (!window.confirm("Cancel your subscription? You keep your plan until the end of this billing period, then move to Free"
+      + (data?.next ? " (the scheduled plan change is withdrawn too)." : "."))) return;
     setBusy("cancel");
     try {
       setData(await Api.cancelSubscription());
@@ -127,6 +131,9 @@ export default function BillingPage() {
   const u = data?.usage;
   const pctUsed = u && u.included ? Math.min(100, (u.conversations / u.included) * 100) : 0;
   const paid = data && data.plan !== "free";
+  const next = data?.next ?? null;
+  const nextPlan = next ? data?.catalog.find((p) => p.key === next.plan) : undefined;
+  const switchApproved = !!next && (next.status === "authenticated" || next.status === "active");
 
   return (
     <>
@@ -151,9 +158,23 @@ export default function BillingPage() {
                   <p className="muted" style={{ fontSize: "0.86rem", marginTop: 6 }}>
                     {paid ? "Billing period" : "This month"}: {day(data.period.start)} – {day(data.period.end)}
                   </p>
-                  {data.cancel_at_cycle_end && (
+                  {data.cancel_at_cycle_end && !switchApproved && (
                     <p className="faint" style={{ fontSize: "0.82rem", marginTop: 4 }}>
                       Ends at the close of this period, then Free.</p>
+                  )}
+                  {next && switchApproved && (
+                    <p className="faint" style={{ fontSize: "0.82rem", marginTop: 4 }}>
+                      Moves to {nextPlan?.name}{data.next?.starts_at ? ` on ${day(data.next.starts_at)}` : " at your next renewal"}
+                      — the new UPI Autopay mandate is approved.</p>
+                  )}
+                  {next && !switchApproved && nextPlan && (
+                    <div className="notice warn row between wrap" style={{ marginTop: 8, gap: 10 }}>
+                      <span>Approve the UPI Autopay mandate to move to {nextPlan.name}
+                        {data.next?.starts_at ? ` on ${day(data.next.starts_at)}` : " at your next renewal"}.</span>
+                      <button className="btn btn-primary btn-sm" disabled={busy !== null}
+                        onClick={() => choose(nextPlan)}>
+                        {busy === nextPlan.key ? <Spinner /> : "Approve in Razorpay"}</button>
+                    </div>
                   )}
                   {data.pending_plan && !data.cancel_at_cycle_end && (
                     <p className="faint" style={{ fontSize: "0.82rem", marginTop: 4 }}>
@@ -203,7 +224,8 @@ export default function BillingPage() {
               )}
               <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
                 {data.catalog.map((p) => {
-                  const isCurrent = p.key === data.plan && !data.cancel_at_cycle_end;
+                  const isCurrent = p.key === data.plan && (!data.cancel_at_cycle_end || switchApproved);
+                  const isNext = switchApproved && p.key === next?.plan;
                   return (
                     <div key={p.key} className="card card-pad-sm stack-sm"
                       style={isCurrent ? { borderColor: "rgba(255,210,63,0.45)" } : undefined}>
@@ -220,6 +242,7 @@ export default function BillingPage() {
                       </div>
                       <div style={{ marginTop: 6 }}>
                         {isCurrent ? <span className="badge accent">Current plan</span>
+                          : isNext ? <span className="badge ok">Starts {next?.starts_at ? day(next.starts_at) : "at renewal"}</span>
                           : p.key === "free" ? null
                           : !p.self_serve ? <span className="muted" style={{ fontSize: "0.84rem" }}>Talk to us</span>
                           : (
@@ -234,7 +257,7 @@ export default function BillingPage() {
                 })}
               </div>
               <p className="faint" style={{ fontSize: "0.78rem", marginTop: 8 }}>
-                Payments are handled by Razorpay. Upgrades start now; moving to a smaller plan starts at your next renewal.
+                Payments are handled by Razorpay. Paying by card, upgrades start now and smaller plans at your next renewal; with UPI Autopay, any change starts at your next renewal.
               </p>
             </section>
 
