@@ -150,8 +150,10 @@ changes; `blocked` ones never replay and their question is not cached again.
 Plans cover every website of an account; the unit is a **conversation** (a
 visitor session with at least one answered turn, counted from `usage_events`).
 Defaults (`app/billing/plans.py`, override with `BILLING_CATALOG` /
-`BILLING_CURRENCY`): Free 100 a month (hard cap), Growth $399 for 2,000 then
-$0.20 each, Scale $1,499 for 10,000 then $0.12, Enterprise by arrangement.
+`BILLING_CURRENCY`): Free 100 a month (hard cap), Growth ₹33,000 for 2,000 then
+₹17 each, Scale ₹1,25,000 for 10,000 then ₹10, Enterprise by arrangement.
+Prices are in INR; USD (e.g. $399 / $1,499) needs international payments
+enabled on the Razorpay account and a `BILLING_CATALOG` override.
 
 1. Set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` (test keys in development).
    The Razorpay plans are created on first checkout, one per key, plan, currency

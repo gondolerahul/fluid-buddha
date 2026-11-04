@@ -7,10 +7,11 @@ websites), plus a price per conversation beyond that. Free has a hard cap;
 paid plans keep answering and bill the overage on the next invoice.
 Enterprise is arranged by hand (no self-serve checkout).
 
-Amounts are in the currency's minor unit (cents, paise). The defaults below
-are in USD; ``BILLING_CURRENCY`` and ``BILLING_CATALOG`` (JSON, same shape as
-``DEFAULT_CATALOG``, merged per plan) override them — e.g. INR prices for a
-Razorpay account without international payments.
+Amounts are in the currency's minor unit (paise, cents). The defaults below
+are in INR (decided 2026-11-04: Razorpay takes rupees without international
+payments being enabled); ``BILLING_CURRENCY`` and ``BILLING_CATALOG`` (JSON,
+same shape as ``DEFAULT_CATALOG``, merged per plan) override them — e.g. USD
+prices once international payments are on.
 """
 from __future__ import annotations
 
@@ -36,8 +37,10 @@ class Plan:
 
 DEFAULT_CATALOG: dict[str, dict] = {
     "free":       {"name": "Free",       "price": 0,       "included": 100,   "overage": None, "self_serve": True},
-    "growth":     {"name": "Growth",     "price": 39_900,  "included": 2_000, "overage": 20,   "self_serve": True},
-    "scale":      {"name": "Scale",      "price": 149_900, "included": 10_000, "overage": 12,  "self_serve": True},
+    # ₹33,000 a month for 2,000 conversations, then ₹17 each.
+    "growth":     {"name": "Growth",     "price": 3_300_000,  "included": 2_000,  "overage": 1_700, "self_serve": True},
+    # ₹1,25,000 a month for 10,000 conversations, then ₹10 each.
+    "scale":      {"name": "Scale",      "price": 12_500_000, "included": 10_000, "overage": 1_000, "self_serve": True},
     "enterprise": {"name": "Enterprise", "price": 0,       "included": None,  "overage": None, "self_serve": False},
 }
 
@@ -64,7 +67,7 @@ def currency(settings=None) -> str:
     if settings is None:
         from app.config import get_settings
         settings = get_settings()
-    return (settings.billing_currency or "USD").upper()
+    return (settings.billing_currency or "INR").upper()
 
 
 def overage_amount(p: Plan, conversations: int) -> tuple[int, int]:
