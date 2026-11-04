@@ -62,7 +62,7 @@ export default function ExperimentPage() {
   return (
     <div className="fade-in stack">
       <div className="page-head">
-        <h2>Experiment</h2>
+        <h2>Holdout test</h2>
         <p className="muted" style={{ fontSize: "0.88rem", maxWidth: 680 }}>
           Does the agent win you more customers? A holdout share of visitors never sees it; everyone
           else does. Both groups are measured on your site&apos;s own goal, so the difference is what the

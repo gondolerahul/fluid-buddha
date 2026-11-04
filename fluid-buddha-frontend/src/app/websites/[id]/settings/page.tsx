@@ -141,6 +141,9 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
   const [company, setCompany] = useState(initial.company_name);
   const [voice, setVoice] = useState(initial.brand_voice);
   const [closing, setClosing] = useState(initial.closing_use_case);
+  const [greeting, setGreeting] = useState(initial.greeting ?? "");
+  const [startPersona, setStartPersona] = useState(initial.default_persona ?? "");
+  const [tourOn, setTourOn] = useState(initial.tour_enabled ?? true);
   const [personas, setPersonas] = useState<Persona[]>(initial.personas);
   const [routes, setRoutes] = useState(initial.routes.join("\n"));
   const [prefixes, setPrefixes] = useState(initial.dynamic_prefixes.join("\n"));
@@ -162,6 +165,9 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
         company_name: company.trim(),
         brand_voice: voice.trim(),
         closing_use_case: closing.trim(),
+        greeting: greeting.trim(),
+        default_persona: startPersona,
+        tour_enabled: tourOn,
         personas: personas
           .filter((p) => p.slug.trim() || p.label.trim())
           .map((p) => ({
@@ -174,6 +180,7 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
       setRoutes(saved.routes.join("\n"));
       setPrefixes(saved.dynamic_prefixes.join("\n"));
       setPersonas(saved.personas);
+      setStartPersona(saved.default_persona ?? "");
       toast("Agent profile saved");
     } catch (err) {
       toast(err instanceof ApiError ? err.message : "Could not save", "err");
@@ -207,6 +214,28 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
         <label className="label" htmlFor="p-voice">Voice <span className="faint">(how the agent sounds)</span></label>
         <input id="p-voice" className="input" value={voice} maxLength={300}
           onChange={(e) => setVoice(e.target.value)} />
+      </div>
+      <div className="field">
+        <label className="label" htmlFor="p-greeting">
+          Greeting <span className="faint">(the first thing the agent says when opened)</span>
+        </label>
+        <input id="p-greeting" className="input" value={greeting} maxLength={300}
+          placeholder="Leave empty and the agent writes a short welcome for each page."
+          onChange={(e) => setGreeting(e.target.value)} />
+      </div>
+      <div className="grid grid-2" style={{ gap: 14 }}>
+        <div className="field">
+          <label className="label" htmlFor="p-start-persona">Start conversations as</label>
+          <select id="p-start-persona" className="select" value={startPersona}
+            onChange={(e) => setStartPersona(e.target.value)}>
+            <option value="">Work it out from the conversation</option>
+            {personas.filter((p) => p.slug).map((p) => <option key={p.slug} value={p.slug}>{p.label || p.slug}</option>)}
+          </select>
+        </div>
+        <label className="row" style={{ gap: 8, fontSize: "0.88rem", alignSelf: "end", paddingBottom: 10 }}>
+          <input type="checkbox" checked={tourOn} onChange={(e) => setTourOn(e.target.checked)} />
+          Offer the guided tour when the agent is opened
+        </label>
       </div>
       <div className="field">
         <label className="label" htmlFor="p-closing">

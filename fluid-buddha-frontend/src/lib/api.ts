@@ -139,6 +139,10 @@ export type AgentProfile = {
   closing_use_case: string;
   routes: string[];
   dynamic_prefixes: string[];
+  /** First words when opened; empty = a page-aware welcome (M2-4). */
+  greeting?: string;
+  default_persona?: string;
+  tour_enabled?: boolean;
 };
 
 export type WidgetConfig = {
@@ -294,6 +298,35 @@ export type ExperimentPlan = {
   days_left: number | null;
   reached: boolean;
 };
+
+/** Variant tests (M2-4). */
+export type TestSubject = "greeting" | "trigger" | "tour" | "persona" | "design";
+export type VariantOverrides = { greeting?: string; triggers?: string[]; tour?: boolean;
+  persona?: string; design?: "level1" | "level2" | "level3" };
+export type Variant = { key: string; label: string; overrides: VariantOverrides };
+export type VariantTest = {
+  id: string; name: string; subject: TestSubject; variants: Variant[];
+  holdout_pct: number; goal_path: string | null; status: "running" | "stopped";
+  started_at: string; ended_at: string | null; bots_ignored: number;
+  winner: string | null; promoted_at: string | null; visitors?: number;
+};
+export type VariantResult = Variant & {
+  visitors: number; converters: number; rate: number | null;
+  /** This variant vs the control; null for the control itself. */
+  vs_control: ExperimentResults["lift"] | null;
+};
+export type VariantTestResults = {
+  experiment: VariantTest;
+  variants: VariantResult[];
+  verdict: { status: "winner" | "keep_running" | "no_difference"; winner: string | null; alpha: number };
+  plan: { baseline: number; baseline_source: "given" | "observed" | "default"; mde: number;
+    needed: { total: number; per_variant: number; holdout: number } | null;
+    visitors_so_far: number; visitors_per_day: number | null; days_left: number | null; reached: boolean };
+  /** All variants together vs the holdout, when the test keeps one. */
+  holdout: ExperimentResults["lift"] | null;
+};
+export type VariantTestIn = { name: string; subject: TestSubject; holdout_pct: number;
+  goal_path: string | null; variants: { label: string; overrides: VariantOverrides }[] };
 
 export type TourStop = { narration: string; move?: Record<string, unknown> | null; label?: string };
 export type TourPlan = { site_key: string; stops: TourStop[]; exists: boolean; edited: boolean };
@@ -495,6 +528,19 @@ export const Api = {
     candidate?: RTCIceCandidateInit }) =>
     api<{ sent: boolean }>(`/tenant/websites/${wid}/live/${sid}/call`, { method: "POST", body }),
 
+  tests: (wid: string) =>
+    api<{ tests: VariantTest[]; holdout_running: boolean }>(`/tenant/websites/${wid}/tests`),
+  startTest: (wid: string, body: VariantTestIn) =>
+    api<VariantTest>(`/tenant/websites/${wid}/tests`, { method: "POST", body }),
+  testResults: (wid: string, tid: string) =>
+    api<VariantTestResults>(`/tenant/websites/${wid}/tests/${tid}`),
+  planTest: (wid: string, q: { variants: number; baseline: number; mde: number; holdout_pct: number }) =>
+    api<{ needed: { total: number; per_variant: number; holdout: number } | null }>(
+      `/tenant/websites/${wid}/tests/plan?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)]))}`),
+  stopTest: (wid: string, tid: string) =>
+    api<VariantTest>(`/tenant/websites/${wid}/tests/${tid}/stop`, { method: "POST" }),
+  promoteVariant: (wid: string, tid: string, variant: string) =>
+    api<VariantTest>(`/tenant/websites/${wid}/tests/${tid}/promote`, { method: "POST", body: { variant } }),
   triggers: (wid: string) => api<{ rules: TriggerRule[] }>(`/tenant/websites/${wid}/triggers`),
   createTrigger: (wid: string, body: TriggerRuleIn) =>
     api<TriggerRule>(`/tenant/websites/${wid}/triggers`, { method: "POST", body }),

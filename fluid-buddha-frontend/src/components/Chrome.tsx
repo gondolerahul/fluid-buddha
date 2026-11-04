@@ -72,7 +72,8 @@ const TABS = [
   { key: "leads", label: "Leads" },
   { key: "cache", label: "Responses" },
   { key: "analytics", label: "Analytics" },
-  { key: "experiment", label: "Experiment" },
+  { key: "experiment", label: "Holdout" },
+  { key: "tests", label: "A/B tests" },
   { key: "triggers", label: "Triggers" },
   { key: "settings", label: "Settings" },
 ];
