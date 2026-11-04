@@ -454,6 +454,15 @@ export type LiveConversation = { session_id: string; live: boolean; takeover: Li
   events: LiveLine[] };
 export type IceServer = { urls: string | string[]; username?: string; credential?: string };
 
+/** Proactive triggers (M2-3). */
+export type TriggerKind = "time_on_page" | "scroll_depth" | "exit_intent" | "return_visit";
+export type TriggerRuleIn = { name: string; enabled: boolean; kind: TriggerKind; seconds?: number | null;
+  percent?: number | null; visits?: number | null; within_days?: number | null; pages: string[];
+  message: string; action: "nudge" | "open"; max_per_day: number; priority: number };
+export type TriggerStats = { shown: number; clicked: number; dismissed: number; engaged: number;
+  click_rate: number | null; engage_rate: number | null };
+export type TriggerRule = TriggerRuleIn & { id: string; updated_at: string; stats: TriggerStats | null };
+
 // ---- endpoint helpers ------------------------------------------------------
 export const Api = {
   register: (email: string, password: string, name?: string) =>
@@ -485,6 +494,14 @@ export const Api = {
   callSignal: (wid: string, sid: string, body: { type: "offer" | "ice" | "hangup"; sdp?: string;
     candidate?: RTCIceCandidateInit }) =>
     api<{ sent: boolean }>(`/tenant/websites/${wid}/live/${sid}/call`, { method: "POST", body }),
+
+  triggers: (wid: string) => api<{ rules: TriggerRule[] }>(`/tenant/websites/${wid}/triggers`),
+  createTrigger: (wid: string, body: TriggerRuleIn) =>
+    api<TriggerRule>(`/tenant/websites/${wid}/triggers`, { method: "POST", body }),
+  updateTrigger: (wid: string, id: string, body: TriggerRuleIn) =>
+    api<TriggerRule>(`/tenant/websites/${wid}/triggers/${id}`, { method: "PUT", body }),
+  deleteTrigger: (wid: string, id: string) =>
+    api<void>(`/tenant/websites/${wid}/triggers/${id}`, { method: "DELETE" }),
 
   team: () => api<Team>("/tenant/team"),
   invite: (email: string, role: Role) =>
