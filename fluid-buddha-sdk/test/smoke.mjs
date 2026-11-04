@@ -264,5 +264,120 @@ noAsk.feed({ channel: 'EVENTS', type: 'ready', payload: { config: {}, privacy: {
 await noAsk.startVoice();
 ok(asked.length === 2, 'a site that does not require consent skips the prompt');
 
+// ---- WS5: binary audio frames ----
+const { packAudio, unpackAudio, SpeechGate } = mod;
+const pcmIn = new Uint8Array([1, 0, 2, 0, 3, 0]);
+const frameOut = unpackAudio(packAudio('utt_abc', pcmIn).buffer);
+ok(frameOut && frameOut.syncId === 'utt_abc' && frameOut.pcm.join() === '1,0,2,0,3,0', 'binary audio frame round-trips id + pcm');
+ok(unpackAudio(new Uint8Array([2, 0, 1]).buffer) === null, 'a non-audio binary frame is ignored');
+
+const sockets = [];
+const RealWS = globalThis.WebSocket;
+globalThis.WebSocket = class {
+  static OPEN = 1;
+  constructor(url) { this.url = url; this.readyState = 1; this.sent = []; sockets.push(this); }
+  send(d) { this.sent.push(d); } close() {}
+};
+let agentAudio = 0;
+const bs = new Session(
+  { backend: 'ws://x', api: 'http://x', site: 'bin-site', intelligence: 'advance', design: 'level1', position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
+  bridge,
+  { onStatus() {}, onUserTranscript() {}, onAgentMessage() {}, onComponent() {}, onPatch() {}, onSystem() {}, onPage() {}, onAgentAudio: () => agentAudio++ },
+);
+bs.connect();
+const sock = sockets.at(-1);
+ok(new URL(sock.url).searchParams.get('audio') === 'binary' && sock.binaryType === 'arraybuffer', 'voice socket asks for binary audio frames');
+bs.client.sendAudioChunk(pcmIn);
+ok(typeof sock.sent.at(-1) === 'string' && JSON.parse(sock.sent.at(-1)).payload.data, 'mic audio is JSON until the server confirms binary');
+sock.onmessage({ data: JSON.stringify({ channel: 'EVENTS', type: 'ready', payload: { config: { audio_frames: 'binary' } } }) });
+bs.client.sendAudioChunk(pcmIn);
+const sentFrame = sock.sent.at(-1);
+ok(sentFrame instanceof Uint8Array && unpackAudio(sentFrame).pcm.length === 6, 'mic audio goes out as binary frames once confirmed');
+sock.onmessage({ data: JSON.stringify({ channel: 'AUDIO', type: 'start', sync_id: 'utt_b1', payload: { text: 'Hi' } }) });
+sock.onmessage({ data: packAudio('utt_b1', new Uint8Array(480)).buffer });
+ok(agentAudio === 1, 'a binary TTS frame plays as the chunk of its segment');
+globalThis.WebSocket = RealWS;
+
+// ---- WS5: speech pre-roll ----
+const gateEvents = [];
+const gate = new SpeechGate({
+  onChunk: (b) => gateEvents.push(['chunk', b.length]),
+  onSpeechStart: () => gateEvents.push(['start']),
+  onSpeechEnd: () => gateEvents.push(['end']),
+});
+const quiet = new Float32Array(960); // 20 ms @ 48 kHz
+const loud = Float32Array.from({ length: 960 }, (_, i) => 0.2 * Math.sin(i / 4));
+for (let i = 0; i < 10; i++) gate.process(quiet, 48000);
+ok(gateEvents.length === 0, 'nothing is sent before speech');
+for (let i = 0; i < 12; i++) gate.process(loud, 48000);
+const startAt = gateEvents.findIndex((e) => e[0] === 'start');
+const opening = gateEvents.slice(startAt + 1).reduce((n, e) => n + (e[0] === 'chunk' ? e[1] : 0), 0);
+// Speech is declared after 180 ms of voice; the pre-roll must still deliver
+// that onset plus lead-in. At 16 kHz PCM16 that is 640 bytes per 20 ms.
+ok(startAt === 0 && opening >= 640 * 12, `utterance opens with its first words (${opening} bytes)`);
+for (let i = 0; i < 50; i++) gate.process(quiet, 48000);
+ok(gateEvents.some((e) => e[0] === 'end'), 'sustained silence ends the utterance');
+let n44 = 0;
+const g44 = new SpeechGate({ onChunk: (b) => (n44 += b.length / 2), onSpeechStart() {}, onSpeechEnd() {} });
+const loud44 = Float32Array.from({ length: 1024 }, (_, i) => 0.2 * Math.sin(i / 4));
+for (let i = 0; i < 100; i++) g44.process(loud44, 44100);
+// The first ~180 ms (8 frames) open the utterance via the pre-roll, so all
+// 100 frames should come out, resampled without drift.
+const expect44 = (100 * 1024 * 16000) / 44100;
+ok(Math.abs(n44 - expect44) <= 2, `44.1 kHz resampling doesn't drift (${n44} vs ${expect44.toFixed(1)} samples)`);
+
+// ---- WS5 / D-15: navigation doesn't hard-reload single-page apps ----
+class TestBridge extends HostBridge {
+  constructor(...a) { super(...a); this.hard = []; }
+  hardNavigate(href) { this.hard.push(href); }
+}
+const navigated = [];
+window.addEventListener('fluidbuddha:navigated', (e) => navigated.push(e.detail.path));
+const spaRender = () => document.body.appendChild(document.createElement('main'));
+window.addEventListener('popstate', spaRender);
+const nb = new TestBridge({});
+nb.navigate('/pricing');
+await new Promise((r) => setTimeout(r, 20));
+ok(window.location.pathname === '/pricing' && nb.hard.length === 0 && navigated.at(-1) === '/pricing', 'a router that renders on popstate gets an in-app route change');
+window.removeEventListener('popstate', spaRender);
+nb.navigate('/pricing#plans');
+ok(nb.hard.length === 0 && window.location.pathname === '/pricing', 'a same-page anchor only scrolls');
+nb.navigate('/about');
+await new Promise((r) => setTimeout(r, 700));
+ok(nb.hard.at(-1) === 'http://localhost/about', 'a multi-page site (nothing re-renders) falls back to a page load');
+nb.navigate('https://other.example/x');
+ok(nb.hard.at(-1) === 'https://other.example/x', 'another origin is a normal page load');
+const cancelNav = (e) => e.preventDefault();
+window.addEventListener('fluidbuddha:navigate', cancelNav);
+const before = window.location.pathname;
+nb.navigate('/contact');
+await new Promise((r) => setTimeout(r, 20));
+ok(window.location.pathname === before && nb.hard.at(-1) === 'https://other.example/x', 'cancelling fluidbuddha:navigate leaves routing to the host');
+window.removeEventListener('fluidbuddha:navigate', cancelNav);
+const rb = new TestBridge({}, 'reload');
+rb.navigate('/team');
+ok(rb.hard.at(-1) === 'http://localhost/team', "navigation: 'reload' always loads the page");
+
+// ---- WS5: Level 2 reopens after close ----
+const l2b = init({ backend: 'ws://localhost:8080', site: 'hirebuddha', design: 'level2' });
+const l2root = l2b.shadowRoot.querySelector('.l2');
+const reopen = l2b.shadowRoot.querySelector('.l2-reopen');
+ok(!!reopen && reopen.classList.contains('l2-hidden'), 'level2 reopen orb is hidden while open');
+l2b.shadowRoot.querySelector('.l2-close').click();
+ok(l2root.classList.contains('l2-hidden') && !reopen.classList.contains('l2-hidden'), 'closing level2 leaves a reopen orb');
+reopen.click();
+ok(!l2root.classList.contains('l2-hidden') && reopen.classList.contains('l2-hidden'), 'the orb reopens level2');
+
+// ---- WS5: Three.js is only in the Level 2 bundle ----
+const fs = await import('node:fs');
+const zlib = await import('node:zlib');
+const coreJs = fs.readFileSync(new URL('../dist/fluid-buddha.global.js', import.meta.url));
+const particlesJs = fs.readFileSync(new URL('../dist/fluid-buddha-particles.global.js', import.meta.url));
+const coreMjs = fs.readFileSync(new URL('../dist/fluid-buddha.mjs', import.meta.url), 'utf8');
+ok(!coreJs.includes('WebGLRenderer') && particlesJs.includes('WebGLRenderer'), 'script-tag core ships without Three.js; the particles file has it');
+ok(!coreMjs.includes('WebGLRenderer') && /import\(["']\.\/chunks\/ParticleField-/.test(coreMjs), 'ESM core loads the particle field as a split chunk');
+const coreGz = zlib.gzipSync(coreJs).length;
+ok(coreGz < 42 * 1024, `script-tag core is ${(coreGz / 1024).toFixed(1)} kB gzipped (budget 42 kB)`);
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -21,12 +21,17 @@ export { HostBridge } from './core/HostBridge';
 export { Canvas } from './ui/components/canvas';
 // For hosts that build their own UI around Session (requestConsent).
 export { consentCopy, consentPrompt } from './ui/consent';
+// For hosts with their own capture or transport: the VAD + pre-roll gate and
+// the binary audio frame format.
+export { SpeechGate } from './audio/SpeechGate';
+export { packAudio, unpackAudio } from './protocol';
 export type {
   FluidBuddhaConfig,
   FluidBuddhaOptions,
   FluidBuddhaHooks,
   IntelligenceLevel,
   DesignLevel,
+  NavigationMode,
 } from './core/config';
 export type {
   Envelope,

@@ -214,7 +214,7 @@ Compose defaults `CORS_ORIGINS` to `*`, which `main.py` turns into `allow_origin
 | D-12 | ✅ fixed | SDK smoke runs on Node ≥ 20 |
 | D-13 | ✅ fixed | One port map: backend 8080, console 3001, demos 4000 |
 | D-14 | ✅ fixed | Content paths configurable (`HIREBUDDHA_DOCS`, `BCL_DOCS`, `FLUIDBUDDHA_DOCS`) with defaults that match the real sibling layout; fluidbuddha copy comes from this repo; design-system/OpenAPI optional. Local discovery verified (46 HireBuddha docs); a full `docker compose up` was not run here (host port 8080 is reserved on this machine) |
-| D-15 | ⏳ open (M1) | SPA-friendly `pushState` navigation — WS5 |
+| D-15 | ✅ fixed (WS5) | Default navigation uses `pushState` + `popstate` and falls back to a page load only when nothing re-renders; cancelable `fluidbuddha:navigate`; `navigation: auto/spa/reload` |
 | D-16 | ✅ fixed | Console Install tab (snippet + connection test) and Settings tab (site, tiers incl. Level 3, agent profile, delete) |
 | D-17 | ✅ fixed | Placeholder GCP project id |
 | D-18 | ✅ fixed | Model ids reconciled |

@@ -39,3 +39,33 @@ def make(channel: str, type_: str, payload: dict[str, Any] | None = None,
     return Envelope(
         channel=channel, type=type_, payload=payload or {}, sync_id=sync_id
     ).model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Binary audio frames (WS5). Audio is the bulk of the traffic, so a client that
+# opts in (``/ws/voice?audio=binary``) gets TTS chunks as binary WebSocket
+# frames instead of base64 inside JSON (a third smaller, no JSON parse), and
+# may send its mic chunks the same way. Layout:
+#
+#   byte 0       frame kind (AUDIO_CHUNK)
+#   byte 1       length N of the sync_id (0-255)
+#   bytes 2..N+1 sync_id, ASCII
+#   rest         PCM16 little-endian mono
+# ---------------------------------------------------------------------------
+
+AUDIO_CHUNK = 0x01
+
+
+def pack_audio(sync_id: str | None, pcm: bytes) -> bytes:
+    sid = (sync_id or "").encode("ascii", "ignore")[:255]
+    return bytes((AUDIO_CHUNK, len(sid))) + sid + pcm
+
+
+def unpack_audio(frame: bytes) -> tuple[str, bytes] | None:
+    """``(sync_id, pcm)`` for an audio frame, or None for anything else."""
+    if len(frame) < 2 or frame[0] != AUDIO_CHUNK:
+        return None
+    n = frame[1]
+    if len(frame) < 2 + n:
+        return None
+    return frame[2:2 + n].decode("ascii", "ignore"), bytes(frame[2 + n:])

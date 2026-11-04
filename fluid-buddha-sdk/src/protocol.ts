@@ -139,3 +139,31 @@ export const bytesToBase64 = (bytes: Uint8Array): string => {
   }
   return btoa(bin);
 };
+
+// ---- Binary audio frames (WS5) — mirrors backend envelope.pack_audio ----
+// Requested with `?audio=binary` and confirmed by `ready.config.audio_frames`.
+//   byte 0: kind (AUDIO_CHUNK) · byte 1: sync_id length N · N bytes of ASCII
+//   sync_id · then PCM16 little-endian mono.
+export const AUDIO_CHUNK = 0x01;
+
+export const packAudio = (syncId: string | null | undefined, pcm: Uint8Array): Uint8Array => {
+  const id = (syncId || '').slice(0, 255);
+  const out = new Uint8Array(2 + id.length + pcm.length);
+  out[0] = AUDIO_CHUNK;
+  out[1] = id.length;
+  for (let i = 0; i < id.length; i++) out[2 + i] = id.charCodeAt(i) & 0x7f;
+  out.set(pcm, 2 + id.length);
+  return out;
+};
+
+export const unpackAudio = (
+  frame: ArrayBuffer | Uint8Array,
+): { syncId: string; pcm: Uint8Array } | null => {
+  const b = frame instanceof Uint8Array ? frame : new Uint8Array(frame);
+  if (b.length < 2 || b[0] !== AUDIO_CHUNK || b.length < 2 + b[1]) return null;
+  const n = b[1];
+  return {
+    syncId: String.fromCharCode(...b.subarray(2, 2 + n)),
+    pcm: b.slice(2 + n),
+  };
+};

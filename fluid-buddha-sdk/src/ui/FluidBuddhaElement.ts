@@ -165,7 +165,7 @@ export class FluidBuddhaElement extends HTMLElement {
 
   // ---- Design Level 2: immersive particle overlay ----
   private buildLevel2(root: ShadowRoot): void {
-    const bridge = new HostBridge(this.config.hooks);
+    const bridge = new HostBridge(this.config.hooks, this.config.navigation);
     const shell = new Level2Shell(root, this.config, {
       primeAudio: () => this.session.primeAudio(),
       connect: () => this.session.connect(),
@@ -197,7 +197,7 @@ export class FluidBuddhaElement extends HTMLElement {
 
   // ---- Design Level 3: ambient atmosphere (no widget) ----
   private buildLevel3(root: ShadowRoot): void {
-    const bridge = new HostBridge(this.config.hooks);
+    const bridge = new HostBridge(this.config.hooks, this.config.navigation);
     const shell = new Level3Shell(root, this.config, {
       primeAudio: () => this.session.primeAudio(),
       connect: () => this.session.connect(),
@@ -309,7 +309,7 @@ export class FluidBuddhaElement extends HTMLElement {
     root.appendChild(this.panel);
 
     // Wire the session
-    const bridge = new HostBridge(this.config.hooks);
+    const bridge = new HostBridge(this.config.hooks, this.config.navigation);
     this.hostBridge = bridge;
     this.canvas = new Canvas(
       this.canvasEl,

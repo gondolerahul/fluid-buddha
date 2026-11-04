@@ -8,6 +8,9 @@
 //   - a single state-of-light word (dormant · listening · thinking · speaking),
 //   - a fading column of recent turns, and a molten-glass drawing surface.
 //
+// Three.js is loaded only when this shell is built (WS5), so Level 1 and Level 3
+// never download it. Closing leaves a small orb to reopen the presence.
+//
 // The shell owns presentation only; the host element owns the Session and routes
 // its events here. The SAME state-of-light language as L1/L3 is expressed purely
 // through the colour + cadence of the smoke and halo — no extra chrome.
@@ -16,7 +19,8 @@ import { ComponentPayload, Grounding } from '../../protocol';
 import { FluidBuddhaConfig } from '../../core/config';
 import { Canvas } from '../components/canvas';
 import { sourcesEl } from '../citations';
-import { ParticleField } from '../particles/ParticleField';
+import type { ParticleField } from '../particles/ParticleField';
+import { loadParticleField } from '../particles/load';
 import { AuraState } from '../aura/AuraCanvas';
 import { MessageStack } from './MessageStack';
 
@@ -52,9 +56,11 @@ export class Level2Shell {
   private statusEl: HTMLDivElement;
   private playBtn: HTMLButtonElement;
   private hintEl: HTMLDivElement;
+  private reopenBtn: HTMLButtonElement;
   private textarea: HTMLTextAreaElement;
   private regatherTimer: ReturnType<typeof setTimeout> | null = null;
   private started = false;
+  private disposed = false;
   private readonly accent: string;
   // Short-lived activity pulses so motion reacts even when the audio waveform is
   // silent (typing, or mock TTS); real voice level dominates when present.
@@ -144,18 +150,29 @@ export class Level2Shell {
     parent.appendChild(root);
     this.root = root;
 
-    // Particles — degrade gracefully if WebGL is unavailable (e.g. jsdom).
+    // After close: a small orb that brings the presence back.
+    this.reopenBtn = document.createElement('button');
+    this.reopenBtn.className = 'l2-reopen l2-hidden';
+    this.reopenBtn.setAttribute('aria-label', 'Open Pragya');
+    this.reopenBtn.addEventListener('click', () => this.show());
+    parent.appendChild(this.reopenBtn);
+
+    // Particles — degrade gracefully if WebGL is unavailable (e.g. jsdom) or
+    // the Three.js bundle can't be fetched; the halo still carries the state.
     const hasWebGL = typeof WebGLRenderingContext !== 'undefined';
     if (hasWebGL) {
-      try {
-        this.particles = new ParticleField(canvasEl, { accent: this.accent });
-        this.particles.setEnergyProvider(() => this.computeEnergy());
-        // A warm resting glow so the presence reads gold at rest (dormant).
-        this.particles.setTint(this.accent, 0.42);
-        this.particles.start();
-      } catch {
-        canvasEl.classList.add('l2-hidden');
-      }
+      void loadParticleField()
+        .then((Field) => {
+          if (this.disposed) return;
+          const particles = new Field(canvasEl, { accent: this.accent });
+          particles.setEnergyProvider(() => this.computeEnergy());
+          // A warm resting glow so the presence reads gold at rest (dormant).
+          particles.setTint(this.accent, 0.42);
+          if (this.started) particles.toBottom();
+          if (!this.root.classList.contains('l2-hidden')) particles.start();
+          this.particles = particles;
+        })
+        .catch(() => canvasEl.classList.add('l2-hidden'));
     } else {
       canvasEl.classList.add('l2-hidden');
     }
@@ -168,6 +185,8 @@ export class Level2Shell {
   // ---- user actions ----
   private onPlay(): void {
     this.begin();
+    this.playBtn.classList.add('l2-hidden');
+    this.hintEl.classList.add('l2-hidden');
     this.controller.primeAudio();
     this.controller.connect();
     this.controller.startVoice();
@@ -319,6 +338,22 @@ export class Level2Shell {
   hide(): void {
     this.controller.stopVoice();
     this.root.classList.add('l2-hidden');
+    this.reopenBtn.classList.remove('l2-hidden');
+    this.particles?.stop(); // no rendering while closed
+  }
+
+  /** Reopen after close. Voice stays off until the visitor taps to talk. */
+  show(): void {
+    this.root.classList.remove('l2-hidden');
+    this.reopenBtn.classList.add('l2-hidden');
+    this.particles?.start();
+    this.particles?.resize();
+    if (this.started) {
+      this.hintEl.textContent = 'tap to talk';
+      this.playBtn.classList.remove('l2-hidden');
+      this.hintEl.classList.remove('l2-hidden');
+    }
+    this.textarea.focus();
   }
 
   // ---- helpers ----
@@ -329,6 +364,8 @@ export class Level2Shell {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.reopenBtn.remove();
     if (this.regatherTimer) clearTimeout(this.regatherTimer);
     this._unbindActivity?.();
     if (typeof window !== 'undefined') window.removeEventListener('resize', this.onResize);

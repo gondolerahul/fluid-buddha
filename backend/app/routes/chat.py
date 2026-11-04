@@ -19,6 +19,7 @@ from typing import Any
 from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
 from app.orchestrator.profile import ensure_profile
+from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.state import normalize_sections
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
 from app.transport.guard import check_public_budget
@@ -108,6 +109,8 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     pii.enabled = privacy.redact_pii
     message = pii.mask(req.message)
     personal = message != req.message
+    # A mid-conversation follow-up is answered fresh and never cached (WS5).
+    followup = depends_on_history(message, state.history)
 
     settings = rt.settings
 
@@ -116,7 +119,7 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     # poison the main reasoning transaction.
     related: list = []
     replay = None
-    if settings.conversation_cache_enabled and not personal:
+    if settings.conversation_cache_enabled and not personal and not followup:
         try:
             async with session_scope() as cdb:
                 cache = rt.episodic(cdb, state.site_key)
@@ -171,7 +174,8 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     # visitor's contact details, so neither turn may be replayed.
     personal = personal or contains_pii(result.answer_text)
     if (settings.conversation_cache_enabled and result.answer_text
-            and not result.patches and not result.leads and not personal):
+            and not result.patches and not result.leads and not personal
+            and not followup):
         try:
             async with session_scope() as db:
                 await rt.episodic(db, state.site_key).record(

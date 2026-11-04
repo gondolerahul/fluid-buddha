@@ -2,8 +2,9 @@
 // injecting <script data-*> tag or the <fluid-buddha> element's attributes.
 
 export interface FluidBuddhaHooks {
-  /** Handle navigation yourself (e.g. SPA router). Return nothing — providing
-   *  the hook suppresses the default full-page navigation. */
+  /** Handle navigation yourself (e.g. `router.push`). Providing the hook
+   *  replaces the default navigation entirely. You can also cancel the
+   *  `fluidbuddha:navigate` window event with `preventDefault()`. */
   onNavigate?: (path: string) => void;
   /** Handle scrolling yourself (section jump and/or relative direction). */
   onScrollTo?: (target: { sectionId?: string; direction?: string }) => void;
@@ -32,6 +33,14 @@ export type IntelligenceLevel = 'basic' | 'high' | 'advance' | 'extreme';
  *               references, floating glass captions, and a ⌘K / long-press summon.
  *               No persistent widget. */
 export type DesignLevel = 'level1' | 'level2' | 'level3';
+
+/** How the agent moves the visitor to another page (D-15):
+ *  - `auto`   : History API + `popstate` so SPA routers render the route;
+ *               a full page load if nothing re-renders (the default).
+ *  - `spa`    : History API + `popstate` only, never a page load.
+ *  - `reload` : always a full page load (`location.assign`). */
+export type NavigationMode = 'auto' | 'spa' | 'reload';
+export const NAVIGATION_MODES: NavigationMode[] = ['auto', 'spa', 'reload'];
 
 export const INTELLIGENCE_LEVELS: IntelligenceLevel[] = ['basic', 'high', 'advance', 'extreme'];
 export const DESIGN_LEVELS: DesignLevel[] = ['level1', 'level2', 'level3'];
@@ -70,6 +79,8 @@ export interface FluidBuddhaConfig {
   /** Play the agent-led guided tour when the site has one (authored at
    *  ingestion). Default `true`; set `data-tour="false"` to opt out. */
   tour: boolean;
+  /** Default page navigation when no `onNavigate` hook is set. Default `auto`. */
+  navigation: NavigationMode;
   hooks: FluidBuddhaHooks;
 }
 
@@ -91,6 +102,7 @@ const DEFAULTS: FluidBuddhaConfig = {
   intelligence: 'advance',
   design: 'level1',
   tour: true,
+  navigation: 'auto',
   hooks: {},
 };
 
@@ -143,5 +155,8 @@ export function optionsFromAttributes(el: Element | null): FluidBuddhaOptions {
     opts.design = design as DesignLevel;
   const tour = get('tour');
   if (tour != null) opts.tour = tour !== 'false';
+  const navigation = get('navigation');
+  if (navigation && (NAVIGATION_MODES as string[]).includes(navigation))
+    opts.navigation = navigation as NavigationMode;
   return opts;
 }

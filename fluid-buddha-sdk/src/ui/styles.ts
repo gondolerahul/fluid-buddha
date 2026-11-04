@@ -504,6 +504,19 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
   padding: 8px; border-radius: 10px; transition: color .2s var(--fb-ease), background .2s var(--fb-ease);
 }
 .l2-close:hover { color: var(--fb-fg); background: rgba(255,255,255,0.06); }
+/* after close: a small orb of the same light, to reopen the presence */
+.l2-reopen {
+  position: fixed; right: 24px; bottom: 24px; z-index: var(--fb-z-base);
+  width: 52px; height: 52px; border-radius: 50%; cursor: pointer; padding: 0;
+  border: 1px solid color-mix(in srgb, var(--fb-accent) 55%, transparent);
+  background: radial-gradient(circle at 40% 34%, color-mix(in srgb, var(--fb-accent) 45%, #16130e), var(--fb-void) 78%);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--fb-accent) 35%, transparent), 0 10px 30px rgba(0,0,0,0.45);
+  animation: fb-l2-reopen-breathe 3.6s var(--fb-ease) infinite;
+}
+:host([data-position="bottom-left"]) .l2-reopen { left: 24px; right: auto; }
+.l2-reopen:focus-visible { outline: 2px solid var(--fb-gold-bright); outline-offset: 3px; }
+@keyframes fb-l2-reopen-breathe { 50% { transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .l2-reopen { animation: none; } }
 .l2-close svg { width: 20px; height: 20px; }
 
 /* a reactive halo ring centred on the presence — scales with live amplitude */

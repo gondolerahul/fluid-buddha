@@ -111,6 +111,18 @@ JSON envelopes: `{ channel, type, payload, sync_id, timestamp }` on channels
 `STATE/transcript`. **Correlated `DATA` + `AUDIO` share a `sync_id`** so the
 frontend jitter buffer holds audio until its UI renders (Req 3.2.3/3.2.4).
 
+With `?audio=binary` (the widget always asks; `ready.config.audio_frames`
+confirms), audio chunks travel as binary WebSocket frames instead of base64
+JSON, in both directions: byte 0 = `0x01`, byte 1 = sync_id length N, then N
+bytes of sync_id, then PCM16 LE mono (`app/transport/envelope.py`). Mic audio
+is capped at one minute per utterance.
+
+Speech is synthesised one sentence ahead of the one being sent, and Gemini
+TTS is streamed (falling back to the one-shot call if streaming fails), so
+long answers play without gaps. A short follow-up ("how much is it?") is
+searched together with the question it follows, and is never replayed from
+or saved to the answer cache (`app/orchestrator/rewrite.py`).
+
 ## How it maps to the architecture
 
 | Component | Code |

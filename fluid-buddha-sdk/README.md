@@ -66,7 +66,7 @@ init({
   site: 'hirebuddha',
   // Take over DOM commands to integrate with your app's own mechanisms:
   hooks: {
-    onNavigate: (path) => router.push(path),      // SPA router instead of full nav
+    onNavigate: (path) => router.push(path),      // your router, explicitly
     onSetPersona: (p) => store.setICP(p),         // your existing persona switch
     onScrollTo: (id) => scrollToSection(id),
   },
@@ -74,6 +74,33 @@ init({
 ```
 
 You can also place `<fluid-buddha backend="…" site="…">` in markup yourself.
+
+## Navigation on single-page apps
+
+When the agent takes the visitor to another page, the widget doesn't reload a
+single-page app. By default (`navigation: 'auto'`, or `data-navigation="auto"`)
+it pushes the route onto the browser history and fires `popstate`, which React
+Router, Vue Router, Next.js and most other routers answer by rendering the
+page. If nothing on the page changes within 600 ms, the site is multi-page and
+the widget loads the page normally. Other origins always load normally.
+
+| `navigation` | Behaviour |
+|---|---|
+| `auto` | History API + `popstate`; a normal page load if nothing re-renders **(default)** |
+| `spa` | History API + `popstate` only, never a page load |
+| `reload` | Always a normal page load |
+
+To route it yourself, pass `hooks.onNavigate`, or cancel the event:
+
+```js
+window.addEventListener('fluidbuddha:navigate', (e) => {
+  e.preventDefault();          // the widget does nothing further
+  router.push(e.detail.path);
+});
+```
+
+After an in-app route change the widget emits `fluidbuddha:navigated` and tells
+the agent the visitor's new page.
 
 ## React to the agent from any framework
 
@@ -92,7 +119,8 @@ window.addEventListener('fluidbuddha:scroll_to', (e) => { /* … */ });
 |---|---|
 | `<fluid-buddha>` custom element (Shadow DOM UI) | `src/ui/FluidBuddhaElement.ts` |
 | Multiplexed WS client (`AUDIO/DATA/EVENTS/STATE`) | `src/transport/VoiceClient.ts` |
-| Mic capture + energy VAD (PCM16 @ 16 kHz) | `src/audio/AudioCapture.ts` |
+| Mic capture (AudioWorklet, ScriptProcessor fallback) | `src/audio/AudioCapture.ts` |
+| Energy VAD + pre-roll (the first word isn't clipped) → PCM16 @ 16 kHz | `src/audio/SpeechGate.ts` |
 | Jitter buffer (audio held until UI renders; filler on >1.5 s) | `src/audio/JitterBuffer.ts` |
 | TTS PCM player | `src/audio/AudioPlayer.ts` |
 | Generative UI canvas + component registry (flowchart, workflow, component diagram, graph, chart, ROI, table) | `src/ui/components/` |
@@ -104,7 +132,9 @@ window.addEventListener('fluidbuddha:scroll_to', (e) => { /* … */ });
 | Orchestrator (transcribe → ack → grounded answer + UI) | `src/core/Session.ts` |
 
 Transcription uses the browser Web Speech API when available (works without
-server ASR); raw PCM is still streamed so the backend can run Cloud ASR. The
+server ASR); raw PCM is still streamed so the backend can run Cloud ASR. Audio
+travels as binary WebSocket frames in both directions (the socket asks with
+`?audio=binary`; an older server keeps base64 JSON and the widget follows). The
 LLM never emits raw HTML — it calls `render_component` with a JSON schema that
 maps to a pre-built, safe renderer.
 
@@ -127,11 +157,16 @@ npm run serve:demo         # builds, serves demo/ at http://localhost:4000
 
 ## Build outputs
 - `dist/fluid-buddha.global.js` — IIFE for a `<script>` tag, exposes `window.FluidBuddha`.
-- `dist/fluid-buddha.mjs` / `.cjs` — ESM / CommonJS for bundlers.
+- `dist/fluid-buddha-particles.global.js` — the Design Level 2 particle field
+  (Three.js). **Host it next to `fluid-buddha.global.js`**: the core fetches it
+  from the same folder, only when Level 2 starts.
+- `dist/fluid-buddha.mjs` (+ `dist/chunks/`) — ESM for bundlers; Three.js is a
+  split chunk loaded by dynamic import.
+- `dist/fluid-buddha.cjs` — CommonJS (Three.js inline).
 - `dist/index.d.ts` — TypeScript types.
 
-> Bundle size: the core (Design Levels 1 & 3) logic is small — their living Aura
-> is a dependency-free 2D canvas — but **Three.js is bundled in** to power the
-> Design Level 2 volumetric smoke, so the full `global.js` is ~590 kB minified
-> (~155 kB gzipped). Three is only instantiated when `design: 'level2'` is
-> active; Levels 1 and 3 never create a WebGL context.
+> Bundle size: the script-tag core (all design levels' UI, no Three.js) is
+> ~141 kB minified, ~39 kB gzipped; about a third of that is the stylesheet.
+> Level 2 adds the ~465 kB (~120 kB gzipped) particles file. `npm test`
+> fails if the gzipped core grows past 42 kB. If the particles file can't be
+> loaded, Level 2 still works, with the halo instead of the smoke field.

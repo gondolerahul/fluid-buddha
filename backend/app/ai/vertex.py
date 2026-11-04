@@ -270,6 +270,10 @@ class GeminiTTS:
     24 kHz (audio/L16;rate=24000) — no WAV header — which we chunk to ~200 ms
     frames for the frontend jitter buffer. Far more natural than Cloud TTS
     Neural2 voices.
+
+    Audio is streamed (WS5): each part is forwarded as the model produces it,
+    so playback starts before the whole sentence is synthesised. If streaming
+    fails before any audio arrives, the one-shot call is used instead.
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -285,10 +289,10 @@ class GeminiTTS:
             location=settings.vertex_location,
         )
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+    def _config(self):
         from google.genai import types
 
-        cfg = types.GenerateContentConfig(
+        return types.GenerateContentConfig(
             response_modalities=["AUDIO"],
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
@@ -298,22 +302,77 @@ class GeminiTTS:
                 )
             ),
         )
-        resp = await self._client.aio.models.generate_content(
-            model=self._model, contents=text, config=cfg
-        )
-        pcm = b""
-        cand = (resp.candidates or [None])[0]
-        if cand and cand.content and cand.content.parts:
-            for part in cand.content.parts:
-                inline = getattr(part, "inline_data", None)
-                if inline and getattr(inline, "data", None):
-                    pcm += inline.data
-        # Defensive: some backends still wrap PCM in a WAV container.
-        if pcm[:4] == b"RIFF":
-            pcm = pcm[44:]
-        chunk = self.sample_rate * 2 // 5  # ~200ms of 16-bit mono
-        for i in range(0, len(pcm), chunk):
-            yield pcm[i:i + chunk]
+
+    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+        frames = PcmFramer(self.sample_rate)
+        sent = False
+        try:
+            stream = await self._client.aio.models.generate_content_stream(
+                model=self._model, contents=text, config=self._config()
+            )
+            async for resp in stream:
+                for data in _audio_parts(resp):
+                    for frame in frames.push(data):
+                        sent = True
+                        yield frame
+        except Exception as exc:
+            if sent:
+                raise
+            logger.info("Gemini TTS streaming unavailable (%s); using one-shot", exc)
+            frames = PcmFramer(self.sample_rate)  # drop any partial stream
+            resp = await self._client.aio.models.generate_content(
+                model=self._model, contents=text, config=self._config()
+            )
+            for data in _audio_parts(resp):
+                for frame in frames.push(data):
+                    yield frame
+        tail = frames.flush()
+        if tail:
+            yield tail
+
+
+def _audio_parts(resp) -> list[bytes]:
+    """The inline audio bytes of one (possibly partial) Gemini response."""
+    out = []
+    cand = (getattr(resp, "candidates", None) or [None])[0]
+    content = getattr(cand, "content", None)
+    for part in (getattr(content, "parts", None) or []):
+        inline = getattr(part, "inline_data", None)
+        if inline and getattr(inline, "data", None):
+            out.append(inline.data)
+    return out
+
+
+class PcmFramer:
+    """Re-chunks streamed PCM16 into ~200 ms frames for the jitter buffer,
+    dropping a WAV header some backends prepend and never splitting a sample."""
+
+    def __init__(self, sample_rate: int) -> None:
+        self._frame = sample_rate * 2 // 5  # ~200ms of 16-bit mono
+        self._buf = bytearray()
+        self._started = False
+
+    def push(self, data: bytes) -> list[bytes]:
+        self._buf.extend(data)
+        if not self._started:
+            if len(self._buf) < 4:
+                return []
+            if self._buf[:4] == b"RIFF":
+                if len(self._buf) < 44:
+                    return []
+                del self._buf[:44]
+            self._started = True
+        out = []
+        while len(self._buf) >= self._frame:
+            out.append(bytes(self._buf[:self._frame]))
+            del self._buf[:self._frame]
+        return out
+
+    def flush(self) -> bytes:
+        n = len(self._buf) - len(self._buf) % 2
+        tail = bytes(self._buf[:n])
+        self._buf.clear()
+        return tail
 
 
 # ---------------------------------------------------------------------------

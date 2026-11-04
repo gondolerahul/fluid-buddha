@@ -21,6 +21,7 @@ from app.cortex.bridge import CortexBridge
 from app.cortex.query import citations, query_cortex
 from app.orchestrator.prompts import build_lean_system
 from app.orchestrator.result import Grounding
+from app.orchestrator.rewrite import retrieval_query
 from app.orchestrator.thinker import ThinkResult
 
 logger = logging.getLogger(__name__)
@@ -79,10 +80,14 @@ class LeanResponder:
         probe: bool = False,
     ) -> ThinkResult:
         t0 = time.monotonic()
-        # 1. One grounding retrieval (no tool round-trip).
+        # 1. One grounding retrieval (no tool round-trip). A follow-up ("how
+        #    much is it?") searches with the question it follows (WS5).
+        query = retrieval_query(user_text, history)
+        if query != user_text:
+            logger.info("lean: follow-up retrieval query %r", query[:120])
         res = await query_cortex(
             bridge,
-            user_text,
+            query,
             top_k=self._settings.cortex_retrieval_top_k,
             threshold=self._settings.cortex_confidence_threshold,
         )

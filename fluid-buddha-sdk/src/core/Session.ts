@@ -74,6 +74,8 @@ export class Session {
   private privacy: Privacy | null = null;
   private readySeen = false;
   private privacyWaiters: Array<() => void> = [];
+  /** After an in-app route change (D-15) the agent needs the new page. */
+  private readonly onNavigated = () => this.reportCurrentPage();
 
   constructor(
     private readonly config: FluidBuddhaConfig,
@@ -91,6 +93,8 @@ export class Session {
       currentPath: () => (typeof location !== 'undefined' ? location.pathname : ''),
       status: (text) => this.cb.onTourStatus?.(text),
     });
+    if (typeof window !== 'undefined')
+      window.addEventListener('fluidbuddha:navigated', this.onNavigated);
   }
 
   get active(): boolean {
@@ -113,6 +117,9 @@ export class Session {
       site: this.config.site,
       intelligence: this.config.intelligence,
       design: this.config.design,
+      // Audio as binary frames, not base64 JSON (WS5); an older server
+      // ignores this and `ready` says which one it speaks.
+      audio: 'binary',
     });
     // The widget key is what authorises a customer site; the backend resolves
     // the site and tier from it.
@@ -156,7 +163,13 @@ export class Session {
           if (env.payload.privacy) this.privacy = env.payload.privacy as Privacy;
           this.readySeen = true;
           this.privacyWaiters.splice(0).forEach((w) => w());
-          const cfg = (env.payload.config as { filler_delay_ms?: number; sample_rate?: number }) || {};
+          const cfg =
+            (env.payload.config as {
+              filler_delay_ms?: number;
+              sample_rate?: number;
+              audio_frames?: string;
+            }) || {};
+          if (this.client) this.client.binaryAudio = cfg.audio_frames === 'binary';
           // Reuse a player primed during the open gesture (so welcome audio is
           // allowed to autoplay); otherwise create it now.
           if (!this.player) this.player = new AudioPlayer(cfg.sample_rate ?? 24000);
@@ -210,9 +223,12 @@ export class Session {
           if (text && !sid.startsWith('ack_'))
             this.cb.onAgentMessage(text, env.payload.grounding as Grounding | undefined);
         } else if (env.type === 'chunk') {
+          // Binary frames arrive as raw `pcm`; JSON ones as base64 `data`.
+          const raw = env.payload.pcm;
           const data = env.payload.data as string | undefined;
-          if (data) {
-            this.jitter?.pushAudio(sid, base64ToBytes(data));
+          const pcm = raw instanceof Uint8Array ? raw : data ? base64ToBytes(data) : null;
+          if (pcm) {
+            this.jitter?.pushAudio(sid, pcm);
             if (!sid.startsWith('ack_')) this.cb.onAgentAudio?.();
           }
         } else if (env.type === 'end') {
@@ -512,6 +528,8 @@ export class Session {
   }
 
   destroy(): void {
+    if (typeof window !== 'undefined')
+      window.removeEventListener('fluidbuddha:navigated', this.onNavigated);
     this.stopVoice();
     this.client?.close();
     this.client = null;

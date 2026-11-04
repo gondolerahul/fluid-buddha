@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import re
 import time
@@ -27,6 +28,7 @@ from app.db import session_scope
 from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFIDENCE
 from app.orchestrator.result import ClientAction, Grounding
 from app.orchestrator.profile import ensure_profile
+from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.tour_store import load_plan
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
 from app.transport.guard import check_public_budget
@@ -35,7 +37,7 @@ from app.orchestrator.state import (
     normalize_intelligence,
     normalize_sections,
 )
-from app.transport.envelope import Channel, make
+from app.transport.envelope import Channel, make, pack_audio, unpack_audio
 from app.trust.pii import PiiVault, contains_pii, redact
 from app.trust.settings import Privacy, get_privacy
 
@@ -46,6 +48,10 @@ router = APIRouter()
 # response is still in flight) is treated as a CONTINUATION of the same question
 # and coalesced — handles ASR/VAD splitting one spoken thought into fragments.
 _COALESCE_WINDOW_S = 10.0
+
+# Mic audio kept for one utterance: a minute of PCM16 @ 16 kHz. Anything past
+# that is dropped rather than buffered without bound.
+_MAX_UTTERANCE_BYTES = 16000 * 2 * 60
 
 # Spoken before a replayed (cached) answer so a cache hit sounds like a fresh
 # turn: ack first, then the answer (D-8). Few, fixed phrases so their audio is
@@ -95,8 +101,11 @@ class VoiceSession:
     def __init__(
         self, ws: WebSocket, runtime, site_key: str = "hirebuddha",
         intelligence: str = "advance", tier_locked: bool = False,
+        binary_audio: bool = False,
     ) -> None:
         self.ws = ws
+        # The client asked for TTS audio as binary frames (WS5).
+        self.binary_audio = binary_audio
         self.rt = runtime
         self.session_id = uuid.uuid4().hex
         # When the tier is server-resolved from a widget key, the client may not
@@ -106,6 +115,7 @@ class VoiceSession:
             site_key=site_key, intelligence=normalize_intelligence(intelligence)
         )
         self._audio: list[bytes] = []
+        self._audio_bytes = 0
         self._response_task: asyncio.Task | None = None
         self._persona_emitted: str | None = None
         self._greeted = False
@@ -149,12 +159,23 @@ class VoiceSession:
             "config": {
                 "filler_delay_ms": self.rt.settings.ui_filler_delay_ms,
                 "sample_rate": self.rt.settings.tts_sample_rate,
+                "audio_frames": "binary" if self.binary_audio else "json",
             },
         })
         try:
             while True:
-                env = await self.ws.receive_json()
-                await self._dispatch(env)
+                msg = await self.ws.receive()
+                if msg["type"] == "websocket.disconnect":
+                    raise WebSocketDisconnect(msg.get("code", 1000))
+                if msg.get("bytes") is not None:
+                    await self._on_binary(msg["bytes"])
+                    continue
+                try:
+                    env = json.loads(msg.get("text") or "")
+                except ValueError:
+                    continue  # a malformed frame shouldn't end the session
+                if isinstance(env, dict):
+                    await self._dispatch(env)
         except WebSocketDisconnect:
             logger.info("ws disconnect session=%s", self.session_id)
         finally:
@@ -171,10 +192,14 @@ class VoiceSession:
                 return
             if type_ == "start":
                 self._audio.clear()
+                self._audio_bytes = 0
             elif type_ == "chunk":
                 data = payload.get("data")
                 if data:
-                    self._audio.append(base64.b64decode(data))
+                    try:
+                        self._add_audio(base64.b64decode(data))
+                    except ValueError:
+                        pass
             elif type_ == "end":
                 transcript = payload.get("transcript") or await self._asr()
                 if transcript.strip():
@@ -198,6 +223,21 @@ class VoiceSession:
                 await self._on_component_state(payload["component_state"])
             else:  # sync
                 self._update_state(payload)
+
+    async def _on_binary(self, frame: bytes) -> None:
+        """A binary frame from the widget is a mic chunk (WS5)."""
+        audio = unpack_audio(frame)
+        if audio is None:
+            return
+        if self.privacy.consent_required and self._consent_at is None:
+            await self._ask_consent()
+            return
+        self._add_audio(audio[1])
+
+    def _add_audio(self, pcm: bytes) -> None:
+        if pcm and self._audio_bytes + len(pcm) <= _MAX_UTTERANCE_BYTES:
+            self._audio.append(pcm)
+            self._audio_bytes += len(pcm)
 
     async def _ask_consent(self) -> None:
         """Mic audio arrived before the visitor allowed it: drop it and tell
@@ -386,11 +426,14 @@ class VoiceSession:
         pii = self.state.pii
         transcript = pii.mask(heard)
         personal = transcript != heard
+        # A mid-conversation follow-up ("how much is it?") only makes sense in
+        # this conversation: answer it fresh and don't cache it (WS5).
+        followup = depends_on_history(transcript, self.state.history)
 
         # Cache-first (Feature 2): if we've answered a near-identical question for
         # this persona before and have enough history, replay it verbatim
         # (components + byte-exact audio) instead of re-thinking.
-        if not personal and await self._maybe_replay(transcript):
+        if not personal and not followup and await self._maybe_replay(transcript):
             return
 
         think_task: asyncio.Task | None = None
@@ -473,7 +516,7 @@ class VoiceSession:
             # A patch targets this session's components, and a captured lead holds
             # one visitor's contact details, so neither turn may be replayed.
             personal = personal or contains_pii(think.answer_text)
-            if not think.patches and not think.leads and not personal:
+            if not think.patches and not think.leads and not personal and not followup:
                 self._spawn(self._record_turn(
                     question=transcript, answer_text=think.answer_text,
                     components=think.components, actions=think.actions,
@@ -555,46 +598,90 @@ class VoiceSession:
         # The FIRST chunk keeps the caller's sync_id so a gated UI component still
         # gates the speech and the full transcript/grounding surface together;
         # later chunks get fresh ungated ids and play in FIFO arrival order.
-        for idx, seg_text in enumerate(split_for_tts(text)):
-            seg_id = sync_id if idx == 0 else _sid("utt")
-            start_payload: dict = {}
-            if idx == 0:
-                start_payload["text"] = text
-                if grounding is not None:
-                    start_payload["grounding"] = grounding.to_dict()
-            await self.send(Channel.AUDIO, "start", start_payload, seg_id)
-            # Basic tier is text-only: emit start/end (so the message + grounding
-            # still surface) but skip TTS synthesis — no voice feedback.
-            if not basic:
-                await self._stream_tts(seg_text, seg_id)
-            await self.send(Channel.AUDIO, "end", {}, seg_id)
+        #
+        # Synthesis runs one segment AHEAD of the one being sent (WS5): while
+        # segment n streams out, n+1 is already synthesising, so a long answer
+        # has no silent gap between sentences.
+        segments = split_for_tts(text)
+        queues: list[asyncio.Queue] = []
+        tasks: list[asyncio.Task] = []
 
-    async def _stream_tts(self, seg_text: str, seg_id: str) -> None:
-        """Stream one TTS segment, serving byte-exact cached PCM when we've
-        synthesised this exact text + voice before, else synthesising and
-        persisting it for next time (Feature 2 audio cache)."""
+        def synth(i: int) -> None:
+            q: asyncio.Queue = asyncio.Queue()
+            queues.append(q)
+            tasks.append(asyncio.create_task(self._synthesize(segments[i], q)))
+
+        done = False
+        try:
+            if not basic:
+                synth(0)
+            for idx, seg_text in enumerate(segments):
+                if not basic and idx + 1 < len(segments):
+                    synth(idx + 1)
+                seg_id = sync_id if idx == 0 else _sid("utt")
+                start_payload: dict = {}
+                if idx == 0:
+                    start_payload["text"] = text
+                    if grounding is not None:
+                        start_payload["grounding"] = grounding.to_dict()
+                await self.send(Channel.AUDIO, "start", start_payload, seg_id)
+                # Basic tier is text-only: emit start/end (so the message +
+                # grounding still surface) but skip TTS synthesis.
+                if not basic:
+                    while (chunk := await queues[idx].get()) is not None:
+                        await self._send_audio(chunk, seg_id)
+                await self.send(Channel.AUDIO, "end", {}, seg_id)
+            done = True
+        finally:
+            for t in tasks:
+                if t.done():
+                    continue
+                if done:   # only the audio-cache write is left: let it finish
+                    self._bg_tasks.add(t)
+                    t.add_done_callback(self._bg_tasks.discard)
+                else:      # barge-in or error: stop synthesising
+                    t.cancel()
+
+    async def _synthesize(self, seg_text: str, q: asyncio.Queue) -> None:
+        """Produce one segment's PCM into ``q``, then None. Serves byte-exact
+        cached PCM when we've synthesised this exact text + voice before, else
+        streams live TTS and persists it for next time (Feature 2 audio cache).
+        A TTS failure ends the segment silently; the text is already shown."""
         use_cache = self.rt.settings.audio_cache_enabled
-        if use_cache:
-            cached = await self._audio_cache_get(seg_text)
-            if cached is not None:
-                await self._send_pcm(cached, seg_id)
-                return
         buf = bytearray()
-        async for chunk in self.rt.engines.tts.synthesize_stream(seg_text):
-            buf.extend(chunk)
-            await self.send(Channel.AUDIO, "chunk",
-                            {"data": base64.b64encode(chunk).decode("ascii")}, seg_id)
+        try:
+            if use_cache:
+                cached = await self._audio_cache_get(seg_text)
+                if cached is not None:
+                    for frame in self._frames(cached):
+                        q.put_nowait(frame)
+                    return
+            async for chunk in self.rt.engines.tts.synthesize_stream(seg_text):
+                if chunk:
+                    buf.extend(chunk)
+                    q.put_nowait(bytes(chunk))
+        except asyncio.CancelledError:
+            buf.clear()
+            raise
+        except Exception as exc:
+            buf.clear()
+            logger.warning("ws[%s]: TTS failed: %s", self.session_id[:8], exc)
+        finally:
+            q.put_nowait(None)
         if use_cache and buf:
             await self._audio_cache_put(seg_text, bytes(buf))
 
-    async def _send_pcm(self, pcm: bytes, seg_id: str) -> None:
+    def _frames(self, pcm: bytes) -> list[bytes]:
         """Re-chunk cached PCM into ~0.2s frames so playback ramps like live TTS."""
-        sr = self.rt.settings.tts_sample_rate
-        frame = max(1, int(sr * 0.2)) * 2  # 16-bit mono => 2 bytes/sample
-        for i in range(0, len(pcm), frame):
+        frame = max(1, int(self.rt.settings.tts_sample_rate * 0.2)) * 2  # 16-bit mono
+        return [pcm[i:i + frame] for i in range(0, len(pcm), frame)]
+
+    async def _send_audio(self, pcm: bytes, seg_id: str) -> None:
+        if self.binary_audio:
+            await self.ws.send_bytes(pack_audio(seg_id, pcm))
+        else:
             await self.send(Channel.AUDIO, "chunk",
-                            {"data": base64.b64encode(pcm[i:i + frame]).decode("ascii")},
-                            seg_id)
+                            {"data": base64.b64encode(pcm).decode("ascii")}, seg_id)
 
     # ---- conversation cache (Feature 2) ---------------------------------
     def _spawn(self, coro) -> None:
@@ -905,5 +992,6 @@ async def voice_ws(websocket: WebSocket) -> None:
     session = VoiceSession(
         websocket, runtime, site_key=resolved.site_key,
         intelligence=resolved.intelligence, tier_locked=resolved.tier_locked,
+        binary_audio=websocket.query_params.get("audio") == "binary",
     )
     await session.run()
