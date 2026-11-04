@@ -1,7 +1,6 @@
 """FastAPI application entrypoint."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -35,7 +34,7 @@ from app.routes import (
 )
 from app.runtime import build_runtime
 from app.transport import websocket as ws_transport
-from app.trust.retention import retention_sweep_loop
+from app.jobs import build_scheduler
 
 settings = get_settings()
 configure_logging(settings.log_level, settings.log_format)
@@ -50,12 +49,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     app.state.runtime = build_runtime()
     logger.info("A2UI orchestrator ready (mock_ai=%s)", settings.mock_ai)
-    # Delete visitor data past each site's retention window (WS8).
-    sweep = (asyncio.create_task(retention_sweep_loop(settings.retention_sweep_minutes * 60))
-             if settings.retention_sweep_minutes > 0 else None)
+    # Periodic jobs (M2-0): retention sweep (WS8), email outbox, …
+    scheduler = build_scheduler(settings)
+    scheduler.start()
     yield
-    if sweep:
-        sweep.cancel()
+    await scheduler.stop()
     await dispose_engine()
 
 

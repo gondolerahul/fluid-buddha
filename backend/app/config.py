@@ -116,6 +116,20 @@ class Settings(BaseSettings):
     # How often visitor data past each site's retention window is deleted.
     retention_sweep_minutes: int = 60         # 0 = off
 
+    # ---- Email (M2-0): plain SMTP, any provider ----
+    # Without SMTP_HOST, dev environments log each email instead of sending it;
+    # other environments refuse to queue email (so nothing is silently lost).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_security: str = "starttls"           # starttls | ssl | none
+    smtp_from: str = "FluidBuddha <no-reply@localhost>"
+    smtp_timeout_seconds: float = 20.0
+    email_outbox_interval_seconds: int = 15   # how often queued email is sent; 0 = off
+    # Base URL of the console, for links in emails (invitations, digests).
+    console_url: str = "http://localhost:3001"
+
     # ---- Self-serve onboarding (WS9) ----
     crawl_max_pages: int = 50                 # hard cap per crawl
     crawl_max_depth: int = 3

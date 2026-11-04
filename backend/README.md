@@ -222,6 +222,15 @@ enabled on the Razorpay account and a `BILLING_CATALOG` override.
     `fb_crawl_jobs_total{status}`, `fb_cost_alerts_total{level}`.
   Time to first audio is also stored per voice turn (`usage_events.ttfa_ms`)
   and shown per site on the console's Analytics tab (median and p95).
+- **Email** (`app/notify/email.py`): plain SMTP (`SMTP_*`). Everything is queued
+  in `email_outbox` and sent by a background job: retried with backoff
+  (1 → 32 minutes, 6 attempts), claimed with `SKIP LOCKED` so replicas never
+  double-send, deduplicated by an idempotency key, and deleted 30 days after
+  sending. Without `SMTP_HOST`, dev logs each email; production refuses to queue.
+  Set up SPF and DKIM for the sending domain at your provider.
+- **Background jobs** (`app/jobs/`): retention sweep, email outbox and cleanup
+  run on one scheduler; each run holds a Postgres advisory lock, so only one
+  replica runs a job at a time (`fb_job_runs_total{job,outcome}`).
 - **Cost alerts** (`app/analytics/alerts.py`): each site can set a daily AI-cost
   alert (Console → Settings → Lead integrations, USD); with a daily spend cap
   (`PUBLIC_DAILY_SPEND_CAP_USD`) every site is also alerted at 80% and 100% of

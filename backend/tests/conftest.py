@@ -32,6 +32,10 @@ _HERMETIC = {
     "REDIS_URL": "", "LOG_FORMAT": "text", "METRICS_ENABLED": "true", "METRICS_TOKEN": "",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "", "SENTRY_DSN": "",
     "INGEST_ALLOW_PRIVATE_URLS": "false",
+    # Email: no real SMTP, and no background sender racing the tests (they call
+    # deliver_due themselves).
+    "SMTP_HOST": "", "SMTP_USERNAME": "", "SMTP_PASSWORD": "",
+    "EMAIL_OUTBOX_INTERVAL_SECONDS": "0",
     "PUBLIC_RATE_LIMIT_PER_MIN": "120", "PUBLIC_DAILY_SPEND_CAP_USD": "0",
 }
 os.environ.update(_HERMETIC)
