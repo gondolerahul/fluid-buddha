@@ -262,6 +262,16 @@ test send). It needs SMTP outside a dev environment; each email carries a
 one-click `List-Unsubscribe` link served by `/digest/unsubscribe`, so set
 `PUBLIC_API_URL` to the backend's public address.
 
+## Recap pages
+
+A visitor who types "send me this" (or "email me a recap at …") gets a link to
+`/r/{token}`: a recap of their conversation with the components redrawn,
+sources and the site's call to action (agent profile). The page loads
+`fluid-buddha-recap.global.js` from `WIDGET_SDK_BASE` (where the widget's
+`dist/` is served) and is only allowed scripts from that origin. Links expire
+per site (Privacy settings, default 90 days) and go with their conversation.
+Views and forwards show on the lead and in Leads → Shared recaps.
+
 ## Live takeover and voice handoff
 
 Console → Live lists who is talking to the agent right now on the account's
