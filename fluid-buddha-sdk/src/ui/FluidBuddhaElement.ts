@@ -150,6 +150,7 @@ export class FluidBuddhaElement extends HTMLElement {
 
   /** Open the agent showing `message` as its first words (no audio). */
   private openWith(message: string): void {
+    this.session?.skipWelcome();
     if (this.config.design === 'level2') {
       this.level2?.show();
       this.level2?.agentMessage(message);

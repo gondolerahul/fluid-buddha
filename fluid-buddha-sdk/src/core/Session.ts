@@ -511,6 +511,12 @@ export class Session {
     this.reportState({ component_state: { sync_id: syncId, ...patch } });
   }
 
+  /** The agent was opened by a proactive trigger whose message is its opener
+   *  (M2-3): don't also play the welcome or start the tour. */
+  skipWelcome(): void {
+    this.greeted = true;
+  }
+
   /** Supply the current-page context and opt into a spoken welcome on open. */
   enableWelcome(provider: () => Record<string, unknown>): void {
     this.pageProvider = provider;
