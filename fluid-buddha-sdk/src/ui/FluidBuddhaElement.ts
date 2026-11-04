@@ -11,6 +11,7 @@ import { Grounding, PageSpec } from '../protocol';
 import { FluidBuddhaConfig, FluidBuddhaOptions, optionsFromAttributes, resolveConfig } from '../core/config';
 import { HostBridge } from '../core/HostBridge';
 import { Arm, Experiment } from '../core/Experiment';
+import { TriggerRule, Triggers } from '../core/Triggers';
 import { Session } from '../core/Session';
 import { applyTokens, fetchDesignSystem } from '../core/designSystem';
 import { Canvas } from './components/canvas';
@@ -22,6 +23,7 @@ import { AuraCanvas, AuraState } from './aura/AuraCanvas';
 import { stylesFor } from './styles';
 import { callBar, callPrompt } from './call';
 import { consentPrompt } from './consent';
+import { showNudge } from './nudge';
 
 const ICONS = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
@@ -68,6 +70,10 @@ export class FluidBuddhaElement extends HTMLElement {
   private textarea!: HTMLTextAreaElement;
   private built = false;
   private experiment?: Experiment;
+  /** Proactive triggers (M2-3), for keyed sites. */
+  private triggers?: Triggers;
+  /** The visitor has started talking this page view (no more nudges). */
+  private talked = false;
   private open = false;
 
   // ---- state-of-light machine ----
@@ -123,6 +129,37 @@ export class FluidBuddhaElement extends HTMLElement {
     if (this.config.design === 'level1' && this.config.autoStart) {
       requestAnimationFrame(() => this.openPanel());
     }
+    this.triggers = new Triggers(this.config, this.experiment?.visitorId ?? null,
+      (rule) => this.onTrigger(rule), () => this.open || this.talked);
+    void this.triggers.start();
+  }
+
+  // ---- proactive triggers (M2-3) ----
+  private onTrigger(rule: TriggerRule): void {
+    const root = this.shadowRoot;
+    if (!root || !this.triggers) return;
+    if (rule.action === 'open') {
+      this.triggers.clickedRule(rule);
+      this.openWith(rule.message);
+      return;
+    }
+    showNudge(root, rule.message,
+      () => { this.triggers?.clickedRule(rule); this.openWith(rule.message); },
+      () => this.triggers?.dismissed(rule));
+  }
+
+  /** Open the agent showing `message` as its first words (no audio). */
+  private openWith(message: string): void {
+    if (this.config.design === 'level2') {
+      this.level2?.show();
+      this.level2?.agentMessage(message);
+    } else if (this.config.design === 'level3') {
+      this.level3?.summon();
+      this.level3?.agentMessage(message);
+    } else {
+      this.openPanel();
+      this.addMessage('pragya', message);
+    }
   }
 
   disconnectedCallback(): void {
@@ -133,6 +170,7 @@ export class FluidBuddhaElement extends HTMLElement {
     this.level3?.dispose();
     this.session?.destroy();
     this.experiment?.stop();
+    this.triggers?.stop();
   }
 
   // ---- build the shadow UI ----
@@ -201,7 +239,7 @@ export class FluidBuddhaElement extends HTMLElement {
     const shell = new Level2Shell(root, this.config, {
       primeAudio: () => this.session.primeAudio(),
       connect: () => this.session.connect(),
-      startVoice: () => void this.session.startVoice(),
+      startVoice: () => { this.noteTalk(); void this.session.startVoice(); },
       stopVoice: () => this.session.stopVoice(),
       submitText: (text) => this.submitText(text),
       notifyRendered: (id) => this.session.notifyRendered(id),
@@ -235,7 +273,7 @@ export class FluidBuddhaElement extends HTMLElement {
     const shell = new Level3Shell(root, this.config, {
       primeAudio: () => this.session.primeAudio(),
       connect: () => this.session.connect(),
-      startVoice: () => void this.session.startVoice(),
+      startVoice: () => { this.noteTalk(); void this.session.startVoice(); },
       stopVoice: () => this.session.stopVoice(),
       submitText: (text) => this.submitText(text),
       notifyRendered: (id) => this.session.notifyRendered(id),
@@ -486,10 +524,19 @@ export class FluidBuddhaElement extends HTMLElement {
 
   private submitText(text: string): void {
     if (!text.trim()) return;
+    this.noteTalk();
     this.session.sendText(text.trim());
   }
 
+  /** The visitor started talking: credit a trigger they clicked, stop nudging. */
+  private noteTalk(): void {
+    this.talked = true;
+    this.shadowRoot?.querySelector('.fb-nudge')?.remove();
+    this.triggers?.engaged();
+  }
+
   private toggleVoice(): void {
+    if (!this.session.active) this.noteTalk();
     if (this.session.active) {
       this.session.stopVoice();
       this.micBtn.classList.remove('live');

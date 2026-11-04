@@ -847,6 +847,21 @@ export const COMMON_STYLES = `
 .fb-consent-actions button:focus-visible, .fb-consent-card a:focus-visible {
   outline: 2px solid var(--fb-gold-bright); outline-offset: 2px;
 }
+/* ---- Proactive nudge (M2-3): a message bubble by the launcher ---- */
+.fb-nudge {
+  position: fixed; right: 24px; bottom: 96px; z-index: calc(var(--fb-z-base) + 5);
+  display: flex; align-items: flex-start; gap: 4px; max-width: min(300px, calc(100vw - 48px));
+  padding: 4px; border-radius: 14px; background: var(--fb-surface); color: var(--fb-fg);
+  border: 1px solid var(--fb-border); box-shadow: 0 14px 34px rgba(0,0,0,0.4);
+  animation: fb-nudge-in .35s ease-out;
+}
+:host([data-position="bottom-left"]) .fb-nudge { right: auto; left: 24px; }
+.fb-nudge button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.fb-nudge-msg { padding: 8px 6px 8px 10px; text-align: left; font-size: 0.88rem; line-height: 1.45; }
+.fb-nudge-x { padding: 4px 8px; font-size: 1.1rem; line-height: 1; color: var(--fb-muted); }
+.fb-nudge button:focus-visible { outline: 2px solid var(--fb-gold-bright); outline-offset: 2px; border-radius: 8px; }
+@keyframes fb-nudge-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .fb-nudge { animation: none; } }
 /* ---- A voice call with a person (M2-2) ---- */
 .fb-callbar {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);

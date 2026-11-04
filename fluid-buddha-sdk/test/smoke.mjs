@@ -471,5 +471,46 @@ offline.remove();
   ok((await answer) === false && !root.querySelector('.fb-consent'), 'declining closes the prompt');
 }
 
+// ---- Proactive triggers (M2-3) ----
+{
+  const { pageMatches } = mod;
+  ok(pageMatches('/pricing', ['/pricing']) && pageMatches('/pricing/teams', ['/pricing*'])
+    && pageMatches('/anything', []) && !pageMatches('/blog', ['/pricing*']), 'trigger page globs match as expected');
+
+  // A fresh visit: talking to the agent earlier in this file muted triggers for the session.
+  window.sessionStorage.removeItem('fluidbuddha:trg:muted');
+  const trg = [];
+  const rules = [{ id: 'r1', kind: 'time_on_page', seconds: 0.05, pages: [], message: 'Need a hand with pricing?',
+    action: 'nudge', max_per_day: 1, priority: 50 }];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    trg.push({ url: u, body: init && init.body ? JSON.parse(init.body) : null });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => ({ experiment_id: null, arm: null, goal_path: null }) };
+    if (u.includes('/widget/triggers?')) return { ok: true, json: async () => ({ rules }) };
+    return { ok: true, json: async () => ({ counted: true }) };
+  };
+  const sent = (event) => trg.some((c) => c.url.endsWith('/widget/triggers/event') && c.body?.event === event && c.body.rule_id === 'r1');
+  const w = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_trigger_site', site: 'x' });
+  await settle();
+  await new Promise((r) => setTimeout(r, 150));
+  const nudge = w.shadowRoot.querySelector('.fb-nudge');
+  ok(nudge && nudge.textContent.includes('Need a hand with pricing?'), 'a time-on-page trigger shows its nudge');
+  ok(sent('shown'), 'showing it is reported');
+  nudge.querySelector('.fb-nudge-msg').click();
+  ok(!w.shadowRoot.querySelector('.fb-nudge') && !w.shadowRoot.querySelector('.panel').classList.contains('hidden'),
+    'clicking the nudge opens the agent');
+  ok(w.shadowRoot.textContent.includes('Need a hand with pricing?') && sent('clicked'), 'the agent opens with the message, and the click is reported');
+  w.ask('Which plan fits a team of 20?');
+  ok(sent('engaged'), 'asking something after the nudge counts as engaged');
+  w.remove();
+
+  window.sessionStorage.removeItem('fluidbuddha:trg:muted');
+  const w2 = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_trigger_site', site: 'x' });
+  await settle();
+  await new Promise((r) => setTimeout(r, 150));
+  ok(!w2.shadowRoot.querySelector('.fb-nudge'), 'a rule capped at once a day does not show again today');
+  w2.remove();
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
