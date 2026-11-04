@@ -247,6 +247,21 @@ daily never inflates false winners. "Make default" (`.../promote`) writes the
 winner into the agent profile, the website's design level, or the trigger
 switches, and ends the test. One experiment (test or holdout) runs per site.
 
+## Insights v2 and the weekly digest
+
+A background job (`INSIGHTS_CLASSIFY_SECONDS`, default 20) labels each visitor
+question: objections by type, competitors (the site's list in the agent
+profile, plus what the model spots), feature requests and buying signals —
+keyword rules with `MOCK_AI=true`, the fast model otherwise. Insights shows
+them with quotes, and a feature request can be sent to Slack, the signed
+webhook (`feature_request`) or an email address.
+
+The weekly digest (`DIGEST_CHECK_SECONDS`, default 600) goes out on Monday at
+9:00 in each account's time zone (Team page: recipients, time zone, preview,
+test send). It needs SMTP outside a dev environment; each email carries a
+one-click `List-Unsubscribe` link served by `/digest/unsubscribe`, so set
+`PUBLIC_API_URL` to the backend's public address.
+
 ## Live takeover and voice handoff
 
 Console → Live lists who is talking to the agent right now on the account's
