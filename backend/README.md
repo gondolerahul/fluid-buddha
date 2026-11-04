@@ -233,6 +233,20 @@ page view, a daily cap per visitor and rule, silence for the visit after a
 dismiss or once the visitor talks) and reports shown / clicked / dismissed /
 engaged to `POST /widget/triggers/event`; the tab shows each rule's numbers.
 
+## A/B tests
+
+Website → A/B tests: try 2-4 versions of the greeting, the proactive
+triggers, the guided tour, the starting persona or the design level (with an
+optional holdout). Visitors are assigned by `POST /experiment/enroll`, which
+returns their version's `overrides` and the site's `defaults`; the widget
+applies them and sends `exp: {id, arm}` with the conversation, so the server
+speaks the version's greeting as written and starts in its persona. Results
+(`GET /tenant/websites/{id}/tests/{tid}`) compare each version with the
+control using the always-valid interval at a split error budget, so checking
+daily never inflates false winners. "Make default" (`.../promote`) writes the
+winner into the agent profile, the website's design level, or the trigger
+switches, and ends the test. One experiment (test or holdout) runs per site.
+
 ## Live takeover and voice handoff
 
 Console → Live lists who is talking to the agent right now on the account's
