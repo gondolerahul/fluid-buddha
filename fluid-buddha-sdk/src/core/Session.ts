@@ -438,6 +438,7 @@ export class Session {
           site: this.config.site,
           intelligence: this.config.intelligence,
           design: this.config.design,
+          exp: this.config.exp,
           page: ctx.page ?? (typeof location !== 'undefined' ? location.pathname : undefined),
           sections: ctx.sections,
         }),
@@ -563,7 +564,9 @@ export class Session {
     if (this._active && hasConsent(this.consentKey)) this.sendConsent();
     if (this.welcomeEnabled && !this.greeted) {
       this.greeted = true;
-      this.client?.sendHello(this.withLevels(this.pageProvider?.() ?? {}));
+      // The test variant goes with the hello: the server speaks its greeting
+      // and starts in its persona (M2-4).
+      this.client?.sendHello({ ...this.withLevels(this.pageProvider?.() ?? {}), exp: this.config.exp });
     }
   }
 

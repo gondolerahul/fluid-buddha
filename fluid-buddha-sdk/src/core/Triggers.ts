@@ -162,7 +162,8 @@ export class Triggers {
     if (this.muted()) return;
     const path = typeof location !== 'undefined' ? location.pathname : '/';
     const rules = this.rules
-      .filter((r) => pageMatches(path, r.pages) && this.shownToday(r) < r.max_per_day)
+      .filter((r) => pageMatches(path, r.pages) && this.shownToday(r) < r.max_per_day
+        && (!this.config.triggerIds || this.config.triggerIds.includes(r.id)))
       .sort((a, b) => b.priority - a.priority);
     for (const r of rules) this.watch(r);
   }

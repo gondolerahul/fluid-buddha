@@ -512,5 +512,57 @@ offline.remove();
   w2.remove();
 }
 
+// ---- Variant tests (M2-4) ----
+{
+  window.sessionStorage.removeItem('fluidbuddha:trg:muted');
+  const calls = [];
+  let reply = null;
+  const rules = [{ id: 'r1', kind: 'time_on_page', seconds: 0.05, pages: [], message: 'Psst — questions?',
+    action: 'nudge', max_per_day: 5, priority: 50 }];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    calls.push({ url: u, body: init && init.body ? JSON.parse(init.body) : null });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => reply };
+    if (u.includes('/widget/triggers?')) return { ok: true, json: async () => ({ rules }) };
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'ok', session_id: 's1', actions: [], components: [] }) };
+    return { ok: true, json: async () => ({ counted: true }) };
+  };
+  const opts = (key, extra = {}) => ({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key, site: 'x', ...extra });
+
+  reply = { experiment_id: 't-1', arm: 'b', goal_path: null,
+    overrides: { greeting: 'Hello from B.', triggers: [] }, defaults: { greeting: 'Site hello.', design: 'level1' } };
+  const v = init(opts('fbk_variant_site'));
+  await settle();
+  await new Promise((r) => setTimeout(r, 150));
+  ok(v.shadowRoot.textContent.includes('Hello from B.') && !v.shadowRoot.textContent.includes('Site hello.'),
+    "the variant's greeting replaces the site's");
+  ok(!v.shadowRoot.querySelector('.fb-nudge'), "a trigger left out of the visitor's variant does not fire");
+  ok(JSON.parse(window.localStorage.getItem('fluidbuddha:exp:fbk_variant_site')).overrides.greeting === 'Hello from B.',
+    'the variant is cached with its arm');
+  v.ask('What does it cost?');
+  await settle();
+  const chat = calls.find((c) => c.url.endsWith('/chat'));
+  ok(chat && chat.body.exp && chat.body.exp.id === 't-1' && chat.body.exp.arm === 'b',
+    'the variant goes with the conversation (the server applies persona/greeting)');
+  v.remove();
+
+  reply = { experiment_id: 't-2', arm: 'c', goal_path: null, overrides: { design: 'level2', tour: false }, defaults: {} };
+  const d = init(opts('fbk_design_variant'));
+  await settle();
+  ok(d.getAttribute('data-design') === 'level2' && !!d.shadowRoot.querySelector('.l2'), 'a design variant switches the level');
+  d.remove();
+
+  reply = { experiment_id: null, arm: null, goal_path: null, overrides: {}, defaults: { greeting: 'Site hello.', design: 'level3' } };
+  const s = init(opts('fbk_defaults_site'));
+  await settle();
+  ok(s.getAttribute('data-design') === 'level3', "without a test the site's design level applies");
+  s.remove();
+  const pinned = init(opts('fbk_defaults_site', { design: 'level1' }));
+  await settle();
+  ok(pinned.getAttribute('data-design') === 'level1' && pinned.shadowRoot.textContent.includes('Site hello.'),
+    "an embed that sets its design keeps it, and shows the site's greeting");
+  pinned.remove();
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

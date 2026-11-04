@@ -8,7 +8,9 @@
 // behaves, mirrored on the avatar. Voice is the hero; typing is the quiet path.
 
 import { Grounding, PageSpec } from '../protocol';
-import { FluidBuddhaConfig, FluidBuddhaOptions, optionsFromAttributes, resolveConfig } from '../core/config';
+import {
+  DESIGN_LEVELS, FluidBuddhaConfig, FluidBuddhaOptions, optionsFromAttributes, resolveConfig,
+} from '../core/config';
 import { HostBridge } from '../core/HostBridge';
 import { Arm, Experiment } from '../core/Experiment';
 import { TriggerRule, Triggers } from '../core/Triggers';
@@ -74,6 +76,11 @@ export class FluidBuddhaElement extends HTMLElement {
   private triggers?: Triggers;
   /** The visitor has started talking this page view (no more nudges). */
   private talked = false;
+  /** The embed chose its design level (data-design / options). */
+  private designSet = false;
+  /** The greeting is the site's fixed one, which the server also speaks on
+   *  open: show it once (level 1 already shows it as the first message). */
+  private greetEcho = false;
   private open = false;
 
   // ---- state-of-light machine ----
@@ -91,7 +98,9 @@ export class FluidBuddhaElement extends HTMLElement {
 
   connectedCallback(): void {
     if (this.built) return;
-    this.config = resolveConfig({ ...optionsFromAttributes(this), ...this._options });
+    const opts = { ...optionsFromAttributes(this), ...this._options };
+    this.designSet = !!opts.design;
+    this.config = resolveConfig(opts);
     this.style.setProperty('--fb-accent', this.config.accent);
     this.setAttribute('data-position', this.config.position);
     this.setAttribute('data-design', this.config.design);
@@ -121,7 +130,28 @@ export class FluidBuddhaElement extends HTMLElement {
       this.setAttribute('data-holdout', '');
       return;
     }
+    if (this.experiment) this.adopt(this.experiment, arm);
     this.show();
+  }
+
+  /** Apply the visitor's test variant, else the site's defaults (M2-4). */
+  private adopt(exp: Experiment, arm: Arm | null): void {
+    const c = this.config;
+    const o = exp.overrides;
+    const d = exp.defaults;
+    const design = o.design || (!this.designSet && d.design);
+    if (design && DESIGN_LEVELS.includes(design)) {
+      c.design = design;
+      this.setAttribute('data-design', design);
+    }
+    if (typeof o.tour === 'boolean') c.tour = o.tour;
+    const greeting = o.greeting || d.greeting;
+    if (greeting) {
+      c.greeting = greeting;
+      this.greetEcho = true;
+    }
+    if (o.triggers) c.triggerIds = o.triggers;
+    if (arm && arm !== 'agent' && exp.id) c.exp = { id: exp.id, arm };
   }
 
   private show(): void {
@@ -404,7 +434,12 @@ export class FluidBuddhaElement extends HTMLElement {
           this.showThinking();
         }
       },
-      onAgentMessage: (text, grounding) => { this.hideThinking(); this.addMessage('pragya', text, grounding); this.markSpeaking(); },
+      onAgentMessage: (text, grounding) => {
+        this.hideThinking();
+        if (this.greetEcho && text === this.config.greeting) this.greetEcho = false;
+        else this.addMessage('pragya', text, grounding);
+        this.markSpeaking();
+      },
       onComponent: (c) => { this.hideThinking(); this.canvas.add(c); this.markSpeaking(); this.scrollDown(); },
       onPatch: (sid, patch) => this.canvas.applyPatch(sid, patch),
       onSystem: (msg) => { this.hideThinking(); this.addMessage('system', msg); },

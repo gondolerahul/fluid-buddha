@@ -82,6 +82,11 @@ export interface FluidBuddhaConfig {
   /** Default page navigation when no `onNavigate` hook is set. Default `auto`. */
   navigation: NavigationMode;
   hooks: FluidBuddhaHooks;
+  /** Set by the widget, not an option: the visitor's test variant (M2-4),
+   *  sent with the conversation so the server applies it. */
+  exp?: { id: string; arm: string };
+  /** Set by the widget: the only trigger rules that may fire (a trigger test). */
+  triggerIds?: string[];
 }
 
 export type FluidBuddhaOptions = Partial<Omit<FluidBuddhaConfig, 'hooks'>> & {
