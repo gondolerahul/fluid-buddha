@@ -1,22 +1,34 @@
 "use client";
 /**
- * Client-side auth context. Holds the current tenant, persists the JWT in
- * localStorage, and exposes login/register/logout. ``useRequireAuth`` redirects
- * unauthenticated visitors to /login.
+ * Client-side auth context. Holds the current account (with your role in it
+ * and who you are), persists the JWT in localStorage, and exposes
+ * login/register/logout, `adopt` (a token from SSO or an accepted
+ * invitation) and `switchAccount`. ``useRequireAuth`` redirects
+ * unauthenticated visitors to /login. ``can`` mirrors the server's role rules
+ * for showing or hiding controls; the server enforces them regardless.
  */
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Api, Tenant, clearToken, getToken, setToken } from "./api";
+import { Api, AuthResponse, ROLES, Role, Tenant, clearToken, getToken, setToken } from "./api";
 
 type AuthState = {
   tenant: Tenant | null;
+  role: Role | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
+  adopt: (token: string) => Promise<void>;
+  accept: (res: AuthResponse) => void;
+  switchAccount: (tenantId: string) => Promise<void>;
   logout: () => void;
+  can: (needed: Role) => boolean;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
+
+function fromResponse(res: AuthResponse): Tenant {
+  return { ...res.tenant, role: res.role, user: res.user };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
@@ -43,23 +55,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const res = await Api.login(email, password);
+  const accept = useCallback((res: AuthResponse) => {
     setToken(res.access_token);
-    setTenant(res.tenant);
-  };
-  const register = async (email: string, password: string, name?: string) => {
-    const res = await Api.register(email, password, name);
-    setToken(res.access_token);
-    setTenant(res.tenant);
-  };
+    setTenant(fromResponse(res));
+  }, []);
+  const login = async (email: string, password: string) => accept(await Api.login(email, password));
+  const register = async (email: string, password: string, name?: string) =>
+    accept(await Api.register(email, password, name));
+  const adopt = useCallback(async (token: string) => {
+    setToken(token);
+    try {
+      setTenant(await Api.me());
+    } catch (e) {
+      clearToken();
+      throw e;
+    }
+  }, []);
+  const switchAccount = async (tenantId: string) => accept(await Api.switchAccount(tenantId));
   const logout = () => {
     clearToken();
     setTenant(null);
   };
+  const role = tenant?.role ?? null;
+  const can = (needed: Role) => role != null && ROLES.indexOf(role) >= ROLES.indexOf(needed);
 
   return (
-    <AuthContext.Provider value={{ tenant, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ tenant, role, loading, login, register, adopt, accept,
+      switchAccount, logout, can }}>
       {children}
     </AuthContext.Provider>
   );

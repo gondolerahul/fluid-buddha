@@ -1,10 +1,32 @@
 "use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { Account, Api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
+/** Shown only to people in more than one account. */
+function AccountSwitcher() {
+  const { tenant, switchAccount } = useAuth();
+  const router = useRouter();
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (tenant) Api.accounts().then((a) => { if (live) setAccounts(a); }).catch(() => {});
+    return () => { live = false; };
+  }, [tenant]);
+  if (!tenant || accounts.length < 2) return null;
+  return (
+    <select className="select" style={{ width: "auto", padding: "4px 8px", fontSize: "0.84rem" }}
+      aria-label="Switch account" value={tenant.id}
+      onChange={async (e) => { await switchAccount(e.target.value); router.push("/dashboard"); }}>
+      {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.role})</option>)}
+    </select>
+  );
+}
+
 export function AppHeader() {
-  const { tenant, logout } = useAuth();
+  const { tenant, logout, can } = useAuth();
   return (
     <header
       style={{
@@ -26,8 +48,14 @@ export function AppHeader() {
           <span className="badge" style={{ marginLeft: 4 }}>Console</span>
         </Link>
         <div className="row" style={{ gap: 14 }}>
-          {tenant && <Link href="/billing" className="btn btn-ghost btn-sm">Billing</Link>}
-          {tenant && <span className="muted" style={{ fontSize: "0.86rem" }}>{tenant.email}</span>}
+          <AccountSwitcher />
+          {tenant && <Link href="/team" className="btn btn-ghost btn-sm">Team</Link>}
+          {tenant && can("admin") && <Link href="/audit" className="btn btn-ghost btn-sm">Audit log</Link>}
+          {tenant && can("admin") && <Link href="/billing" className="btn btn-ghost btn-sm">Billing</Link>}
+          {tenant && <span className="muted" style={{ fontSize: "0.86rem" }}
+            title={tenant.role ? `Your role: ${tenant.role}` : undefined}>
+            {tenant.user?.email ?? tenant.email}{tenant.role && tenant.role !== "owner" ? ` · ${tenant.role}` : ""}
+          </span>}
           <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
         </div>
       </div>

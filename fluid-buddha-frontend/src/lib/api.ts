@@ -93,8 +93,26 @@ function errorMessage(data: unknown, fallback: string): string {
 }
 
 // ---- domain types ----------------------------------------------------------
-export type Tenant = { id: string; email: string; name: string | null };
-export type AuthResponse = { access_token: string; token_type: string; tenant: Tenant };
+export type Role = "owner" | "admin" | "editor" | "viewer";
+export const ROLES: Role[] = ["viewer", "editor", "admin", "owner"];
+export type User = { id: string; email: string; name: string | null };
+/** The account you act in, with your role in it and who you are (M2-1). */
+export type Tenant = { id: string; email: string; name: string | null; role?: Role; user?: User };
+export type AuthResponse = { access_token: string; token_type: string; tenant: Tenant; role: Role; user: User };
+export type Account = { id: string; name: string; role: Role };
+export type Member = { id: string; email: string; name: string | null; role: Role; joined_at: string;
+  last_login_at: string | null; has_password: boolean };
+export type Invitation = { id: string; email: string; role: Role; invited_by: string | null;
+  created_at: string; expires_at: string };
+export type Team = { members: Member[]; invitations: Invitation[]; me: { id: string; role: Role } };
+export type InvitationInfo = { account: string; email: string; role: Role; expires_at: string; has_user: boolean };
+export type AuditEvent = { id: number; actor_email: string | null; action: string; target_type: string | null;
+  target_id: string | null; details: Record<string, unknown>; ip: string | null; user_agent: string | null;
+  request_id: string | null; at: string };
+export type SSODomain = { domain: string; verified: boolean; txt_name: string; txt_value: string };
+export type SSOConfig = { configured: boolean; issuer?: string; client_id?: string; has_secret?: boolean;
+  default_role?: Exclude<Role, "owner">; require_sso?: boolean; enabled?: boolean; redirect_uri: string;
+  domains: SSODomain[] };
 
 export type Website = {
   id: string;
@@ -431,6 +449,50 @@ export const Api = {
   login: (email: string, password: string) =>
     api<AuthResponse>("/auth/login", { method: "POST", auth: false, body: { email, password } }),
   me: () => api<Tenant>("/auth/me"),
+  accounts: () => api<Account[]>("/auth/accounts"),
+  switchAccount: (tenant_id: string) =>
+    api<AuthResponse>("/auth/switch", { method: "POST", body: { tenant_id } }),
+  invitation: (token: string) =>
+    api<InvitationInfo>(`/auth/invitations/${encodeURIComponent(token)}`, { auth: false }),
+  acceptInvitation: (token: string, body: { name?: string; password?: string }, signedIn: boolean) =>
+    api<AuthResponse>(`/auth/invitations/${encodeURIComponent(token)}/accept`,
+      { method: "POST", body, auth: signedIn }),
+  ssoStart: (provider: "google" | "oidc", email?: string) =>
+    api<{ url: string }>("/auth/sso/start", { method: "POST", auth: false, body: { provider, email } }),
+
+  team: () => api<Team>("/tenant/team"),
+  invite: (email: string, role: Role) =>
+    api<{ id: string; link: string; emailed: boolean }>("/tenant/team/invitations",
+      { method: "POST", body: { email, role } }),
+  revokeInvitation: (id: string) => api<void>(`/tenant/team/invitations/${id}`, { method: "DELETE" }),
+  changeRole: (userId: string, role: Role) =>
+    api<{ role: Role }>(`/tenant/team/members/${userId}`, { method: "PATCH", body: { role } }),
+  removeMember: (userId: string) => api<void>(`/tenant/team/members/${userId}`, { method: "DELETE" }),
+  audit: (q: { before?: number; action?: string; actor?: string }) => {
+    const p = new URLSearchParams();
+    if (q.before) p.set("before", String(q.before));
+    if (q.action) p.set("action", q.action);
+    if (q.actor) p.set("actor", q.actor);
+    return api<AuditEvent[]>(`/tenant/audit?${p}`);
+  },
+  auditCsv: async (): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/tenant/audit.csv`, {
+      headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+    });
+    if (!res.ok) throw new ApiError(res.status, "Could not export the audit log");
+    return res.blob();
+  },
+  ssoConfig: () => api<SSOConfig>("/tenant/sso"),
+  saveSSO: (body: { issuer: string; client_id: string; client_secret?: string;
+    default_role: string; require_sso: boolean; enabled: boolean }) =>
+    api<SSOConfig>("/tenant/sso", { method: "PUT", body }),
+  deleteSSO: () => api<void>("/tenant/sso", { method: "DELETE" }),
+  addSSODomain: (domain: string) =>
+    api<SSODomain>("/tenant/sso/domains", { method: "POST", body: { domain } }),
+  verifySSODomain: (domain: string) =>
+    api<{ verified: boolean }>(`/tenant/sso/domains/${encodeURIComponent(domain)}/verify`, { method: "POST" }),
+  deleteSSODomain: (domain: string) =>
+    api<void>(`/tenant/sso/domains/${encodeURIComponent(domain)}`, { method: "DELETE" }),
 
   listWebsites: () => api<Website[]>("/tenant/websites"),
   createWebsite: (body: Partial<Website>) =>
