@@ -222,6 +222,23 @@ Client secrets are encrypted with `SECRETS_KEY`.
 The audit log (`app/audit.py`) records every successful change through the
 console API plus sign-ins; Console → Audit log, CSV export, kept a year.
 
+## Live takeover and voice handoff
+
+Console → Live lists who is talking to the agent right now on the account's
+sites and streams each conversation. An Editor can **take over** (the agent
+pauses; the visitor is told who joined), reply, and **hand back** (the agent
+gets what was said). Voice visitors can be **called** in the browser (WebRTC;
+the visitor accepts; the agent stops listening). Events travel over an
+in-process bus, or Redis pub/sub across replicas with `REDIS_URL`; operators
+receive them on `WS /tenant/live/events`; text-mode widgets long-poll
+`/chat/live`.
+
+Calls need STUN and, behind strict networks, our TURN relay: run
+`TURN_SECRET=… docker compose --profile voice up -d coturn` on a host with a
+public IP (ports 3478 UDP/TCP and 49160–49200 UDP), then set `TURN_URLS` and
+the same `TURN_SECRET` on the backend. Credentials are minted per call and
+expire after `TURN_TTL_SECONDS` (coturn `use-auth-secret`).
+
 ## Operations
 
 - **Request ids.** Every response carries `X-Request-ID` (the caller's, if it
