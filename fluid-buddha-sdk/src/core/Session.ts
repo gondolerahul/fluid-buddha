@@ -11,6 +11,7 @@ import { CONSENT_VERSION, hasConsent, rememberConsent } from '../ui/consent';
 import { ConnectionStatus, VoiceClient } from '../transport/VoiceClient';
 import { FluidBuddhaConfig } from './config';
 import { HostBridge } from './HostBridge';
+import { LiveLink } from './Live';
 import { TourController, TourStop } from './Tour';
 
 export interface SessionCallbacks {
@@ -30,6 +31,14 @@ export interface SessionCallbacks {
   /** Ask the visitor to allow the microphone (WS8); resolve true to allow.
    *  Without it, a site that requires consent never starts the mic. */
   requestConsent?: (privacy: Privacy) => Promise<boolean>;
+  /** A person from the site's team said something (live takeover, M2-2).
+   *  Without it their messages show as agent messages, prefixed with their name. */
+  onOperatorMessage?: (name: string, text: string) => void;
+  /** A person wants to talk by voice; resolve true to accept. Without it calls
+   *  are declined. */
+  requestCall?: (name: string) => Promise<boolean>;
+  /** A voice call with a person started (with a hang-up handle) or ended. */
+  onCall?: (active: boolean, name: string, hangup: () => void) => void;
 }
 
 // Used when the socket never says what the site wants: ask, to be safe.
@@ -62,6 +71,8 @@ export class Session {
   private userSpeaking = false;
   private _active = false;
   private textSessionId: string | undefined;
+  /** A person from the site's team, when they take over (M2-2). */
+  private readonly live: LiveLink;
   /** The voice session's id (from `ready`), so a lead links to its conversation. */
   private wsSessionId: string | undefined;
   private greeted = false;
@@ -82,6 +93,19 @@ export class Session {
     private readonly bridge: HostBridge,
     private readonly cb: SessionCallbacks,
   ) {
+    this.live = new LiveLink({
+      notice: (text) => this.cb.onSystem(text),
+      message: (name, text) =>
+        this.cb.onOperatorMessage ? this.cb.onOperatorMessage(name, text) : this.cb.onAgentMessage(`${name}: ${text}`),
+      requestCall: this.cb.requestCall,
+      onCall: this.cb.onCall,
+      signal: (type, payload) => this.client?.sendRaw('EVENTS', type, payload),
+      quietAgent: (stopMic) => {
+        this.jitter?.reset();
+        this.abortTour();
+        if (stopMic && this._active) this.stopVoice();
+      },
+    });
     // The tour drives speak→scroll choreography through this thin host adapter;
     // narration is requested over the socket and gated on playback completion.
     this.tour = new TourController({
@@ -158,6 +182,7 @@ export class Session {
     const sid = env.sync_id || '';
     switch (env.channel) {
       case 'EVENTS':
+        if (this.live.handle(env.type, env.payload)) break;
         if (env.type === 'ready') {
           if (typeof env.payload.session_id === 'string') this.wsSessionId = env.payload.session_id;
           if (env.payload.privacy) this.privacy = env.payload.privacy as Privacy;
@@ -423,6 +448,15 @@ export class Session {
         return;
       }
       this.textSessionId = data.session_id ?? this.textSessionId;
+      if (data.takeover) {
+        // A person has the chat: their replies come from /chat/live (M2-2).
+        const base = (this.config.api || '').replace(/\/$/, '');
+        const q = new URLSearchParams({ session_id: String(this.textSessionId || '') });
+        if (this.config.key) q.set('key', this.config.key);
+        else if (this.config.site) q.set('site', this.config.site);
+        void this.live.poll(`${base}/chat/live?${q}`, Number(data.takeover.after || 0));
+        return;
+      }
       this.cb.onAgentMessage(data.text || '…', data.grounding);
       (data.actions || []).forEach(
         (a: { type: string; path?: string; icp?: string; sectionId?: string; direction?: string }) => {

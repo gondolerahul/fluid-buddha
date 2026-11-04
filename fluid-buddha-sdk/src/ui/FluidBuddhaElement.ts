@@ -20,6 +20,7 @@ import { Level3Shell } from './level3/Level3Shell';
 import { PageRenderer, EnquiryPayload } from './page/PageRenderer';
 import { AuraCanvas, AuraState } from './aura/AuraCanvas';
 import { STYLES } from './styles';
+import { callBar, callPrompt } from './call';
 import { consentPrompt } from './consent';
 
 const ICONS = {
@@ -222,6 +223,8 @@ export class FluidBuddhaElement extends HTMLElement {
       onAgentAudio: () => shell.agentAudioTick(),
       onTourStatus: (text) => shell.setTourStatus(text),
       requestConsent: (p) => consentPrompt(root, p),
+      requestCall: (name) => callPrompt(root, name),
+      onCall: callBar(root),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -254,6 +257,8 @@ export class FluidBuddhaElement extends HTMLElement {
       onAgentAudio: () => shell.agentAudioTick(),
       onTourStatus: (text) => shell.setTourStatus(text),
       requestConsent: (p) => consentPrompt(root, p),
+      requestCall: (name) => callPrompt(root, name),
+      onCall: callBar(root),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -365,6 +370,8 @@ export class FluidBuddhaElement extends HTMLElement {
       onPatch: (sid, patch) => this.canvas.applyPatch(sid, patch),
       onSystem: (msg) => { this.hideThinking(); this.addMessage('system', msg); },
       requestConsent: (p) => consentPrompt(root, p),
+      requestCall: (name) => callPrompt(root, name),
+      onCall: callBar(root),
       onPage: (p) => { this.hideThinking(); this.renderPage(p); },
       onAgentAudio: () => this.markSpeaking(),
       onTourStatus: (text) => { this.connText = text ? 'guided tour' : 'online'; if (this.auraState === 'dormant') this.updateStatusText(); },

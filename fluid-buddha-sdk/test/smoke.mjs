@@ -442,5 +442,34 @@ await settle();
 ok(!!offline.shadowRoot, 'if enrolment fails the visitor just gets the agent');
 offline.remove();
 
+// ---- Live takeover: a person joins, talks, rings, hands back (M2-2) ----
+{
+  const sys = [], said = [], sent = [];
+  const live = new Session(
+    { backend: 'ws://x', api: 'http://x', site: 'hirebuddha', intelligence: 'advance', design: 'level1', position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
+    bridge,
+    { onStatus() {}, onUserTranscript() {}, onAgentMessage: (t) => said.push(t), onComponent() {}, onPatch() {},
+      onSystem: (m) => sys.push(m), onPage() {}, requestCall: async () => true },
+  );
+  live.client = { sendRaw: (channel, type, payload) => sent.push({ channel, type, payload }) };
+  live.feed({ channel: 'EVENTS', type: 'operator_joined', payload: { name: 'Priya' } });
+  ok(sys.some((m) => m.includes('Priya from the team joined')), 'the visitor is told who joined');
+  live.feed({ channel: 'EVENTS', type: 'operator_message', payload: { name: 'Priya', text: 'Hi there' } });
+  ok(said.includes('Priya: Hi there'), "the person's message shows with their name");
+  live.feed({ channel: 'EVENTS', type: 'call_offer', payload: { name: 'Priya', sdp: 'v=0', ice_servers: [] } });
+  await new Promise((r) => setTimeout(r, 0));
+  ok(sent.some((x) => x.type === 'call_decline'), 'a call the browser cannot take is declined, not crashed');
+  live.feed({ channel: 'EVENTS', type: 'operator_left', payload: { name: 'Priya' } });
+  ok(sys.some((m) => m.includes('handed you back')), 'handing back is announced');
+
+  const { callPrompt } = mod;
+  const host = document.createElement('div');
+  const root = host.attachShadow({ mode: 'open' });
+  const answer = callPrompt(root, 'Priya');
+  ok(root.querySelector('[role="alertdialog"]')?.textContent.includes('Talk with Priya?'), 'the call prompt names the person');
+  root.querySelector('.fb-consent-deny').click();
+  ok((await answer) === false && !root.querySelector('.fb-consent'), 'declining closes the prompt');
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

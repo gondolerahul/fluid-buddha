@@ -835,4 +835,17 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .fb-consent-actions button:focus-visible, .fb-consent-card a:focus-visible {
   outline: 2px solid var(--fb-gold-bright); outline-offset: 2px;
 }
+/* ---- A voice call with a person (M2-2) ---- */
+.fb-callbar {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  z-index: calc(var(--fb-z-base) + 90); display: flex; gap: 12px; align-items: center;
+  padding: 8px 8px 8px 16px; border-radius: 999px; font-size: 0.88rem;
+  background: var(--fb-surface); color: var(--fb-fg); border: 1px solid var(--fb-border);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+}
+.fb-callbar button {
+  font: inherit; font-size: 0.84rem; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  border: 0; background: #d64545; color: #fff; font-weight: 600;
+}
+.fb-callbar button:focus-visible { outline: 2px solid var(--fb-gold-bright); outline-offset: 2px; }
 `;

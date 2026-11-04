@@ -21,6 +21,7 @@ export { HostBridge } from './core/HostBridge';
 export { Canvas } from './ui/components/canvas';
 // For hosts that build their own UI around Session (requestConsent).
 export { consentCopy, consentPrompt } from './ui/consent';
+export { callPrompt } from './ui/call';
 // For hosts with their own capture or transport: the VAD + pre-roll gate and
 // the binary audio frame format.
 export { SpeechGate } from './audio/SpeechGate';
