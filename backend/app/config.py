@@ -139,6 +139,14 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     # Proving an SSO domain: TXT records are read over DNS-over-HTTPS.
     dns_over_https_url: str = "https://dns.google/resolve"
+    # ---- Live takeover and voice handoff (M2-2) ----
+    # STUN servers browsers use to find their public address (comma-separated).
+    stun_urls: str = "stun:stun.l.google.com:19302"
+    # Our coturn relay, e.g. "turn:turn.example.com:3478?transport=udp,
+    # turn:turn.example.com:3478?transport=tcp", and the secret it shares with us.
+    turn_urls: str = ""
+    turn_secret: str = ""
+    turn_ttl_seconds: int = 3600
     # Fernet key(s) for stored secrets (app/security/secrets.py); comma-separated
     # to rotate, newest first. Empty: derived from JWT_SECRET (dev only).
     secrets_key: str = ""

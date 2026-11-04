@@ -25,6 +25,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.db import session_scope
+from app.live import store as live_store
+from app.live import visitor as live
+from app.live.bus import bus as live_bus, session_topic, site_topic
+from app.live.store import HEARTBEAT_S
 from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFIDENCE
 from app.orchestrator.result import ClientAction, Grounding
 from app.design.system import ensure_design
@@ -101,6 +105,10 @@ def split_for_tts(text: str, min_chars: int = 24) -> list[str]:
     return out or [text]
 
 
+# Cleanups that must outlive a cancelled socket task (kept referenced).
+_CLEANUPS: set[asyncio.Future] = set()
+
+
 class VoiceSession:
     def __init__(
         self, ws: WebSocket, runtime, site_key: str = "hirebuddha",
@@ -148,6 +156,12 @@ class VoiceSession:
         self._turn_path = "fresh"
         self._first_audio_ms: float | None = None
         self._first_answer_ms: float | None = None
+        # Live takeover (M2-2): who has taken over (None = the agent answers),
+        # when a voice call with them started, and the background tasks that
+        # listen for them and keep this visitor listed as live.
+        self._operator: str | None = None
+        self._call_started: float | None = None
+        self._live_tasks: list[asyncio.Task] = []
 
     # ---- low-level send -------------------------------------------------
     async def send(self, channel: str, type_: str, payload=None, sync_id=None) -> None:
@@ -173,6 +187,10 @@ class VoiceSession:
                 "audio_frames": "binary" if self.binary_audio else "json",
             },
         })
+        await live.present(self.state.site_key, self.session_id, "voice",
+                           persona=self.state.persona, page=self.state.page, announce=True)
+        self._live_tasks = [asyncio.create_task(self._live_loop()),
+                            asyncio.create_task(self._heartbeat())]
         try:
             while True:
                 msg = await self.ws.receive()
@@ -191,6 +209,110 @@ class VoiceSession:
             logger.info("ws disconnect session=%s", self.session_id)
         finally:
             await self._cancel_response()
+            for t in self._live_tasks:
+                t.cancel()
+            # Shielded: if this task is being cancelled (server shutdown), the
+            # visitor is still marked gone and any takeover ended.
+            leave = asyncio.ensure_future(self._leave_live())
+            _CLEANUPS.add(leave)
+            leave.add_done_callback(_CLEANUPS.discard)
+            try:
+                await asyncio.shield(leave)
+            except asyncio.CancelledError:
+                pass
+
+    # ---- live takeover (M2-2) ---------------------------------------------
+    async def _heartbeat(self) -> None:
+        while True:
+            await asyncio.sleep(HEARTBEAT_S)
+            await live.present(self.state.site_key, self.session_id, "voice",
+                               persona=self.state.persona, page=self.state.page)
+
+    async def _live_loop(self) -> None:
+        async with live_bus.subscribe(session_topic(self.state.site_key, self.session_id)) as q:
+            while True:
+                _, ev = await q.get()
+                try:
+                    await self._on_live(ev)
+                except Exception as exc:   # one bad event mustn't stop the listener
+                    logger.warning("ws[%s]: live event failed: %s", self.session_id[:8], exc)
+
+    async def _on_live(self, ev: dict) -> None:
+        kind = ev.get("type")
+        name = ev.get("operator_name") or self._operator or "A team member"
+        if kind == "takeover_started":
+            self._operator = name
+            await self._cancel_response()          # the agent stops mid-answer
+            await self.send(Channel.EVENTS, "operator_joined", {"name": name})
+        elif kind == "operator_message":
+            await self.send(Channel.EVENTS, "operator_message",
+                            {"name": name, "text": ev.get("text", "")})
+        elif kind == "takeover_ended":
+            self._operator = None
+            self._call_started = None
+            await live.catch_up(self.state, self.state.site_key, self.session_id)
+            await self.send(Channel.EVENTS, "operator_left", {"name": name})
+        elif kind in ("call_offer", "call_ice", "call_hangup"):
+            if kind == "call_hangup":
+                await self._call_ended("The team member hung up")
+            payload = {k: v for k, v in ev.items() if k in ("sdp", "candidate", "ice_servers")}
+            await self.send(Channel.EVENTS, kind, {"name": name, **payload})
+
+    async def _on_call_signal(self, type_: str, payload: dict) -> None:
+        """The visitor's side of a voice call with a person (WebRTC signalling)."""
+        if not self._operator:
+            return
+        event = {"type": type_, "session_id": self.session_id}
+        if type_ == "call_answer":
+            self._call_started = time.monotonic()
+            event["sdp"] = payload.get("sdp")
+        elif type_ == "call_ice":
+            event["candidate"] = payload.get("candidate")
+        elif type_ == "call_decline":
+            await self._call_ended("The visitor declined the call")
+        elif type_ == "call_hangup":
+            await self._call_ended("The visitor hung up")
+        await live_bus.publish(site_topic(self.state.site_key), event)
+
+    async def _call_ended(self, why: str) -> None:
+        started, self._call_started = self._call_started, None
+        if started is not None:
+            minutes = max(1, round((time.monotonic() - started) / 60))
+            why = f"Voice call ended after {minutes} min"
+        try:
+            async with session_scope() as db:
+                await live_store.add_message(db, self.state.site_key, self.session_id,
+                                             "system", why)
+        except Exception as exc:
+            logger.warning("ws[%s]: call note failed: %s", self.session_id[:8], exc)
+
+    async def _to_operator(self, transcript: str) -> bool:
+        """While a person has taken over, the visitor's words go to them."""
+        if not self._operator and not await live.taken_over(self.state.site_key,
+                                                            self.session_id):
+            return False
+        masked = self.state.pii.mask(transcript)
+        await self.send(Channel.STATE, "transcript", {"text": transcript})
+        await live.visitor_said(self.state.site_key, self.session_id, transcript,
+                                self.state.pii.stored(masked))
+        return True
+
+    async def _leave_live(self) -> None:
+        """The visitor left: end any takeover so the operator isn't left waiting."""
+        tk = None
+        try:
+            async with session_scope() as db:
+                tk = await live_store.end(db, self.state.site_key, self.session_id)
+                if tk is not None:
+                    await live_store.add_message(db, self.state.site_key, self.session_id,
+                                                 "system", "The visitor left")
+            if tk is not None:
+                await live_bus.publish(site_topic(self.state.site_key), {
+                    "type": "takeover_ended", "session_id": self.session_id,
+                    "reason": "visitor_left"})
+        except Exception as exc:
+            logger.warning("ws[%s]: leaving live failed: %s", self.session_id[:8], exc)
+        await live.left(self.state.site_key, self.session_id)
 
     async def _dispatch(self, env: dict) -> None:
         channel = env.get("channel")
@@ -198,6 +320,8 @@ class VoiceSession:
         payload = env.get("payload") or {}
 
         if channel == Channel.AUDIO:
+            if self._call_started is not None:
+                return   # on a call with a person: the agent doesn't listen
             if self.privacy.consent_required and self._consent_at is None:
                 await self._ask_consent()
                 return
@@ -227,6 +351,9 @@ class VoiceSession:
             await self._on_hello(payload)
         elif channel == Channel.EVENTS and type_ == "tour_say":
             await self._on_tour_say(payload)
+        elif channel == Channel.EVENTS and type_ in ("call_answer", "call_ice", "call_decline",
+                                                     "call_hangup"):
+            await self._on_call_signal(type_, payload)
         elif channel == Channel.STATE:
             if type_ == "barge_in":
                 await self._on_barge_in(payload)
@@ -312,6 +439,8 @@ class VoiceSession:
         return False
 
     async def _on_utterance(self, transcript: str) -> None:
+        if await self._to_operator(transcript):
+            return
         if await self._budget_blocked():
             return
         sid = self.session_id[:8]
@@ -794,6 +923,7 @@ class VoiceSession:
         except Exception as exc:
             logger.warning("ws[%s]: conversation record failed: %s",
                            self.session_id[:8], exc)
+        await live.agent_turn(self.state.site_key, self.session_id, question, answer)
         if leads:
             from app.leads.capture import save_captured
             await save_captured(self.state.site_key, self.session_id,

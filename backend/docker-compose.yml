@@ -33,6 +33,40 @@ services:
       timeout: 3s
       retries: 10
 
+  # Relay for voice handoff calls (M2-2). Off by default: `--profile voice`.
+  # Shares TURN_SECRET with the backend (set it: without one no credential is
+  # ever valid). Time-limited credentials, no user
+  # accounts on the relay). In production run it on a host with a public IP,
+  # open 3478 (UDP+TCP) and the relay range, and set --external-ip if behind NAT;
+  # point TURN_URLS at it, e.g. turn:turn.example.com:3478?transport=udp.
+  coturn:
+    image: coturn/coturn:4.6
+    container_name: a2ui-coturn
+    profiles: ["voice"]
+    command:
+      - "-n"
+      - "--log-file=stdout"
+      - "--use-auth-secret"
+      - "--static-auth-secret=${TURN_SECRET:-}"
+      - "--realm=${TURN_REALM:-fluidbuddha}"
+      - "--listening-port=3478"
+      - "--min-port=49160"
+      - "--max-port=49200"
+      - "--fingerprint"
+      - "--no-cli"
+      - "--no-multicast-peers"
+      # Never relay into private networks (stops the relay being used to reach
+      # internal services).
+      - "--denied-peer-ip=10.0.0.0-10.255.255.255"
+      - "--denied-peer-ip=172.16.0.0-172.31.255.255"
+      - "--denied-peer-ip=192.168.0.0-192.168.255.255"
+      - "--denied-peer-ip=127.0.0.0-127.255.255.255"
+      - "--denied-peer-ip=169.254.0.0-169.254.255.255"
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+
   backend:
     build: .
     container_name: a2ui-backend

@@ -26,6 +26,7 @@ _SITE_TABLES = (
     "conversations", "leads", "site_integrations", "site_privacy", "site_design",
     "experiments",  # its visitors and events go with it (ON DELETE CASCADE)
     "cost_alerts",
+    "live_presence", "live_takeovers", "live_messages",
 )
 
 

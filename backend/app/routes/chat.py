@@ -19,6 +19,7 @@ from typing import Any
 from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
 from app.design.system import ensure_design
+from app.live import visitor as live
 from app.orchestrator.profile import ensure_profile
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.state import normalize_sections
@@ -52,6 +53,7 @@ async def _record_conversation(state, sid: str, question: str, answer: str, inte
             )
     except Exception as exc:
         logger.warning("conversation record failed: %s", exc)
+    await live.agent_turn(state.site_key, sid, question, answer)
     if leads:
         from app.leads.capture import save_captured
         await save_captured(state.site_key, sid, state.persona, list(leads))
@@ -97,7 +99,23 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
 
     sid, state = await sessions.load(req.session_id, site_key=resolved.site_key)
+    await live.present(resolved.site_key, sid, "text", persona=req.icp or state.persona,
+                       page=req.page or state.page, announce=req.session_id != sid)
     try:
+        # A person has taken over this conversation (M2-2): the message goes to
+        # them, and the widget polls /chat/live for their replies.
+        takeover = await live.taken_over(resolved.site_key, sid)
+        if takeover is not None:
+            state.pii.enabled = privacy.redact_pii
+            masked = state.pii.mask(req.message)
+            msg = await live.visitor_said(resolved.site_key, sid, req.message,
+                                          state.pii.stored(masked))
+            return {"text": "", "ack": "", "intent": "takeover", "persona": state.persona,
+                    "actions": [], "components": [], "pages": [], "patches": [],
+                    "grounding": None, "session_id": sid,
+                    "takeover": {"name": takeover.operator_name, "after": msg["id"]}}
+        # Back with the agent: it learns what was said while a person had it.
+        await live.catch_up(state, resolved.site_key, sid)
         with span("chat.turn", site=resolved.site_key):
             return await _turn(req, rt, t0, resolved, privacy, sid, state)
     finally:
@@ -228,3 +246,44 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     payload["ack"] = PiiVault.spoken(payload["ack"])
     payload["session_id"] = sid
     return payload
+
+
+# ---- live takeover on the text path (M2-2) ---------------------------------------
+
+_POLL_S = 25.0
+
+
+@router.get("/chat/live")
+async def chat_live(request: Request, session_id: str, after: int = 0,
+                    key: str | None = None, site: str = "hirebuddha") -> dict:
+    """What the person who took over said since message ``after`` (long poll,
+    up to 25 s), and whether they still have the conversation. Used by the
+    widget's text mode; the voice socket gets the same as pushed events."""
+    import asyncio
+
+    from app.live import store as live_store
+    from app.live.bus import bus, session_topic
+
+    try:
+        async with session_scope() as rdb:
+            resolved = await resolve_public_site(rdb, key=key, site=site, intelligence=None,
+                                                 origin=request.headers.get("origin"))
+    except PublicAccessError as exc:
+        raise HTTPException(status_code=403, detail=exc.reason)
+
+    async def snapshot() -> dict:
+        async with session_scope() as db:
+            msgs = [m for m in await live_store.messages(db, resolved.site_key, session_id)
+                    if m["id"] > after and m["sender"] != "visitor"]
+            tk = await live_store.active(db, resolved.site_key, session_id)
+        return {"messages": msgs, "takeover": {"name": tk.operator_name} if tk else None}
+
+    async with bus.subscribe(session_topic(resolved.site_key, session_id)) as q:
+        first = await snapshot()
+        if first["messages"] or first["takeover"] is None:
+            return first
+        try:
+            await asyncio.wait_for(q.get(), timeout=_POLL_S)
+        except asyncio.TimeoutError:
+            pass
+    return await snapshot()

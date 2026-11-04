@@ -59,6 +59,9 @@ class ConversationState:
     # Placeholders for the visitor's PII in this conversation (WS8): the model
     # and the history only ever see the masked text.
     pii: PiiVault = field(default_factory=PiiVault)
+    # Live takeover (M2-2): the last person-to-visitor message already folded
+    # into ``history``, so the agent knows what was said when it takes over again.
+    live_seen: int = 0
 
     def to_dict(self) -> dict:
         """JSON-able form for a shared session store (F-3)."""
@@ -73,6 +76,7 @@ class ConversationState:
             "persona_locked": self.persona_locked,
             "components": self.components,
             "pii": self.pii.to_dict(),
+            "live_seen": self.live_seen,
         }
 
     @classmethod
@@ -90,6 +94,7 @@ class ConversationState:
         state.persona_locked = bool(data.get("persona_locked"))
         state.components = dict(data.get("components") or {})
         state.pii = PiiVault.from_dict(data.get("pii") or {})
+        state.live_seen = int(data.get("live_seen") or 0)
         return state
 
     def add_turn(self, user_text: str, model_text: str) -> None:

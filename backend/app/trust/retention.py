@@ -51,6 +51,9 @@ async def purge_expired(db: AsyncSession) -> dict[str, int]:
                                            DEFAULT_TRANSCRIPT_DAYS,
                                            "AND t.kind = 'turn' AND t.status = 'auto'"),
         "leads": await _purge(db, "leads", "created_at", "lead_retention_days", 0),
+        # What people said during a takeover (M2-2) is part of the transcript.
+        "live_messages": await _purge(db, "live_messages", "at",
+                                      "transcript_retention_days", DEFAULT_TRANSCRIPT_DAYS),
     }
     await db.commit()
     return removed
@@ -58,6 +61,11 @@ async def purge_expired(db: AsyncSession) -> dict[str, int]:
 
 async def erase_visitor(db: AsyncSession, site_key: str, email: str) -> dict[str, int]:
     email = (email or "").strip().lower()
+    await db.execute(text(
+        "DELETE FROM live_messages m USING conversations c, leads l "
+        "WHERE l.site_key = :s AND lower(l.email) = :e AND c.id = l.conversation_id "
+        "AND m.site_key = c.site_key AND m.session_id = c.session_id"
+    ), {"s": site_key, "e": email})
     convs = (await db.execute(text(
         "DELETE FROM conversations WHERE site_key=:s AND id IN "
         "(SELECT conversation_id FROM leads WHERE site_key=:s AND lower(email)=:e "

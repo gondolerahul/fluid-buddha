@@ -27,6 +27,7 @@ from app.routes import (
     ingestion,
     insights,
     leads,
+    live,
     onboarding,
     privacy,
     sso,
@@ -102,3 +103,4 @@ app.include_router(billing.webhooks)
 app.include_router(team.router)
 app.include_router(sso.public)
 app.include_router(sso.admin)
+app.include_router(live.router)

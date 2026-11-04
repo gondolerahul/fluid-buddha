@@ -78,8 +78,12 @@ async def _post(url: str, body: bytes, headers: dict[str, str],
 def _slack_text(lead: dict[str, Any]) -> str:
     who = lead.get("name") or lead["email"]
     at = f" at {lead['company']}" if lead.get("company") else ""
-    return (f"Hot lead (score {lead['score']}): {who}{at} <mailto:{lead['email']}|{lead['email']}>\n"
+    text = (f"Hot lead (score {lead['score']}): {who}{at} <mailto:{lead['email']}|{lead['email']}>\n"
             f"{(lead.get('summary') or '')[:400]}")
+    if lead.get("source") == "conversation":   # they may still be on the site (M2-2)
+        console = get_settings().console_url.rstrip("/")
+        text += f"\n<{console}/live|Join the conversation in the live inbox>"
+    return text
 
 
 async def deliver_lead(lead: dict[str, Any], *,
