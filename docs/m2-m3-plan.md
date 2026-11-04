@@ -409,3 +409,12 @@ Each epic lands as its own commits with tests, on a branch merged through a PR w
 | M2-10 | WordPress.org, Shopify Partner, Webflow, npm accounts | To publish |
 | M2-11 | Auditor (+ optional Vanta/Drata); legal review of DPA and policies | For certification |
 | M3-4 | Anthropic, OpenAI, Azure OpenAI test keys | While building |
+
+---
+
+## Progress
+
+| Epic | Status | What shipped / what's left |
+|---|---|---|
+| M2-0 Email + jobs | ✅ | SMTP outbox (retries with backoff, `SKIP LOCKED` claims, idempotency keys, header-injection checks, 30-day cleanup; dev logs instead of sending, production refuses without SMTP). One scheduler runs every periodic job under a Postgres advisory lock (`fb_job_runs_total`). Migration `0014`. |
+| M2-1 Teams, roles, SSO, audit | ✅ | Users separate from accounts (existing logins became Owners, old tokens still work); invitations (single use, 7 days, hashed); Owner/Admin/Editor/Viewer enforced centrally for every `/tenant` route (a test walks them all); account switching. Audit log of every successful console change + sign-ins/failed sign-ins (middleware, no bodies), filter + CSV, 1-year retention. Google + per-account OIDC with PKCE, ID tokens checked against the provider's keys, domains proven by DNS TXT, client secrets encrypted (`SECRETS_KEY`), "require SSO" with Owner break-glass. Console: Team (members, invites, SSO, domains), Audit log, invitation and SSO pages, account switcher. Migrations `0015`–`0016`. Checked live: sign-in, invite, accept as a new person, editor view, audit trail. **Left:** httpOnly-cookie console session (moved to M2-11 with MFA); hiding edit controls from Viewers on the website pages (the server already refuses); a real Google/Okta run needs your OAuth clients. |

@@ -203,6 +203,25 @@ enabled on the Razorpay account and a `BILLING_CATALOG` override.
 - A failed renewal keeps the plan while Razorpay retries (`pending`); once it
   gives up (`halted`) the account is on Free limits until it subscribes again.
 
+## Teams, roles and single sign-on
+
+People (users) are separate from accounts. Roles: **Owner** (everything, incl.
+billing and SSO), **Admin** (team, integrations, privacy, deleting a site or
+rotating its key, audit log), **Editor** (sites, knowledge, tours, answers,
+experiments, leads), **Viewer** (read-only). The rule is applied in one place
+(`app/auth/roles.py`) from the method and route, so every `/tenant` route is
+covered. Invitations are emailed (M2-0) and also returned as a single-use link.
+
+Single sign-on (`app/auth/sso.py`): set `PUBLIC_API_URL` and register
+`<PUBLIC_API_URL>/auth/sso/callback` with the provider. "Sign in with Google"
+needs `GOOGLE_CLIENT_ID/SECRET` and only signs in existing members. An account's
+own OIDC provider (Console → Team → Single sign-on) signs in people of the email
+domains the account has proven with a DNS TXT record, with a default role.
+Client secrets are encrypted with `SECRETS_KEY`.
+
+The audit log (`app/audit.py`) records every successful change through the
+console API plus sign-ins; Console → Audit log, CSV export, kept a year.
+
 ## Operations
 
 - **Request ids.** Every response carries `X-Request-ID` (the caller's, if it
