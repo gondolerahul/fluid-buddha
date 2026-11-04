@@ -19,6 +19,22 @@ test may touch any table even on an empty database (as in CI).
 from __future__ import annotations
 
 import asyncio
+import os
+
+# The suite must not depend on a developer's backend/.env (real Vertex, live
+# payment keys, a price list, Redis…). Environment variables beat .env, so pin
+# everything a test could be steered by here, before settings are first read.
+# Only the database URL is still taken from .env.
+_HERMETIC = {
+    "MOCK_AI": "true", "APP_ENV": "local",
+    "RAZORPAY_KEY_ID": "", "RAZORPAY_KEY_SECRET": "", "RAZORPAY_WEBHOOK_SECRET": "",
+    "BILLING_CURRENCY": "USD", "BILLING_CATALOG": "",
+    "REDIS_URL": "", "LOG_FORMAT": "text", "METRICS_ENABLED": "true", "METRICS_TOKEN": "",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "", "SENTRY_DSN": "",
+    "INGEST_ALLOW_PRIVATE_URLS": "false",
+    "PUBLIC_RATE_LIMIT_PER_MIN": "120", "PUBLIC_DAILY_SPEND_CAP_USD": "0",
+}
+os.environ.update(_HERMETIC)
 
 import pytest
 from sqlalchemy import text

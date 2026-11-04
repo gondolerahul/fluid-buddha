@@ -273,9 +273,13 @@ export default function BillingPage() {
                         <td>{o.conversations.toLocaleString()}</td>
                         <td>{o.extra.toLocaleString()}</td>
                         <td className="mono">{money(o.amount)}</td>
-                        <td>{o.amount === 0 ? <span className="faint">Nothing extra</span>
-                          : o.addon_id ? <span className="badge ok">On next invoice</span>
-                          : <span className="badge warn">Not yet added</span>}</td>
+                        <td>{o.status === "nothing" ? <span className="faint">Nothing extra</span>
+                          : o.status === "addon" ? <span className="badge ok">On next invoice</span>
+                          : o.status === "paid" ? <span className="badge ok">Paid</span>
+                          : o.status === "link" && o.payment_link_url ? (
+                            <a className="btn btn-primary btn-sm" href={o.payment_link_url}
+                              target="_blank" rel="noopener noreferrer">Pay now</a>
+                          ) : <span className="badge warn">Being billed</span>}</td>
                       </tr>
                     ))}
                   </tbody>

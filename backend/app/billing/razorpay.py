@@ -98,6 +98,21 @@ class Razorpay:
             "quantity": 1,
         })
 
+    async def create_payment_link(self, *, amount: int, currency: str, description: str,
+                                  email: str, name: str, reference_id: str,
+                                  notes: dict[str, str]) -> dict:
+        """A one-off payment page, emailed to the customer by Razorpay."""
+        return await self._call("POST", "/payment_links", {
+            "amount": amount, "currency": currency, "accept_partial": False,
+            "description": description, "reference_id": reference_id[:40],
+            "customer": {"name": name, "email": email},
+            "notify": {"sms": False, "email": True}, "reminder_enable": True,
+            "notes": notes,
+        })
+
+    async def fetch_payment_link(self, link_id: str) -> dict:
+        return await self._call("GET", f"/payment_links/{link_id}")
+
     # ---- signatures ----
     def checkout_signature_ok(self, *, payment_id: str, subscription_id: str,
                               signature: str) -> bool:

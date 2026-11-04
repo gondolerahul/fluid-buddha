@@ -157,8 +157,10 @@ $0.20 each, Scale $1,499 for 10,000 then $0.12, Enterprise by arrangement.
    The Razorpay plans are created on first checkout, one per key, plan, currency
    and price.
 2. In Razorpay Dashboard → Webhooks, add `<backend>/billing/razorpay/webhook`
-   with the `subscription.*` events and a secret, and set
+   with the `subscription.*` events and `payment_link.paid`, and a secret; set
    `RAZORPAY_WEBHOOK_SECRET` to it. Webhooks are verified and applied once each.
+   Until webhooks are set up (e.g. on a laptop), the Billing page asks Razorpay
+   directly about a subscription awaiting payment and about unpaid links.
 3. Console → Billing: choosing a plan creates a subscription and opens
    Razorpay Checkout; the payment signature is verified server-side before the
    plan changes. Upgrades apply now, downgrades at the cycle end; cancelling
@@ -170,6 +172,12 @@ $0.20 each, Scale $1,499 for 10,000 then $0.12, Enterprise by arrangement.
 - **Overage**: when Razorpay charges a new cycle (`subscription.charged`), the
   last cycle's extra conversations are added to the subscription as an add-on,
   billed on the next invoice, and listed in the console.
+- **UPI Autopay**: Razorpay refuses add-ons and plan changes on subscriptions
+  paid by UPI. Their overage is sent as a Razorpay Payment Link (emailed, with a
+  "Pay now" button in the console; `payment_link.paid` marks it paid), and a
+  plan change asks the customer to cancel and subscribe to the new plan.
+  Overage that couldn't be billed at all stays pending and is retried on the
+  next subscription event.
 - A failed renewal keeps the plan while Razorpay retries (`pending`); once it
   gives up (`halted`) the account is on Free limits until it subscribes again.
 

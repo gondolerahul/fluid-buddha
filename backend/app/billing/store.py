@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 PAID_STATUSES = ("authenticated", "active", "pending")
 LIVE_STATUSES = ("created", *PAID_STATUSES)
+# Waiting on Razorpay (payment not yet confirmed, or being retried): the
+# console re-reads the subscription from Razorpay on these.
+SYNC_STATUSES = ("created", "authenticated", "pending")
 
 
 class BillingError(ValueError):
@@ -224,6 +227,12 @@ async def start_checkout(db: AsyncSession, rzp: Razorpay, tenant_id: uuid.UUID,
         try:
             await rzp.change_plan(acct.subscription_id, plan_id, now=upgrade)
         except RazorpayError as exc:
+            if "upi" in exc.description.lower():
+                # Razorpay can't modify a subscription paid by UPI autopay.
+                raise BillingError(
+                    "Your subscription is paid by UPI Autopay, which Razorpay doesn't let us "
+                    "change. Cancel it (you keep your plan to the end of this period), then "
+                    "choose the new plan.")
             raise BillingError(f"Razorpay couldn't change the plan: {exc.description}")
         if upgrade:
             acct.plan, acct.pending_plan = plan_key, None
@@ -315,7 +324,11 @@ async def handle_webhook(db: AsyncSession, rzp: Optional[Razorpay], event_id: st
                          payload: dict) -> str:
     """Apply one verified webhook. Returns what happened (for logs/tests)."""
     event = str(payload.get("event") or "")
-    sub = (((payload.get("payload") or {}).get("subscription") or {}).get("entity")) or {}
+    body = payload.get("payload") or {}
+    if event == "payment_link.paid":
+        link = (body.get("payment_link") or {}).get("entity") or {}
+        return "overage_paid" if await mark_link_paid(db, link) else "ignored"
+    sub = ((body.get("subscription") or {}).get("entity")) or {}
     if not event.startswith("subscription.") or not sub.get("id"):
         return "ignored"
     tenant_id = (await db.execute(
@@ -344,47 +357,113 @@ async def handle_webhook(db: AsyncSession, rzp: Optional[Razorpay], event_id: st
     if (event == "subscription.charged" and before[1] and before[2]
             and acct.current_start and acct.current_start > before[1]):
         await bill_overage(db, rzp, acct, plan_key=before[0], start=before[1], end=before[2])
+    else:
+        await charge_pending_overage(db, rzp, acct)  # retry anything left unbilled
     return event
 
 
 async def bill_overage(db: AsyncSession, rzp: Optional[Razorpay], acct: Account, *,
                        plan_key: str, start: datetime, end: datetime) -> Optional[dict]:
+    """Record a finished period's overage (once), then charge it."""
     p = catalog.plan(plan_key)
     used = await conversations(db, acct.tenant_id, start, end)
     extra, amount = catalog.overage_amount(p, used)
-    cur = catalog.currency()
     row = (await db.execute(text(
         "INSERT INTO billing_overage (tenant_id, period_start, period_end, plan, conversations, "
-        "extra, amount, currency) VALUES (:t, :s, :e, :p, :n, :x, :a, :c) "
+        "extra, amount, currency, status) VALUES (:t, :s, :e, :p, :n, :x, :a, :c, :st) "
         "ON CONFLICT DO NOTHING RETURNING tenant_id"
     ), {"t": acct.tenant_id, "s": start, "e": end, "p": p.key, "n": used, "x": extra,
-        "a": amount, "c": cur})).scalar()
+        "a": amount, "c": catalog.currency(), "st": "pending" if amount > 0 else "nothing"})).scalar()
     await db.commit()
     if not row:
-        return None  # this period was already billed
-    if amount <= 0 or rzp is None or not acct.subscription_id:
-        return {"extra": extra, "amount": amount, "addon_id": None}
-    try:
-        addon = await rzp.create_addon(
-            acct.subscription_id, amount=amount, currency=cur,
-            name=f"Extra conversations ({extra:,})",
-            description=f"{start:%d %b} – {end:%d %b %Y}: {used:,} conversations, "
-                        f"{p.included:,} included",
-        )
-    except RazorpayError as exc:
-        logger.error("overage add-on failed for tenant %s: %s", acct.tenant_id, exc)
-        return {"extra": extra, "amount": amount, "addon_id": None}
-    await db.execute(text(
-        "UPDATE billing_overage SET addon_id = :a WHERE tenant_id = :t AND period_start = :s"
-    ), {"a": addon["id"], "t": acct.tenant_id, "s": start})
+        return None  # this period was already recorded
+    charged = await charge_pending_overage(db, rzp, acct)
+    return charged[0] if charged else {"extra": extra, "amount": amount, "status": "pending"}
+
+
+async def charge_pending_overage(db: AsyncSession, rzp: Optional[Razorpay],
+                                 acct: Account) -> list[dict]:
+    """Charge every recorded period not yet billed. An add-on rides on the next
+    subscription invoice; Razorpay refuses add-ons on some subscriptions (those
+    paid by UPI autopay), and those periods get a payment link instead. Anything
+    that still fails stays pending and is retried on the next event."""
+    if rzp is None:
+        return []
+    rows = (await db.execute(text(
+        "SELECT period_start, period_end, plan, conversations, extra, amount, currency "
+        "FROM billing_overage WHERE tenant_id = :t AND status = 'pending' AND amount > 0 "
+        "ORDER BY period_start"
+    ), {"t": acct.tenant_id})).mappings().all()
+    done = []
+    for r in rows:
+        p = catalog.plan(r["plan"])
+        what = (f"{r['period_start']:%d %b} – {r['period_end']:%d %b %Y}: {r['conversations']:,} "
+                f"conversations, {p.included or 0:,} included")
+        update: dict = {}
+        if acct.subscription_id:
+            try:
+                addon = await rzp.create_addon(
+                    acct.subscription_id, amount=r["amount"], currency=r["currency"],
+                    name=f"Extra conversations ({r['extra']:,})", description=what)
+                update = {"status": "addon", "addon_id": addon["id"], "error": None}
+            except RazorpayError as exc:
+                logger.info("add-on refused for tenant %s (%s); sending a payment link",
+                            acct.tenant_id, exc.description)
+                update = {"error": exc.description}
+        if update.get("status") != "addon":
+            owner = (await db.execute(text("SELECT email, name FROM tenants WHERE id = :t"),
+                                      {"t": acct.tenant_id})).mappings().first()
+            try:
+                link = await rzp.create_payment_link(
+                    amount=r["amount"], currency=r["currency"],
+                    description=f"Fluid-Buddha extra conversations — {what}",
+                    email=owner["email"], name=owner["name"] or owner["email"],
+                    reference_id=f"ovg_{r['period_start']:%Y%m%d}_{acct.tenant_id.hex[:12]}",
+                    notes={"tenant_id": str(acct.tenant_id),
+                           "period_start": r["period_start"].isoformat()})
+                update = {"status": "link", "payment_link_id": link["id"],
+                          "payment_link_url": link.get("short_url"), "error": None}
+            except RazorpayError as exc:
+                logger.error("overage for tenant %s not billed: %s", acct.tenant_id, exc)
+                update = {"error": exc.description}
+        sets = ", ".join(f"{k} = :{k}" for k in update)
+        await db.execute(text(
+            f"UPDATE billing_overage SET {sets} WHERE tenant_id = :t AND period_start = :s"
+        ), {**update, "t": acct.tenant_id, "s": r["period_start"]})
+        await db.commit()
+        done.append({"extra": r["extra"], "amount": r["amount"],
+                     "status": update.get("status", "pending"),
+                     "addon_id": update.get("addon_id"),
+                     "payment_link_url": update.get("payment_link_url")})
+    return done
+
+
+async def sync_payment_links(db: AsyncSession, rzp: Razorpay, tenant_id: uuid.UUID) -> None:
+    """Ask Razorpay about links still unpaid here, in case the webhook is late
+    (or not configured yet)."""
+    ids = (await db.execute(text(
+        "SELECT payment_link_id FROM billing_overage WHERE tenant_id = :t "
+        "AND status = 'link' AND payment_link_id IS NOT NULL LIMIT 5"
+    ), {"t": tenant_id})).scalars().all()
+    for link_id in ids:
+        link = await rzp.fetch_payment_link(link_id)
+        if link.get("status") == "paid":
+            await mark_link_paid(db, link)
+
+
+async def mark_link_paid(db: AsyncSession, link: dict) -> bool:
+    res = await db.execute(text(
+        "UPDATE billing_overage SET status = 'paid' WHERE payment_link_id = :id AND status = 'link'"
+    ), {"id": link.get("id")})
     await db.commit()
-    return {"extra": extra, "amount": amount, "addon_id": addon["id"]}
+    return bool(res.rowcount)
 
 
 async def overage_history(db: AsyncSession, tenant_id: uuid.UUID) -> list[dict]:
     rows = (await db.execute(text(
-        "SELECT period_start, period_end, plan, conversations, extra, amount, currency, addon_id "
-        "FROM billing_overage WHERE tenant_id = :t ORDER BY period_start DESC LIMIT 12"
+        "SELECT period_start, period_end, plan, conversations, extra, amount, currency, addon_id, "
+        "status, payment_link_url FROM billing_overage WHERE tenant_id = :t "
+        "ORDER BY period_start DESC LIMIT 12"
     ), {"t": tenant_id})).mappings().all()
     return [{**dict(r), "period_start": r["period_start"].isoformat(),
              "period_end": r["period_end"].isoformat()} for r in rows]

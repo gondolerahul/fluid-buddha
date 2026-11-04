@@ -83,7 +83,20 @@ async def get_billing(
     tenant: store.Tenant = Depends(current_tenant),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    return await _summary(db, await billing.get_account(db, tenant.id))
+    acct = await billing.get_account(db, tenant.id)
+    # While a payment is outstanding, ask Razorpay directly: the visitor may have
+    # paid and closed Checkout before it reported back, and a webhook may be
+    # late or (before deployment) not configured at all.
+    rzp = client_from_settings(get_settings())
+    if rzp:
+        try:
+            if acct.subscription_id and acct.status in billing.SYNC_STATUSES:
+                acct = await billing.apply_subscription(
+                    db, acct, await rzp.fetch_subscription(acct.subscription_id))
+            await billing.sync_payment_links(db, rzp, tenant.id)
+        except Exception as exc:
+            logger.warning("billing sync skipped: %s", exc)
+    return await _summary(db, acct)
 
 
 class CheckoutRequest(BaseModel):

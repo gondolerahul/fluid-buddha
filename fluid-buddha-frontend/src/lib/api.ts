@@ -201,7 +201,9 @@ export type BillingSummary = {
   sites: Array<{ website_id: string; name: string; conversations: number; turns: number;
     cost_usd: number; cost_per_conversation_usd: number | null }>;
   overage_history: Array<{ period_start: string; period_end: string; plan: string;
-    conversations: number; extra: number; amount: number; currency: string; addon_id: string | null }>;
+    conversations: number; extra: number; amount: number; currency: string; addon_id: string | null;
+    /** addon: on the next invoice; link: payment link sent (UPI autopay can't take add-ons). */
+    status: "pending" | "addon" | "link" | "paid" | "nothing"; payment_link_url: string | null }>;
   catalog: BillingPlan[];
   checkout_enabled: boolean;
   key_id: string | null;

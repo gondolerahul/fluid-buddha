@@ -38,6 +38,8 @@ class FakeRazorpay:
         self.plans: dict[str, dict] = {}
         self.subs: dict[str, dict] = {}
         self.addons: list[dict] = []
+        self.links: list[dict] = []
+        self.links_down = False
         self.calls: list[tuple[str, str]] = []
         self._ids = itertools.count(1)
 
@@ -61,6 +63,17 @@ class FakeRazorpay:
                    "notes": body["notes"], "short_url": "https://rzp.io/i/fake"}
             self.subs[sub["id"]] = sub
             return httpx.Response(200, json=sub)
+        if request.method == "POST" and path == "/payment_links":
+            if self.links_down:
+                return httpx.Response(500, json={"error": {"description": "server error"}})
+            link = {"id": self._id("plink"), "status": "created",
+                    "short_url": "https://rzp.io/rzp/fake", **body}
+            self.links.append(link)
+            return httpx.Response(200, json=link)
+        if request.method == "GET" and path.startswith("/payment_links/"):
+            link = next((l for l in self.links if l["id"] == path.rsplit("/", 1)[-1]), None)
+            return httpx.Response(200, json=link) if link else httpx.Response(
+                404, json={"error": {"description": "not found"}})
         parts = path.strip("/").split("/")
         if parts[0] == "plans" and len(parts) == 2 and request.method == "GET":
             plan = self.plans.get(parts[1])
@@ -72,6 +85,9 @@ class FakeRazorpay:
                 return httpx.Response(404, json={"error": {"description": "no such subscription"}})
             if request.method == "GET":
                 return httpx.Response(200, json=sub)
+            if request.method == "PATCH" and sub.get("payment_method") == "upi":
+                return httpx.Response(400, json={"error": {"description":
+                    "subscriptions cannot be updated when payment mode is upi"}})
             if request.method == "PATCH":
                 if body["schedule_change_at"] == "now":
                     sub["plan_id"] = body["plan_id"]
@@ -81,6 +97,9 @@ class FakeRazorpay:
             if parts[-1] == "cancel":
                 sub["status"] = "active" if body["cancel_at_cycle_end"] else "cancelled"
                 return httpx.Response(200, json=sub)
+            if parts[-1] == "addons" and sub.get("payment_method") == "upi":
+                return httpx.Response(400, json={"error": {"description":
+                    "Addons can't be added for subscriptions when payment mode is upi"}})
             if parts[-1] == "addons":
                 addon = {"id": self._id("ao"), "subscription_id": sub["id"], **body}
                 self.addons.append(addon)
@@ -218,6 +237,10 @@ def test_subscription_lifecycle_and_overage(fake):
 
         start = datetime.now(timezone.utc) - timedelta(days=29)
         fake.activate(sub_id, start)
+        # Paid, but Checkout closed before reporting back and no webhook came:
+        # opening the Billing page asks Razorpay and catches up.
+        synced = client.get("/tenant/billing", headers=h).json()
+        assert synced["plan"] == "growth" and synced["status"] == "active"
         bad = client.post("/tenant/billing/verify", headers=h, json={
             "razorpay_payment_id": "pay_1", "razorpay_subscription_id": sub_id,
             "razorpay_signature": "0" * 64})
@@ -253,6 +276,7 @@ def test_subscription_lifecycle_and_overage(fake):
         assert len(fake.addons) == 1
         hist = client.get("/tenant/billing", headers=h).json()["overage_history"]
         assert hist[0]["extra"] == 2 and hist[0]["addon_id"] == fake.addons[0]["id"]
+        assert hist[0]["status"] == "addon"
 
         # Upgrade applies now; a downgrade waits for the cycle end.
         up = client.post("/tenant/billing/checkout", json={"plan": "scale"}, headers=h).json()
@@ -284,6 +308,60 @@ def test_subscription_lifecycle_and_overage(fake):
         # Another account's subscription events don't touch this one.
         assert _webhook(client, "subscription.charged", {"id": "sub_unknown", "status": "active"}
                         ).json()["outcome"] == "unknown_subscription"
+
+
+def test_upi_subscription_overage_goes_by_payment_link(fake):
+    """Razorpay refuses add-ons on UPI-autopay subscriptions: the period's
+    overage is sent as a payment link, and its payment is recorded."""
+    from app.main import app
+
+    get_settings().billing_catalog = json.dumps({"growth": {"included": 1, "overage": 50}})
+    with TestClient(app) as client:
+        h, site = _tenant(client)
+        sub_id = client.post("/tenant/billing/checkout", json={"plan": "growth"},
+                             headers=h).json()["subscription_id"]
+        start = datetime.now(timezone.utc) - timedelta(days=29)
+        fake.activate(sub_id, start)
+        fake.subs[sub_id]["payment_method"] = "upi"
+        _webhook(client, "subscription.activated", fake.subs[sub_id])
+        _usage(site["site_key"], ["u1", "u2", "u3", "u4"], at=start + timedelta(days=2))
+
+        # Payment links are down at renewal: the period stays pending...
+        fake.links_down = True
+        _webhook(client, "subscription.charged", dict(fake.activate(sub_id, start + timedelta(days=30))))
+        hist = client.get("/tenant/billing", headers=h).json()["overage_history"]
+        assert hist[0]["status"] == "pending" and hist[0]["amount"] == 150
+        assert fake.addons == [] and fake.links == []
+
+        # ...and the next subscription event retries it, as a link this time.
+        fake.links_down = False
+        _webhook(client, "subscription.updated", fake.subs[sub_id])
+        hist = client.get("/tenant/billing", headers=h).json()["overage_history"]
+        assert hist[0]["status"] == "link" and hist[0]["payment_link_url"].startswith("https://")
+        link = fake.links[0]
+        assert link["amount"] == 150 and link["customer"]["email"].endswith("@example.com")
+        assert link["notify"] == {"sms": False, "email": True} and len(link["reference_id"]) <= 40
+
+        # Paid on Razorpay before any webhook arrives: the page catches up.
+        link["status"] = "paid"
+        assert client.get("/tenant/billing", headers=h).json()["overage_history"][0]["status"] == "paid"
+        _sql("UPDATE billing_overage SET status = 'link' WHERE payment_link_id = :i", i=link["id"])
+        link["status"] = "created"
+
+        paid = {"entity": "event", "event": "payment_link.paid",
+                "payload": {"payment_link": {"entity": {"id": link["id"], "status": "paid"}}}}
+        body = json.dumps(paid).encode()
+        r = client.post("/billing/razorpay/webhook", content=body, headers={
+            "Content-Type": "application/json", "X-Razorpay-Signature": _sign(body)}).json()
+        assert r["outcome"] == "overage_paid"
+        assert client.get("/tenant/billing", headers=h).json()["overage_history"][0]["status"] == "paid"
+        # Razorpay can't change the plan of a UPI-autopay subscription.
+        r = client.post("/tenant/billing/checkout", json={"plan": "scale"}, headers=h)
+        assert r.status_code == 409 and "UPI Autopay" in r.json()["detail"]
+        assert client.get("/tenant/billing", headers=h).json()["plan"] == "growth"
+        # Nothing is billed twice.
+        _webhook(client, "subscription.updated", fake.subs[sub_id])
+        assert len(fake.links) == 1
 
 
 def test_billing_needs_keys_for_checkout():
