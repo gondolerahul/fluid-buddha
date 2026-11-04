@@ -74,6 +74,8 @@ class SiteProfile:
     # whether the guided tour is offered: both settable by a test's winner.
     default_persona: str = ""
     tour_enabled: bool = True
+    # Products visitors compare this one with; Insights counts their mentions (M2-5).
+    competitors: list[str] = field(default_factory=list)
 
     @property
     def persona_slugs(self) -> list[str]:
@@ -114,7 +116,17 @@ class SiteProfile:
             default_persona=(str(merged.get("default_persona") or "")
                              if merged.get("default_persona") in {p.slug for p in personas} else ""),
             tour_enabled=merged.get("tour_enabled") is not False,
+            competitors=_clean_names(merged.get("competitors") or []),
         )
+
+
+def _clean_names(names: list[Any]) -> list[str]:
+    out: list[str] = []
+    for n in names:
+        n = " ".join(str(n).split())[:60]
+        if n and n.lower() not in {o.lower() for o in out}:
+            out.append(n)
+    return out[:30]
 
 
 def _clean_routes(routes: list[Any]) -> list[str]:

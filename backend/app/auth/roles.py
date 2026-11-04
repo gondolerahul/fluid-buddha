@@ -37,6 +37,8 @@ _RULES: list[tuple[object, str, str]] = [
     (READ, r"^/tenant/team", "viewer"),
     ("*", r"^/tenant/team", "admin"),
     ("*", r"^/tenant/audit", "admin"),
+    # The weekly digest: who gets the account's numbers.
+    ("*", r"^/tenant/digest", "admin"),
     # Integrations hold the webhook signing secret, even to read.
     ("*", r"^/tenant/websites/[^/]+/integrations", "admin"),
     # Privacy settings and erasing a visitor's data.

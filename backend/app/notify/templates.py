@@ -35,8 +35,20 @@ def rows(pairs: list[tuple[str, str]]) -> str:
     return f'<table style="border-collapse:collapse;margin:0 0 14px">{cells}</table>'
 
 
-def layout(title: str, body_html: str, footer: str = "") -> str:
-    foot = f'<p style="color:#8a8f99;font-size:12px;margin-top:28px">{esc(footer)}</p>' if footer else ""
+def bullets(items: list[str]) -> str:
+    li = "".join(f'<li style="margin:0 0 6px">{esc(i)}</li>' for i in items)
+    return f'<ul style="margin:0 0 14px;padding-left:20px;line-height:1.5">{li}</ul>'
+
+
+def layout(title: str, body_html: str, footer: str = "",
+           unsubscribe_url: str | None = None) -> str:
+    unsub = ""
+    if unsubscribe_url:
+        if not unsubscribe_url.startswith(("https://", "http://")):
+            raise ValueError("unsubscribe links must be http(s)")
+        unsub = f' <a href="{esc(unsubscribe_url)}" style="color:#8a8f99">Unsubscribe</a>'
+    foot = (f'<p style="color:#8a8f99;font-size:12px;margin-top:28px">{esc(footer)}{unsub}</p>'
+            if footer or unsub else "")
     return (
         '<!doctype html><html><body style="margin:0;background:#f5f5f2;font-family:'
         "-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1d1f24\">"

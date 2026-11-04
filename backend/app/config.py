@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     smtp_from: str = "FluidBuddha <no-reply@localhost>"
     smtp_timeout_seconds: float = 20.0
     email_outbox_interval_seconds: int = 15   # how often queued email is sent; 0 = off
+    # Insights v2 (M2-5): how often new visitor turns are classified, and how
+    # often accounts are checked for a due weekly digest. 0 = off.
+    insights_classify_seconds: int = 20
+    digest_check_seconds: int = 600
     # Base URL of the console, for links in emails (invitations, digests).
     console_url: str = "http://localhost:3001"
 

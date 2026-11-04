@@ -60,6 +60,7 @@ class ProfileUpdate(BaseModel):
     greeting: Optional[str] = Field(None, max_length=300)
     default_persona: Optional[str] = Field(None, max_length=40)
     tour_enabled: Optional[bool] = None
+    competitors: Optional[list[str]] = Field(None, max_length=30)
 
     @field_validator("personas")
     @classmethod

@@ -37,6 +37,27 @@ def build_scheduler(settings: Settings) -> Scheduler:
         async with session_scope() as db:
             return await live_store.sweep(db) or None
 
+    engines = None
+
+    async def classify_turns() -> object:
+        """Insights v2 (M2-5): label new visitor turns (rules in mock mode)."""
+        nonlocal engines
+        from app.insights.classify import run_job
+
+        llm = None
+        if not settings.mock_ai:
+            if engines is None:
+                from app.ai.factory import build_engines
+                engines = build_engines(settings)
+            llm = engines.llm
+        return await run_job(session_scope, llm=llm, model=settings.fast_model) or None
+
+    async def weekly_digest() -> object:
+        from app.notify import digest
+
+        async with session_scope() as db:
+            return await digest.send_due(db) or None
+
     s = Scheduler()
     s.add(Job("retention_sweep", settings.retention_sweep_minutes * 60, retention))
     s.add(Job("email_outbox", settings.email_outbox_interval_seconds, outbox, run_at_start=True))
@@ -44,4 +65,6 @@ def build_scheduler(settings: Settings) -> Scheduler:
               outbox_cleanup))
     s.add(Job("audit_retention", 24 * 3600, audit_retention))
     s.add(Job("live_presence_sweep", 300, live_sweep))
+    s.add(Job("insights_classify", settings.insights_classify_seconds, classify_turns))
+    s.add(Job("weekly_digest", settings.digest_check_seconds, weekly_digest))
     return s

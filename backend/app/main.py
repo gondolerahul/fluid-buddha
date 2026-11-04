@@ -34,6 +34,7 @@ from app.routes import (
     team,
     tours,
     triggers,
+    digest,
     websites,
     widget,
 )
@@ -107,3 +108,5 @@ app.include_router(sso.admin)
 app.include_router(live.router)
 app.include_router(triggers.public)
 app.include_router(triggers.admin)
+app.include_router(digest.admin)
+app.include_router(digest.public)
