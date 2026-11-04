@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.audit import AuditMiddleware
 from app.config import get_settings
 from app.cors import ScopedCORSMiddleware
 from app.db import dispose_engine, init_db
@@ -28,6 +29,7 @@ from app.routes import (
     leads,
     onboarding,
     privacy,
+    team,
     tours,
     websites,
     widget,
@@ -67,6 +69,8 @@ app.add_middleware(
     public_origins=settings.cors_origin_list,
     admin_origins=settings.admin_cors_origin_list,
 )
+# Every successful change made through /tenant routes goes in the audit log (M2-1).
+app.add_middleware(AuditMiddleware)
 # Outermost: every response (CORS preflights included) gets an X-Request-ID,
 # and every log line written while handling it carries that id (F-3).
 app.add_middleware(ObservabilityMiddleware)
@@ -94,3 +98,4 @@ app.include_router(experiments.public)
 app.include_router(experiments.admin)
 app.include_router(billing.admin)
 app.include_router(billing.webhooks)
+app.include_router(team.router)
