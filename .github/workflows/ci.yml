@@ -129,3 +129,24 @@ jobs:
       - run: npm run build
       - name: Dependency audit
         run: npm run audit
+
+  # The self-hosted bundle (M3-5): the Compose file resolves with the .env
+  # template (voice profile included) and the edge config parses.
+  selfhost:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/selfhost
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compose config
+        run: |
+          docker compose --env-file .env.example config -q
+          docker compose --env-file .env.example --profile voice config -q
+      - name: Caddyfile
+        run: |
+          docker run --rm -e API_DOMAIN=api.example.com -e CONSOLE_DOMAIN=console.example.com \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Scripts
+        run: for f in bin/*.sh; do bash -n "$f"; done

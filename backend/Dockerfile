@@ -16,7 +16,8 @@ COPY scripts ./scripts
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x docker-entrypoint.sh
+# A Windows checkout may have CRLF line endings: the shell can't run those.
+RUN sed -i 's/\r$//' docker-entrypoint.sh scripts/*.sh && chmod +x docker-entrypoint.sh
 
 EXPOSE 8080
 

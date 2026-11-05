@@ -46,6 +46,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // The self-hosted image (deploy/selfhost, M3-5) runs the standalone server.
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
