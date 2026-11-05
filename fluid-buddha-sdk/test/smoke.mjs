@@ -676,5 +676,72 @@ offline.remove();
   await prepareLang('en');
 }
 
+// ---- Actions + custom components (M2-8) ----
+{
+  const posts = [];
+  globalThis.fetch = async (url, init2) => {
+    const u = String(url);
+    const body = init2 && init2.body ? JSON.parse(init2.body) : null;
+    posts.push({ u, body });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => ({ defaults: {} }) };
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'Please confirm on screen.', session_id: 'sess-act', actions: [], components: [],
+      proposals: [{ id: 'run-1', kind: 'payment_link', label: 'Pay for a plan', summary: [{ label: 'Plan', value: 'Growth plan' }, { label: 'Amount', value: '₹14,999' }] }] }) };
+    if (u.endsWith('/actions/confirm')) return { ok: true, json: async () => ({ id: 'run-1', status: 'done', message: 'Payment link for Growth plan.', url: 'https://rzp.io/i/abc123' }) };
+    if (u.endsWith('/actions/cancel')) return { ok: true, json: async () => ({ id: body.run_id, status: 'cancelled' }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const aw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_act_site', site: 'x', design: 'level1' });
+  await settle();
+  aw.ask('I want to pay for the growth plan');
+  await settle();
+  const card = aw.shadowRoot.querySelector('.fb-action');
+  ok(card && card.textContent.includes('Pay for a plan') && card.textContent.includes('₹14,999'),
+    'a proposed action shows a confirmation card with its amount');
+  ok(!posts.some((p) => p.u.includes('/actions/')), 'nothing is sent before the visitor confirms');
+  card.querySelector('.fb-consent-allow').click();
+  await settle();
+  const conf = posts.find((p) => p.u.endsWith('/actions/confirm'));
+  ok(conf && conf.body.run_id === 'run-1' && conf.body.session_id === 'sess-act' && conf.body.key === 'fbk_act_site',
+    'Confirm posts the run for this conversation');
+  const link = card.querySelector('a.fb-consent-allow');
+  ok(link && link.href === 'https://rzp.io/i/abc123' && link.target === '_blank' && link.rel.includes('noopener'),
+    'the outcome offers the payment page');
+  card.querySelector('.fb-consent-deny').click();
+  ok(!aw.shadowRoot.querySelector('.fb-action'), 'Close removes the card');
+
+  // Over the voice socket a proposal arrives as an event; Cancel posts a cancel.
+  aw.session.feed({ channel: 'EVENTS', type: 'action_proposal', payload: { id: 'run-2', kind: 'trial', label: 'Start a trial', summary: [] } });
+  const c2 = aw.shadowRoot.querySelector('.fb-action');
+  ok(c2 && c2.textContent.includes('Start a trial'), 'a socket proposal shows the card too');
+  c2.querySelector('.fb-consent-deny').click();
+  await settle();
+  ok(posts.some((p) => p.u.endsWith('/actions/cancel') && p.body.run_id === 'run-2') && !aw.shadowRoot.querySelector('.fb-action'),
+    'Cancel tells the server and closes');
+  aw.remove();
+
+  // A site's own component in a sandboxed iframe, and its message contract.
+  const box = document.createElement('div');
+  document.body.append(box);
+  const reported = [];
+  const ec = new Canvas(box, () => {}, (id, p) => reported.push(p));
+  ec.add({ sync_id: 'ui_embed', component_type: 'embed', initial_state: { src: 'https://tools.acme.example/calc', name: 'plan_builder', props: { seats: 3 } } });
+  await tick();
+  const frame = box.querySelector('iframe');
+  ok(frame && frame.getAttribute('sandbox') === 'allow-scripts' && frame.src === 'https://tools.acme.example/calc'
+    && frame.getAttribute('referrerpolicy') === 'no-referrer', 'an embed is a scripts-only sandboxed iframe of the registered URL');
+  const send = (data, source) => window.dispatchEvent(new window.MessageEvent('message', { data, source }));
+  send({ type: 'fb:resize', height: 5000 }, frame.contentWindow);
+  ok(frame.style.height === '800px', 'fb:resize is clamped (80–800 px)');
+  send({ type: 'fb:state', state: { seats: 9 } }, frame.contentWindow);
+  ok(reported.length === 1 && reported[0].state.seats === 9, 'fb:state reaches the agent');
+  send({ type: 'fb:state', state: { blob: 'x'.repeat(3000) } }, frame.contentWindow);
+  send({ type: 'fb:state', state: { seats: 1 } }, window);
+  send({ type: 'navigate', url: 'https://evil.example' }, frame.contentWindow);
+  ok(reported.length === 1, 'oversized state, other senders and unknown messages are ignored');
+  ec.add({ sync_id: 'ui_bad', component_type: 'embed', initial_state: { src: 'javascript:alert(1)' } });
+  ok(box.querySelectorAll('iframe').length === 1, 'a non-https embed draws nothing');
+  box.remove();
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

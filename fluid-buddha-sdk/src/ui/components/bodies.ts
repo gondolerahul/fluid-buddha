@@ -21,6 +21,7 @@ import { buildSankey } from './sankey';
 import { buildConfigurator } from './configurator';
 import { buildScenarioSimulator } from './scenarioSimulator';
 import { buildTabs } from './tabs';
+import { buildEmbed } from './embed';
 import { RenderContext } from './interactive';
 
 export type BuildBody = (
@@ -58,6 +59,8 @@ export const buildBody: BuildBody = (payload, patch, ctx) => {
       return buildScenarioSimulator(state, ctx);
     case 'tabs':
       return buildTabs(state, ctx);
+    case 'embed': // a site's own component in a sandboxed iframe (M2-8)
+      return buildEmbed(state, ctx);
     default: {
       const d = document.createElement('div');
       d.className = 'empty';

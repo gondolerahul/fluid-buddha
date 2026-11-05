@@ -25,6 +25,7 @@ import { AuraCanvas, AuraState } from './aura/AuraCanvas';
 import { stylesFor } from './styles';
 import { callBar, callPrompt } from './call';
 import { consentPrompt } from './consent';
+import { actionPrompt } from './actionCard';
 import { showNudge } from './nudge';
 import { Lang, pickLang, prepareLang, setLang, t } from '../i18n';
 
@@ -315,6 +316,7 @@ export class FluidBuddhaElement extends HTMLElement {
       requestConsent: (p) => consentPrompt(root, p),
       requestCall: (name) => callPrompt(root, name),
       onCall: callBar(root),
+      onProposal: (c, answer) => actionPrompt(root, c, answer),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -349,6 +351,7 @@ export class FluidBuddhaElement extends HTMLElement {
       requestConsent: (p) => consentPrompt(root, p),
       requestCall: (name) => callPrompt(root, name),
       onCall: callBar(root),
+      onProposal: (c, answer) => actionPrompt(root, c, answer),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -467,6 +470,7 @@ export class FluidBuddhaElement extends HTMLElement {
       requestConsent: (p) => consentPrompt(root, p),
       requestCall: (name) => callPrompt(root, name),
       onCall: callBar(root),
+      onProposal: (c, answer) => actionPrompt(root, c, answer),
       onPage: (p) => { this.hideThinking(); this.renderPage(p); },
       onAgentAudio: () => this.markSpeaking(),
       onTourStatus: (text) => { this.connText = t(text ? 'guidedTour' : 'online'); if (this.auraState === 'dormant') this.updateStatusText(); },

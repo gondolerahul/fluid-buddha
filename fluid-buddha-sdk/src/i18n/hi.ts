@@ -80,4 +80,12 @@ export const hi: Record<StringKey, string> = {
   sending: 'भेजा जा रहा है…',
   sent: 'भेज दिया ✓',
   tryAgain: 'फिर कोशिश करें',
+  confirm: 'पुष्टि करें',
+  cancel: 'रद्द करें',
+  working: 'हो रहा है…',
+  actionNote: 'आपकी पुष्टि के बिना कुछ नहीं होगा।',
+  actionDone: 'हो गया।',
+  actionFailed: 'यह नहीं हो पाया। कृपया फिर कोशिश करें।',
+  payNow: 'पेमेंट पेज खोलें',
+  openLink: 'खोलें',
 };

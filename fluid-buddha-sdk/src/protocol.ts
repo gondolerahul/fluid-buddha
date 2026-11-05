@@ -25,7 +25,9 @@ export type ComponentType =
   | 'sankey'
   | 'configurator'
   | 'scenario_simulator'
-  | 'tabs';
+  | 'tabs'
+  // A site's own component in a sandboxed iframe (M2-8; produced by the server only):
+  | 'embed';
 
 // ---- per-component strongly-typed `initial_state` shapes --------------------
 export interface FlowchartState {

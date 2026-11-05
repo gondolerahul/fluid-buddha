@@ -837,7 +837,8 @@ export const COMMON_STYLES = `
 .fb-consent-card p { margin: 0; font-size: 0.88rem; line-height: 1.5; color: var(--fb-muted); }
 .fb-consent-card a { font-size: 0.84rem; color: var(--fb-gold-bright); }
 .fb-consent-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
-.fb-consent-actions button {
+.fb-consent-actions button, .fb-consent-actions a {
+  text-decoration: none;
   font: inherit; font-size: 0.86rem; padding: 8px 14px; border-radius: 10px; cursor: pointer;
   border: 1px solid var(--fb-border); background: transparent; color: var(--fb-fg);
 }
@@ -847,6 +848,10 @@ export const COMMON_STYLES = `
 .fb-consent-actions button:focus-visible, .fb-consent-card a:focus-visible {
   outline: 2px solid var(--fb-gold-bright); outline-offset: 2px;
 }
+/* ---- Action confirmation (M2-8): the consent dialog's look ---- */
+.fb-action-rows { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 0.88rem; }
+.fb-action-rows dt { color: var(--fb-muted); }
+.fb-action-rows dd { margin: 0; }
 /* ---- Proactive nudge (M2-3): a message bubble by the launcher ---- */
 .fb-nudge {
   position: fixed; right: 24px; bottom: 96px; z-index: calc(var(--fb-z-base) + 5);

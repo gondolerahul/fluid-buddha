@@ -84,6 +84,14 @@ const en = {
   sending: 'Sending…',
   sent: 'Sent ✓',
   tryAgain: 'Try again',
+  confirm: 'Confirm',
+  cancel: 'Cancel',
+  working: 'Working…',
+  actionNote: 'Nothing happens until you confirm.',
+  actionDone: 'Done.',
+  actionFailed: "That didn't work. Please try again.",
+  payNow: 'Open payment page',
+  openLink: 'Open',
 };
 
 export type StringKey = keyof typeof en;

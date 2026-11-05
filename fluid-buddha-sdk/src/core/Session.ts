@@ -9,6 +9,7 @@ import { JitterBuffer } from '../audio/JitterBuffer';
 import { ComponentPayload, Envelope, Grounding, PageSpec, Privacy, base64ToBytes } from '../protocol';
 import { CONSENT_VERSION, hasConsent, rememberConsent } from '../ui/consent';
 import { preloadComponents } from '../ui/components/canvas';
+import type { ActionCard, ActionOutcome } from '../ui/actionCard';
 import { ConnectionStatus, VoiceClient } from '../transport/VoiceClient';
 import { FluidBuddhaConfig } from './config';
 import { HostBridge } from './HostBridge';
@@ -41,6 +42,10 @@ export interface SessionCallbacks {
   requestCall?: (name: string) => Promise<boolean>;
   /** A voice call with a person started (with a hang-up handle) or ended. */
   onCall?: (active: boolean, name: string, hangup: () => void) => void;
+  /** The agent proposes an action (M2-8): show it; `answer(true)` confirms
+   *  it (resolving with the outcome), `answer(false)` cancels. Without it
+   *  proposals are ignored and nothing runs. */
+  onProposal?: (card: ActionCard, answer: (confirm: boolean) => Promise<ActionOutcome | null>) => void;
 }
 
 // Used when the socket never says what the site wants: ask, to be safe.
@@ -223,6 +228,8 @@ export class Session {
           });
         } else if (env.type === 'set_persona') {
           this.bridge.setPersona(String(env.payload.persona || ''));
+        } else if (env.type === 'action_proposal') {
+          this.propose(env.payload as unknown as ActionCard);
         } else if (env.type === 'language') {
           this.setTalkLang(env.payload.lang);
         } else if (env.type === 'tour_plan') {
@@ -436,6 +443,25 @@ export class Session {
     }
   }
 
+  /** Show a proposed action; the visitor's answer goes to the server (M2-8). */
+  private propose(card: ActionCard): void {
+    if (!card || !card.id || !this.cb.onProposal) return;
+    this.cb.onProposal(card, async (yes) => {
+      try {
+        const res = await fetch(`${(this.config.api || '').replace(/\/$/, '')}/actions/${yes ? 'confirm' : 'cancel'}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: this.config.key, site: this.config.site,
+            session_id: this.wsSessionId ?? this.textSessionId, run_id: card.id }),
+        });
+        const d = await res.json();
+        return res.ok ? (d as ActionOutcome) : { status: 'failed', error: String(d.detail || '') || null };
+      } catch {
+        return null;
+      }
+    });
+  }
+
   /** Build (or refresh) this conversation's recap link, optionally emailed. */
   async recap(email?: string): Promise<void> {
     const say = (t: string) => this.cb.onAgentMessage(t);
@@ -505,6 +531,7 @@ export class Session {
       }
       this.textSessionId = data.session_id ?? this.textSessionId;
       this.setTalkLang(data.lang);
+      ((data.proposals as ActionCard[] | undefined) || []).forEach((c) => this.propose(c));
       if (data.takeover) {
         // A person has the chat: their replies come from /chat/live (M2-2).
         const base = (this.config.api || '').replace(/\/$/, '');
