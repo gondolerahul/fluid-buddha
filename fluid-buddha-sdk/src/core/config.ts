@@ -87,6 +87,9 @@ export interface FluidBuddhaConfig {
   exp?: { id: string; arm: string };
   /** Set by the widget: the only trigger rules that may fire (a trigger test). */
   triggerIds?: string[];
+  /** The widget's language (M2-7): `auto` (the site's setting / the visitor's
+   *  browser), `en` or `hi` (`data-lang`). Hindi needs the site to allow it. */
+  lang: 'auto' | 'en' | 'hi';
 }
 
 export type FluidBuddhaOptions = Partial<Omit<FluidBuddhaConfig, 'hooks'>> & {
@@ -100,8 +103,8 @@ const DEFAULTS: FluidBuddhaConfig = {
   key: '',
   position: 'bottom-right',
   accent: '#c9a24a',
-  greeting:
-    "Hi, I'm Pragya. Tap the mic and ask me anything — I can show you around, run the numbers, and answer with grounded facts.",
+  // Empty: the default greeting in the widget's language (src/i18n).
+  greeting: '',
   autoInject: false,
   autoStart: false,
   intelligence: 'advance',
@@ -109,6 +112,7 @@ const DEFAULTS: FluidBuddhaConfig = {
   tour: true,
   navigation: 'auto',
   hooks: {},
+  lang: 'auto',
 };
 
 /** wss://host -> https://host ; ws://host -> http://host */
@@ -163,5 +167,7 @@ export function optionsFromAttributes(el: Element | null): FluidBuddhaOptions {
   const navigation = get('navigation');
   if (navigation && (NAVIGATION_MODES as string[]).includes(navigation))
     opts.navigation = navigation as NavigationMode;
+  const lang = get('lang');
+  if (lang === 'auto' || lang === 'en' || lang === 'hi') opts.lang = lang;
   return opts;
 }

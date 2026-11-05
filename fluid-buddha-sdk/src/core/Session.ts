@@ -8,11 +8,13 @@ import { AudioPlayer } from '../audio/AudioPlayer';
 import { JitterBuffer } from '../audio/JitterBuffer';
 import { ComponentPayload, Envelope, Grounding, PageSpec, Privacy, base64ToBytes } from '../protocol';
 import { CONSENT_VERSION, hasConsent, rememberConsent } from '../ui/consent';
+import { preloadComponents } from '../ui/components/canvas';
 import { ConnectionStatus, VoiceClient } from '../transport/VoiceClient';
 import { FluidBuddhaConfig } from './config';
 import { HostBridge } from './HostBridge';
 import { LiveLink } from './Live';
 import { TourController, TourStop } from './Tour';
+import { getLang, t } from '../i18n';
 
 export interface SessionCallbacks {
   onStatus: (s: ConnectionStatus) => void;
@@ -60,7 +62,7 @@ interface AnyRecognition {
 }
 
 const RECAP_RE =
-  /\b(send|email|mail|share|give) me (this|that|a (recap|summary|copy)|the (recap|summary|conversation))\b|\brecap (link|please)\b/i;
+  /\b(send|email|mail|share|give) me (this|that|a (recap|summary|copy)|the (recap|summary|conversation))\b|\brecap (link|please)\b|रीकैप|(यह|ये|इसे|इसको)\s*(मुझे\s*)?(भेज|ईमेल)|\b(ye|yeh|ise|isko) (mujhe )?(bhej|email|mail)/i;
 
 export class Session {
   private client: VoiceClient | null = null;
@@ -68,6 +70,9 @@ export class Session {
   private player: AudioPlayer | null = null;
   private jitter: JitterBuffer | null = null;
   private recognition: AnyRecognition | null = null;
+  /** The conversation's language (M2-7): the widget's to begin with, then
+   *  what the server answers in. The browser's recogniser listens for it. */
+  private talkLang = getLang();
 
   private lastTranscript = '';
   private pendingAudio = 0;
@@ -168,12 +173,17 @@ export class Session {
 
   connect(): void {
     if (this.client?.isOpen) return;
+    // A conversation is starting: fetch the diagram renderers now so the
+    // first one shows without a wait (basic/high never draw components).
+    if (this.config.intelligence === 'advance' || this.config.intelligence === 'extreme') {
+      preloadComponents().catch(() => undefined);
+    }
     if (!this.client) {
       this.client = new VoiceClient(this.wsUrl(), {
         onEnvelope: (env) => this.feed(env),
         onStatus: (s) => {
           this.cb.onStatus(s);
-          if (s === 'failed') this.cb.onSystem('Voice link unavailable — using text mode.');
+          if (s === 'failed') this.cb.onSystem(t('voiceUnavailable'));
         },
       });
     }
@@ -213,13 +223,15 @@ export class Session {
           });
         } else if (env.type === 'set_persona') {
           this.bridge.setPersona(String(env.payload.persona || ''));
+        } else if (env.type === 'language') {
+          this.setTalkLang(env.payload.lang);
         } else if (env.type === 'tour_plan') {
           const stops = (env.payload.stops as TourStop[]) || [];
           if (this.config.tour && stops.length) void this.tour.run(stops);
         } else if (env.type === 'tour_done') {
           this.resolveTourDone(Number(env.payload.index ?? -1));
         } else if (env.type === 'recalibrating') {
-          this.cb.onSystem('Re-calibrating…');
+          this.cb.onSystem(t('recalibrating'));
         } else if (env.type === 'interrupted') {
           this.jitter?.reset();
           this.tour.abort(); // a real barge-in ends the tour
@@ -227,7 +239,7 @@ export class Session {
           // Audio reached a server session that hasn't heard the consent yet.
           if (hasConsent(this.consentKey)) this.sendConsent();
         } else if (env.type === 'error') {
-          this.cb.onSystem(String(env.payload.message || 'Error'));
+          this.cb.onSystem(String(env.payload.message || t('error')));
         }
         break;
       case 'STATE':
@@ -278,7 +290,7 @@ export class Session {
     const rec = new Ctor();
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = 'en-US';
+    rec.lang = this.speechLang;
     rec.onresult = (e) => {
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -298,6 +310,16 @@ export class Session {
     } catch {
       /* already started */
     }
+  }
+
+  private get speechLang(): string {
+    return this.talkLang === 'hi' ? 'hi-IN' : 'en-IN';
+  }
+
+  private setTalkLang(lang: unknown): void {
+    if ((lang !== 'en' && lang !== 'hi') || lang === this.talkLang) return;
+    this.talkLang = lang;
+    if (this.recognition) this.recognition.lang = this.speechLang; // used from its next start
   }
 
   private get consentKey(): string {
@@ -340,7 +362,7 @@ export class Session {
     this.reportCurrentPage();
     if (!(await this.ensureMicConsent())) {
       this._active = false;
-      this.cb.onSystem('Voice is off — type to chat instead.');
+      this.cb.onSystem(t('voiceOff'));
       return;
     }
     this.startRecognition();
@@ -375,7 +397,7 @@ export class Session {
       this.capture = capture;
       this._active = true;
     } catch {
-      this.cb.onSystem('Microphone unavailable — type to chat instead.');
+      this.cb.onSystem(t('micUnavailable'));
       this._active = false;
     }
   }
@@ -425,16 +447,14 @@ export class Session {
           session_id: this.wsSessionId ?? this.textSessionId, email }),
       });
       if (res.status === 404 || res.status === 422) {
-        say(res.status === 404 ? 'Ask me something first, then I can put together a recap.'
-          : "That email address doesn't look right.");
+        say(t(res.status === 404 ? 'recapFirst' : 'recapBadEmail'));
         return;
       }
       const d = await res.json();
       if (!res.ok || !d.url) throw new Error();
-      say(`Here's your recap. Open it on any device or forward it to your team: ${d.url}`
-        + (d.emailed ? ` I've also emailed it to ${email}.` : ''));
+      say(t('recapReady', { url: d.url }) + (d.emailed ? t('recapEmailed', { email: email || '' }) : ''));
     } catch {
-      say("I couldn't make a recap just now. Please try again in a moment.");
+      say(t('recapFailed'));
     }
   }
 
@@ -473,16 +493,18 @@ export class Session {
           intelligence: this.config.intelligence,
           design: this.config.design,
           exp: this.config.exp,
+          lang: getLang(),
           page: ctx.page ?? (typeof location !== 'undefined' ? location.pathname : undefined),
           sections: ctx.sections,
         }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        this.cb.onSystem('Agent is offline right now. Please try again shortly.');
+        this.cb.onSystem(t('offline'));
         return;
       }
       this.textSessionId = data.session_id ?? this.textSessionId;
+      this.setTalkLang(data.lang);
       if (data.takeover) {
         // A person has the chat: their replies come from /chat/live (M2-2).
         const base = (this.config.api || '').replace(/\/$/, '');
@@ -504,7 +526,7 @@ export class Session {
       (data.components || []).forEach((c: ComponentPayload) => this.cb.onComponent(c));
       (data.pages || []).forEach((p: PageSpec) => this.cb.onPage?.(p));
     } catch {
-      this.cb.onSystem('Connection error. The agent is offline.');
+      this.cb.onSystem(t('connError'));
     }
   }
 
@@ -600,7 +622,8 @@ export class Session {
       this.greeted = true;
       // The test variant goes with the hello: the server speaks its greeting
       // and starts in its persona (M2-4).
-      this.client?.sendHello({ ...this.withLevels(this.pageProvider?.() ?? {}), exp: this.config.exp });
+      this.client?.sendHello({ ...this.withLevels(this.pageProvider?.() ?? {}), exp: this.config.exp,
+        lang: getLang() });
     }
   }
 

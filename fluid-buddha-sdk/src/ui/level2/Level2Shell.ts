@@ -23,6 +23,7 @@ import type { ParticleField } from '../particles/ParticleField';
 import { loadParticleField } from '../particles/load';
 import { AuraState } from '../aura/AuraCanvas';
 import { MessageStack } from './MessageStack';
+import { t } from '../../i18n';
 
 const ICONS = {
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
@@ -96,7 +97,7 @@ export class Level2Shell {
 
     const close = document.createElement('button');
     close.className = 'l2-close';
-    close.setAttribute('aria-label', 'Close');
+    close.setAttribute('aria-label', t('close'));
     close.innerHTML = ICONS.close;
     close.addEventListener('click', () => this.hide());
     root.appendChild(close);
@@ -118,19 +119,19 @@ export class Level2Shell {
     // "Awaken" invitation.
     this.playBtn = document.createElement('button');
     this.playBtn.className = 'l2-play';
-    this.playBtn.setAttribute('aria-label', 'Awaken Pragya and start talking');
+    this.playBtn.setAttribute('aria-label', t('awaken', { name: 'Pragya' }));
     this.playBtn.innerHTML = ICONS.play;
     this.playBtn.addEventListener('click', () => this.onPlay());
     root.appendChild(this.playBtn);
     this.hintEl = this.div('l2-hint');
-    this.hintEl.textContent = 'tap to awaken';
+    this.hintEl.textContent = t('tapAwaken');
     root.appendChild(this.hintEl);
 
     // Near-transparent bottom input (always present — typing works without play).
     const inputRow = this.div('l2-input');
     this.textarea = document.createElement('textarea');
-    this.textarea.placeholder = 'Speak, or type your question…';
-    this.textarea.setAttribute('aria-label', 'Message Pragya');
+    this.textarea.placeholder = t('placeholder');
+    this.textarea.setAttribute('aria-label', t('messageTo', { name: 'Pragya' }));
     this.textarea.rows = 1;
     this.textarea.addEventListener('input', () => this.onTyping());
     this.textarea.addEventListener('keydown', (e) => {
@@ -141,7 +142,7 @@ export class Level2Shell {
     });
     const send = document.createElement('button');
     send.className = 'l2-send';
-    send.setAttribute('aria-label', 'Send');
+    send.setAttribute('aria-label', t('send'));
     send.innerHTML = ICONS.send;
     send.addEventListener('click', () => this.submit());
     inputRow.append(this.textarea, send);
@@ -153,7 +154,7 @@ export class Level2Shell {
     // After close: a small orb that brings the presence back.
     this.reopenBtn = document.createElement('button');
     this.reopenBtn.className = 'l2-reopen l2-hidden';
-    this.reopenBtn.setAttribute('aria-label', 'Open Pragya');
+    this.reopenBtn.setAttribute('aria-label', t('openAgent', { name: 'Pragya' }));
     this.reopenBtn.addEventListener('click', () => this.show());
     parent.appendChild(this.reopenBtn);
 
@@ -264,14 +265,14 @@ export class Level2Shell {
 
   // ---- session-driven updates (called by the host element) ----
   setStatus(s: string): void {
-    if (s === 'failed') this.statusEl.textContent = 'text mode';
-    else if (s === 'open' && this.started && !this.statusEl.textContent) this.statusEl.textContent = 'listening';
+    if (s === 'failed') this.statusEl.textContent = t('textMode');
+    else if (s === 'open' && this.started && !this.statusEl.textContent) this.statusEl.textContent = t('listening');
   }
 
   setTourStatus(text: string): void {
     if (text) {
       this.begin();
-      this.statusEl.textContent = 'guided tour';
+      this.statusEl.textContent = t('guidedTour');
     }
   }
 
@@ -349,7 +350,7 @@ export class Level2Shell {
     this.particles?.start();
     this.particles?.resize();
     if (this.started) {
-      this.hintEl.textContent = 'tap to talk';
+      this.hintEl.textContent = t('tapTalk');
       this.playBtn.classList.remove('l2-hidden');
       this.hintEl.classList.remove('l2-hidden');
     }

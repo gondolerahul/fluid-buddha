@@ -8,6 +8,7 @@ import { PageSection, PageSpec } from '../../protocol';
 import { buildChart } from '../components/chart';
 import { buildFlowchart } from '../components/flowchart';
 import { revealSequence } from '../components/reveal';
+import { t } from '../../i18n';
 
 export interface EnquiryPayload {
   operationId?: string;
@@ -144,7 +145,7 @@ export class PageRenderer {
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'fbpage-btn';
-    submit.textContent = str(p.submit_label) || 'Submit';
+    submit.textContent = str(p.submit_label) || t('submit');
     form.appendChild(submit);
     const label = submit.textContent;
     form.addEventListener('submit', (e) => {
@@ -152,9 +153,9 @@ export class PageRenderer {
       const values: Record<string, string> = {};
       inputs.forEach(({ name, el }) => (values[name] = el.value));
       submit.disabled = true;
-      submit.textContent = 'Sending…';
+      submit.textContent = t('sending');
       void this.onEnquiry({ operationId: str(p.operation_id) || undefined, values }).then((ok) => {
-        submit.textContent = ok ? 'Sent ✓' : 'Try again';
+        submit.textContent = t(ok ? 'sent' : 'tryAgain');
         submit.disabled = ok;
         if (!ok) setTimeout(() => { if (!submit.disabled) submit.textContent = label; }, 4000);
       });

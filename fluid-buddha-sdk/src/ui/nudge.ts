@@ -2,6 +2,8 @@
 // Clicking it opens the conversation; × dismisses it (and silences triggers
 // for the rest of the visit). It never moves focus or plays sound.
 
+import { t } from '../i18n';
+
 export function showNudge(root: ShadowRoot, message: string, onOpen: () => void,
                           onDismiss: () => void): () => void {
   root.querySelector('.fb-nudge')?.remove();
@@ -15,7 +17,7 @@ export function showNudge(root: ShadowRoot, message: string, onOpen: () => void,
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'fb-nudge-x';
-  close.setAttribute('aria-label', 'Dismiss');
+  close.setAttribute('aria-label', t('dismiss'));
   close.textContent = '×';
   box.append(open, close);
   const remove = () => box.remove();

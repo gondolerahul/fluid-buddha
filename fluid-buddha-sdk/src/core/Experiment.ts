@@ -31,6 +31,10 @@ export interface Overrides {
 interface Defaults {
   greeting?: string | null;
   design?: DesignLevel | null;
+  /** The site's languages (M2-7). */
+  languages?: string[] | null;
+  widget_language?: string | null;
+  greeting_hi?: string | null;
 }
 
 interface Enrolment {

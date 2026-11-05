@@ -16,6 +16,7 @@ import { FluidBuddhaConfig } from '../../core/config';
 import { Canvas } from '../components/canvas';
 import { sourcesEl } from '../citations';
 import { AuraCanvas, AuraState } from '../aura/AuraCanvas';
+import { t } from '../../i18n';
 
 const ICONS = {
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
@@ -106,27 +107,27 @@ export class Level3Shell {
     const inputWrap = this.div('l3-summon-input');
     this.summonInput = document.createElement('textarea');
     this.summonInput.rows = 1;
-    this.summonInput.placeholder = 'Ask Pragya anything — or just speak…';
-    this.summonInput.setAttribute('aria-label', 'Ask Pragya');
+    this.summonInput.placeholder = t('askAnything', { name: 'Pragya' });
+    this.summonInput.setAttribute('aria-label', t('ask', { name: 'Pragya' }));
     this.summonInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.submit(); }
       else if (e.key === 'Escape') this.dismissSummon();
     });
     const send = document.createElement('button');
     send.className = 'l3-summon-send';
-    send.setAttribute('aria-label', 'Send');
+    send.setAttribute('aria-label', t('send'));
     send.innerHTML = ICONS.send;
     send.addEventListener('click', () => this.submit());
     inputWrap.append(this.summonInput, send);
     const hint = this.div('l3-summon-hint');
-    hint.innerHTML = 'press <kbd>' + (this.isMac() ? '⌘' : 'Ctrl') + ' K</kbd> anytime · or speak';
+    hint.innerHTML = t('pressKey', { key: '<kbd>' + (this.isMac() ? '⌘' : 'Ctrl') + ' K</kbd>' });
     this.summonEl.append(inputWrap, hint);
     root.appendChild(this.summonEl);
 
     // A persistent mote of light — the minimal, ambient invocation affordance.
     const seed = document.createElement('button');
     seed.className = 'l3-seed';
-    seed.setAttribute('aria-label', 'Summon Pragya');
+    seed.setAttribute('aria-label', t('summon', { name: 'Pragya' }));
     seed.addEventListener('click', () => this.summon());
     root.appendChild(seed);
 

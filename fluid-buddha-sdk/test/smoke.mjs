@@ -24,7 +24,7 @@ globalThis.WebSocket = class {
 };
 
 const mod = await import('../dist/fluid-buddha.mjs');
-const { init, Session, Canvas, HostBridge } = mod;
+const { init, Session, Canvas, HostBridge, preloadComponents } = mod;
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if (!cond) failures++; };
@@ -90,9 +90,18 @@ ok(leadOk && posted.length === 1 && posted[0].url === 'http://x/leads', 'submitL
 ok(posted[0].body.session_id === 'ws-123' && posted[0].body.values.email === 'ana@acme.io' && !('message' in posted[0].body), 'lead carries the voice session id and raw form values, not a chat message');
 
 // ---- 3. Canvas renders components ----
+// The renderers load on demand (M2-7): before they arrive a card waits, and
+// its synced speech is released only once it is drawn.
 const container = document.createElement('div');
 let rendered = null;
 const canvas = new Canvas(container, (id) => (rendered = id));
+canvas.add({ sync_id: 'ui_early', component_type: 'flowchart', initial_state: { nodes: [{ label: 'Early' }] } });
+ok(!!container.querySelector('.card .card-wait') && rendered === null, 'a card waits for the renderers, speech held');
+await preloadComponents();
+await tick();
+ok(!container.querySelector('.card-wait') && !!container.querySelector('.card .flow-node') && rendered === 'ui_early',
+  'the waiting card is drawn once the renderers arrive, then speech is released');
+container.replaceChildren();
 canvas.add({ sync_id: 'ui_9', component_type: 'flowchart', initial_state: { nodes: [{ label: 'Your system' }, { label: 'API' }], edges: [{ from: 'a', to: 'b' }] }, explanation_text: 'flow' });
 ok(!!container.querySelector('.card .flow-node'), 'Canvas renders a flowchart card');
 canvas.add({ sync_id: 'ui_10', component_type: 'roi_calculator', initial_state: { seats: 10, monthly_cost: 10000, hours_saved: 320 } });
@@ -376,6 +385,9 @@ const particlesJs = fs.readFileSync(new URL('../dist/fluid-buddha-particles.glob
 const coreMjs = fs.readFileSync(new URL('../dist/fluid-buddha.mjs', import.meta.url), 'utf8');
 ok(!coreJs.includes('WebGLRenderer') && particlesJs.includes('WebGLRenderer'), 'script-tag core ships without Three.js; the particles file has it');
 ok(!coreMjs.includes('WebGLRenderer') && /import\(["']\.\/chunks\/ParticleField-/.test(coreMjs), 'ESM core loads the particle field as a split chunk');
+const componentsJs = fs.readFileSync(new URL('../dist/fluid-buddha-components.global.js', import.meta.url), 'utf8');
+ok(!coreJs.includes('Unknown component') && componentsJs.includes('Unknown component') && /import\(["']\.\/chunks\/bodies-/.test(coreMjs),
+  'component renderers ship on their own (script-tag file, ESM chunk), not in the core');
 const coreGz = zlib.gzipSync(coreJs).length;
 ok(coreGz < 42 * 1024, `script-tag core is ${(coreGz / 1024).toFixed(1)} kB gzipped (budget 42 kB)`);
 
@@ -604,6 +616,64 @@ offline.remove();
     'the recap page draws a flowchart with the widget styles');
   ok(document.querySelector('[data-fb-slot="c1"]').shadowRoot.querySelector('.roi'), 'and an ROI calculator');
   document.body.innerHTML = '';
+}
+
+// ---- English + Hindi (M2-7) ----
+{
+  const { STRINGS, pickLang, prepareLang } = mod;
+  // The Hindi table ships on its own and is fetched only for Hindi visitors.
+  const fs2 = await import('node:fs');
+  const hiJs = fs2.readFileSync(new URL('../dist/fluid-buddha-hi.global.js', import.meta.url), 'utf8');
+  ok(!coreJs.includes('प्रज्ञा') && !coreJs.includes('\\u092A\\u094D\\u0930\\u091C') && hiJs.includes('FluidBuddhaHindi'),
+    'the Hindi words are not in the core script; they have their own file');
+  ok(!STRINGS.hi, 'Hindi is not loaded until a Hindi widget needs it');
+
+  // Language choice: embed attribute, the site's setting, the visitor's browser.
+  ok(pickLang('hi', null) === 'hi' && pickLang(undefined, null) === 'en', 'without site settings only data-lang chooses');
+  ok(pickLang('hi', { languages: ['en'] }) === 'en', 'a site without Hindi stays English even with data-lang="hi"');
+  ok(pickLang(undefined, { languages: ['en', 'hi'], widget_language: 'hi' }) === 'hi', "the site's Hindi setting");
+  ok(pickLang('en', { languages: ['en', 'hi'], widget_language: 'hi' }) === 'en', 'data-lang wins over the site setting');
+  Object.defineProperty(window.navigator, 'languages', { value: ['hi-IN', 'en-US'], configurable: true });
+  ok(pickLang(undefined, { languages: ['en', 'hi'], widget_language: 'auto' }) === 'hi', "auto follows a Hindi browser");
+  Object.defineProperty(window.navigator, 'languages', { value: ['en-US'], configurable: true });
+  ok(pickLang(undefined, { languages: ['en', 'hi'], widget_language: 'auto' }) === 'en', 'auto on an English browser is English');
+
+  // String coverage: every English string has a Hindi one, same placeholders.
+  await prepareLang('hi');
+  const holes = (s) => (s.match(/\{\w+\}/g) || []).sort().join(',');
+  const missing = Object.keys(STRINGS.en).filter((k) => !STRINGS.hi[k] || holes(STRINGS.hi[k]) !== holes(STRINGS.en[k]));
+  ok(STRINGS.hi && missing.length === 0, `every widget string has a Hindi version (${Object.keys(STRINGS.en).length} strings)${missing.length ? ' — missing: ' + missing.join(', ') : ''}`);
+  const latinOnly = Object.keys(STRINGS.hi).filter((k) => !/[ऀ-ॿ]/.test(STRINGS.hi[k]));
+  ok(latinOnly.length === 0, `Hindi strings are in Devanagari${latinOnly.length ? ' — not: ' + latinOnly.join(', ') : ''}`);
+  ok(Object.keys(STRINGS.hi).every((k) => k in STRINGS.en), 'no Hindi string without an English one');
+
+  // A Hindi widget: labels, chips and greeting in Hindi; the hello says so.
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
+  const hw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', site: 'hirebuddha', lang: 'hi' });
+  await settle();
+  const root = hw.shadowRoot;
+  ok(root && root.querySelector('textarea').placeholder === STRINGS.hi.placeholder, 'a Hindi widget shows its labels in Hindi');
+  ok([...root.querySelectorAll('.chip')].map((c) => c.textContent).join('|') === [STRINGS.hi.chipPricing, STRINGS.hi.chipIntegrate, STRINGS.hi.chipTour].join('|'),
+    'suggestion chips are in Hindi');
+  ok(root.querySelector('.bubble.pragya').textContent.includes('नमस्ते'), 'the default greeting is in Hindi');
+  hw.remove();
+
+  // "Send me this" in Hindi asks for a recap.
+  const rcalls = [];
+  globalThis.fetch = async (url, init2) => {
+    const u = String(url);
+    rcalls.push(u);
+    if (u.endsWith('/recap')) return { ok: true, status: 200, json: async () => ({ url: 'https://api.example.com/r/tokhi', emailed: false }) };
+    return { ok: true, json: async () => ({ text: 'ok', session_id: 'sess-hi', lang: 'hi', actions: [], components: [] }) };
+  };
+  const rw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_hi_site', site: 'x', lang: 'hi' });
+  await settle();
+  rw.ask('यह मुझे भेज दो');
+  await settle();
+  ok(rcalls.some((u) => u.endsWith('/recap')) && rw.shadowRoot.textContent.includes('यह रहा आपका रीकैप'),
+    'a Hindi "send me this" makes a recap, answered in Hindi');
+  rw.remove();
+  await prepareLang('en');
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

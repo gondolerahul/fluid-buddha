@@ -9,6 +9,8 @@
 // microphone pipeline is off for the call, and the relay (TURN) servers come
 // with the offer.
 
+import { t } from '../i18n';
+
 export interface LiveCallbacks {
   notice: (text: string) => void;
   message: (name: string, text: string) => void;
@@ -36,12 +38,12 @@ export class LiveLink {
 
   /** Handle a server EVENTS envelope; true when it was a live event. */
   handle(type: string, p: Record<string, unknown>): boolean {
-    const name = String(p.name || this.operator || 'Someone from the team');
+    const name = String(p.name || this.operator || t('someoneTeam'));
     switch (type) {
       case 'operator_joined':
         this.operator = name;
         this.cb.quietAgent(false);
-        this.cb.notice(`${name} from the team joined the conversation.`);
+        this.cb.notice(t('joined', { name }));
         return true;
       case 'operator_message':
         this.cb.message(name, String(p.text || ''));
@@ -49,7 +51,7 @@ export class LiveLink {
       case 'operator_left':
         this.operator = null;
         this.endCall(false);
-        this.cb.notice(`${name} handed you back to the assistant.`);
+        this.cb.notice(t('handedBack', { name }));
         return true;
       case 'call_offer':
         void this.onOffer(name, String(p.sdp || ''), (p.ice_servers as IceServer[]) || []);
@@ -58,7 +60,7 @@ export class LiveLink {
         if (p.candidate) void this.addIce(p.candidate as RTCIceCandidateInit);
         return true;
       case 'call_hangup':
-        if (this.pc) this.cb.notice(`${name} ended the call.`);
+        if (this.pc) this.cb.notice(t('endedCall', { name }));
         this.endCall(false);
         return true;
     }
@@ -96,7 +98,7 @@ export class LiveLink {
       };
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'failed') {
-          this.cb.notice('The call could not connect.');
+          this.cb.notice(t('callFailed'));
           this.hangup();
         }
       };
@@ -107,7 +109,7 @@ export class LiveLink {
       this.cb.signal('call_answer', { sdp: answer.sdp });
       this.cb.onCall?.(true, name, () => this.hangup());
     } catch {
-      this.cb.notice('Your microphone is not available for the call.');
+      this.cb.notice(t('micForCall'));
       this.cb.signal('call_decline', { reason: 'no_microphone' });
       this.endCall(false);
     }
@@ -157,7 +159,7 @@ export class LiveLink {
         };
         for (const m of data.messages) {
           last = Math.max(last, m.id);
-          if (m.sender === 'operator') this.cb.message(m.author || 'Team', m.text);
+          if (m.sender === 'operator') this.cb.message(m.author || t('team'), m.text);
           else if (m.sender === 'system') this.cb.notice(m.text);
         }
         this.operator = data.takeover?.name ?? null;

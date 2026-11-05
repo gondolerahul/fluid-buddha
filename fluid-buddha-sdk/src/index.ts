@@ -18,7 +18,8 @@ export const VERSION = '0.1.0';
 export { FluidBuddhaElement };
 export { Session } from './core/Session';
 export { HostBridge } from './core/HostBridge';
-export { Canvas } from './ui/components/canvas';
+export { Canvas, preloadComponents } from './ui/components/canvas';
+export { STRINGS, pickLang, prepareLang } from './i18n';
 // For hosts that build their own UI around Session (requestConsent).
 export { consentCopy, consentPrompt } from './ui/consent';
 export { callPrompt } from './ui/call';

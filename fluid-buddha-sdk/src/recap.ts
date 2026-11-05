@@ -9,7 +9,10 @@
 // nothing is sent anywhere.
 
 import { ComponentPayload } from './protocol';
-import { Canvas } from './ui/components/canvas';
+import { Canvas, provideBodies } from './ui/components/canvas';
+import { buildBody } from './ui/components/bodies';
+
+provideBodies(buildBody);
 import { COMMON_STYLES, CORE_STYLES } from './ui/styles';
 
 interface Slot {

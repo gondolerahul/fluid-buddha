@@ -1,6 +1,8 @@
 // Voice calls with a person from the site's team (M2-2): the "accept this call?"
 // dialog (styled like the microphone consent) and the bar shown during a call.
 
+import { t } from '../i18n';
+
 /** Ask the visitor to accept a call from `name`; resolves true to accept. */
 export function callPrompt(root: ShadowRoot, name: string): Promise<boolean> {
   return new Promise((resolve) => {
@@ -13,20 +15,19 @@ export function callPrompt(root: ShadowRoot, name: string): Promise<boolean> {
     card.setAttribute('aria-labelledby', 'fb-call-title');
     const title = document.createElement('h2');
     title.id = 'fb-call-title';
-    title.textContent = `Talk with ${name}?`;
+    title.textContent = t('callTitle', { name });
     const body = document.createElement('p');
-    body.textContent = `${name} from the team would like to talk with you by voice, in your browser. ` +
-      'The call uses your microphone and is not recorded.';
+    body.textContent = t('callBody', { name });
     const actions = document.createElement('div');
     actions.className = 'fb-consent-actions';
     const no = document.createElement('button');
     no.type = 'button';
     no.className = 'fb-consent-deny';
-    no.textContent = 'Not now';
+    no.textContent = t('notNow');
     const yes = document.createElement('button');
     yes.type = 'button';
     yes.className = 'fb-consent-allow';
-    yes.textContent = 'Accept call';
+    yes.textContent = t('acceptCall');
     actions.append(no, yes);
     card.append(title, body, actions);
     backdrop.append(card);
@@ -55,10 +56,10 @@ export function callBar(root: ShadowRoot): (active: boolean, name: string, hangu
     bar.className = 'fb-callbar';
     bar.setAttribute('role', 'status');
     const label = document.createElement('span');
-    label.textContent = `On a call with ${name}`;
+    label.textContent = t('onCall', { name });
     const end = document.createElement('button');
     end.type = 'button';
-    end.textContent = 'Hang up';
+    end.textContent = t('hangUp');
     end.addEventListener('click', () => hangup());
     bar.append(label, end);
     root.appendChild(bar);
