@@ -154,7 +154,8 @@ Each website has privacy settings (console → Settings → Privacy & data, or
   `RETENTION_SWEEP_MINUTES` (default 60, 0 = off). Pinned and blocked cached
   answers are never swept.
 - **Erasure**: `POST /tenant/websites/{id}/privacy/erase {email}` deletes that
-  visitor's leads and the conversations they came from.
+  visitor's leads, the conversations they came from and any visitor memory
+  linked to them (M3-3).
 
 Cached answers carry a `status`: `pinned` answers always replay for their
 question (even before the "enough history" gate) and survive content
@@ -306,6 +307,35 @@ sources and the site's call to action (agent profile). The page loads
 `dist/` is served) and is only allowed scripts from that origin. Links expire
 per site (Privacy settings, default 90 days) and go with their conversation.
 Views and forwards show on the lead and in Leads → Shared recaps.
+
+## Returning-visitor memory (M3-3)
+
+Off by default. A website switches it on in Privacy settings ("Remember
+returning visitors who ask to be remembered", kept 30–365 days after the last
+visit, default 180). Then, after its first answer, the widget asks the visitor
+once per browser whether to remember the conversation; "Remember me" calls
+`POST /memory {key, visitor, remember: true}` with the widget's anonymous
+visitor id (the same id A/B tests use). From then on that visitor's
+conversations on that site, text or voice, including the one they opted in
+during, are linked to the id (`conversations.visitor_id`; the record links
+only while a memory row exists). Every `MEMORY_BUILD_SECONDS` (default 120,
+0 = off) a job rebuilds the memory of visitors whose conversation has been
+quiet for 10 minutes: their latest questions, components explored, what the
+agent couldn't answer, whether they left their details — from the stored,
+PII-masked transcript, newest three conversations (`app/memory/store.py`).
+
+Next visit, `/experiment/enroll` returns `memory.welcome_back` (English and
+Hindi) and the widget greets with it ("Welcome back! Last time you asked:
+“…?” Want to pick up where we left off?"); the voice welcome says the same
+and skips the guided tour; the agent gets the notes at the start of the
+conversation's history. A memory belongs to one site: the same visitor id
+elsewhere is a stranger.
+
+"Forget me" — the widget's chip, or typed / said ("forget me", "मुझे भूल
+जाओ") — deletes the memory and unlinks the conversations. So do erasure by
+email (through the visitor's conversations), retention, switching the
+setting off, and deleting the site. Retention now also sweeps CORTEX episodic
+memory older than the transcript window (the WS8 leftover).
 
 ## Agent endpoint: MCP + llms.txt (M3-2)
 
