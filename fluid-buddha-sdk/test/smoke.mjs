@@ -214,6 +214,22 @@ for (const design of ['level1', 'level2', 'level3']) {
 const ext = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', site: 'fluidbuddha', intelligence: 'extreme', design: 'level1' });
 ok(!!ext.shadowRoot.querySelector('.fbpage'), 'extreme mounts a runtime page surface');
 ok(ext.shadowRoot.querySelector('.fbpage').classList.contains('hidden'), 'page surface is hidden until a page renders');
+ext.session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_lp', payload: { sync_id: 'page_lp', title: 'LP', sections: [
+  { type: 'testimonials', props: { title: 'Customers', items: [{ quote: 'Halved no-shows.', name: 'Dr Rao', role: 'Owner' }] } },
+  { type: 'logos', props: { items: [{ src: 'https://cdn.example.com/a.svg', alt: 'A' }, { src: 'javascript:alert(1)', alt: 'bad' }] } },
+  { type: 'faq', props: { items: [{ q: 'Free trial?', a: '14 days.' }, { q: 'SSO?', a: 'Yes.' }] } },
+  { type: 'comparison', props: { columns: ['Starter', 'Growth'], rows: [{ label: 'Doctors', values: ['5', '25'] }] } },
+  { type: 'roi_calculator', props: { title: 'Your return', seats: 5 } }] } });
+await tick();
+{
+  const pg = ext.shadowRoot.querySelector('.fbpage');
+  ok(pg.querySelector('.fbpage-quote blockquote')?.textContent === 'Halved no-shows.' && pg.querySelector('.fbpage-quote figcaption').textContent === 'Dr Rao, Owner',
+    'landing sections: testimonials (M3-1)');
+  ok(pg.querySelectorAll('.fbpage-logos img').length === 1, 'logos: https only');
+  ok(pg.querySelectorAll('.fbpage-qa').length === 2 && pg.querySelector('.fbpage-qa').open, 'faq: questions, the first open');
+  ok(pg.querySelector('.fbpage-table tbody th')?.textContent === 'Doctors' && pg.querySelectorAll('.fbpage-table td').length === 2, 'comparison table');
+  ok(!!pg.querySelector('.fbpage-roi_calculator .roi'), 'ROI calculator section');
+}
 
 // ---- 7. Persona cross-fade (Req 3.6.3) ----
 // matchMedia is undefined in jsdom -> not reduced-motion -> the veil path runs.
@@ -667,6 +683,23 @@ offline.remove();
   ok(s0 && s0.querySelector('.card .flow-node') && s0.querySelector('style').textContent.includes('.card'),
     'the recap page draws a flowchart with the widget styles');
   ok(document.querySelector('[data-fb-slot="c1"]').shadowRoot.querySelector('.roi'), 'and an ROI calculator');
+  document.body.innerHTML = '';
+
+  // The hosted campaign page's script (M3-1): slots, then engagement once.
+  const pageCode = await readFile(new URL('../dist/fluid-buddha-page.global.js', import.meta.url), 'utf8');
+  document.body.innerHTML = '<section><div data-fb-slot="s0"><div class="fallback">calc</div></div></section>'
+    + '<script type="application/json" id="fb-page-data">'
+    + JSON.stringify([{ slot: 's0', component: { component_type: 'roi_calculator', initial_state: { seats: 5 } } }]) + '</script>';
+  const beacons = [];
+  window.navigator.sendBeacon = (u) => { beacons.push(u); return true; };
+  const pageMod = {};
+  new Function('self', pageCode + ';self.P = FluidBuddhaPage;')(pageMod);
+  ok(!!document.querySelector('[data-fb-slot="s0"]').shadowRoot?.querySelector('.roi'), 'the campaign page draws its ROI calculator');
+  const stop = pageMod.P.watchEngagement(document, '/p/site/c/event', window, 30);
+  document.querySelector('[data-fb-slot="s0"]').dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 60));
+  ok(beacons.length === 1 && beacons[0] === '/p/site/c/event', 'using a component reports engagement, once');
+  stop();
   document.body.innerHTML = '';
 }
 

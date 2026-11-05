@@ -792,6 +792,13 @@ export const EXTREME_STYLES = `
 .fbpage-field input:focus, .fbpage-field textarea:focus { border-color: var(--ds-color-primary, var(--fb-accent)); }
 .fbpage-media { max-width: 100%; border-radius: var(--ds-radius, 16px); }
 .fbpage-caption { font-size: .85rem; opacity: .6; margin-top: 6px; }
+.fbpage-quote { margin: 0; } .fbpage-quote blockquote { margin: 0 0 10px; font-size: 1.02rem; line-height: 1.55; }
+.fbpage-quote figcaption { opacity: .7; font-size: .88rem; }
+.fbpage-logos { display: flex; flex-wrap: wrap; gap: 28px; align-items: center; opacity: .85; }
+.fbpage-logos img { height: 34px; max-width: 160px; object-fit: contain; }
+.fbpage-qa { margin-bottom: 10px; } .fbpage-qa summary { cursor: pointer; font-weight: 600; } .fbpage-qa p { margin: 10px 0 0; opacity: .85; }
+.fbpage-scroll { overflow-x: auto; } .fbpage-table { border-collapse: collapse; width: 100%; }
+.fbpage-table th, .fbpage-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.12); }
 
 `;
 

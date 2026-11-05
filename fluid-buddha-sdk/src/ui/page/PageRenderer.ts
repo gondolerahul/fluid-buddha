@@ -7,6 +7,7 @@
 import { PageSection, PageSpec } from '../../protocol';
 import { buildChart } from '../components/chart';
 import { buildFlowchart } from '../components/flowchart';
+import { buildRoiCalculator } from '../components/roiCalculator';
 import { revealSequence } from '../components/reveal';
 import { t } from '../../i18n';
 
@@ -49,6 +50,15 @@ export class PageRenderer {
       case 'enquiry_form': return this.enquiry(wrap, p);
       case 'cta': return this.cta(wrap, p);
       case 'media': return this.media(wrap, p);
+      // M3-1: landing-page sections.
+      case 'testimonials': return this.testimonials(wrap, p);
+      case 'logos': return this.logos(wrap, p);
+      case 'faq': return this.faq(wrap, p);
+      case 'comparison': return this.comparison(wrap, p);
+      case 'roi_calculator':
+        append(wrap, this.heading('h2', p.title, 'fbpage-h2'));
+        wrap.appendChild(buildRoiCalculator(p));
+        return wrap;
       default: return null;
     }
   }
@@ -187,6 +197,69 @@ export class PageRenderer {
     return wrap;
   }
 
+  private testimonials(wrap: HTMLElement, p: Record<string, unknown>): HTMLElement {
+    append(wrap, this.heading('h2', p.title, 'fbpage-h2'));
+    const grid = el('div', 'fbpage-grid');
+    for (const item of asArray(p.items)) {
+      const fig = el('figure', 'fbpage-card fbpage-quote');
+      fig.appendChild(el('blockquote', '', str(item.quote)));
+      const who = [str(item.name), str(item.role)].filter(Boolean).join(', ');
+      fig.appendChild(el('figcaption', '', who));
+      grid.appendChild(fig);
+    }
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  private logos(wrap: HTMLElement, p: Record<string, unknown>): HTMLElement {
+    append(wrap, this.heading('h2', p.title, 'fbpage-h2'));
+    const row = el('div', 'fbpage-logos');
+    for (const item of asArray(p.items)) {
+      const src = str(item.src);
+      if (!src.startsWith('https://')) continue;
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = str(item.alt);
+      img.loading = 'lazy';
+      row.appendChild(img);
+    }
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  private faq(wrap: HTMLElement, p: Record<string, unknown>): HTMLElement {
+    append(wrap, this.heading('h2', p.title, 'fbpage-h2'));
+    asArray(p.items).forEach((item, i) => {
+      const d = el('details', 'fbpage-card fbpage-qa') as HTMLDetailsElement;
+      d.open = i === 0;
+      d.appendChild(el('summary', '', str(item.q)));
+      d.appendChild(el('p', '', str(item.a)));
+      wrap.appendChild(d);
+    });
+    return wrap;
+  }
+
+  private comparison(wrap: HTMLElement, p: Record<string, unknown>): HTMLElement {
+    append(wrap, this.heading('h2', p.title, 'fbpage-h2'));
+    const table = document.createElement('table');
+    table.className = 'fbpage-table';
+    const head = table.createTHead().insertRow();
+    head.appendChild(el('th', ''));
+    for (const c of asArray<string>(p.columns)) head.appendChild(el('th', '', str(c)));
+    const body = table.createTBody();
+    for (const r of asArray(p.rows)) {
+      const tr = body.insertRow();
+      const th = el('th', '', str(r.label));
+      th.setAttribute('scope', 'row');
+      tr.appendChild(th);
+      for (const v of asArray<string>(r.values)) tr.appendChild(el('td', '', str(v)));
+    }
+    const scroll = el('div', 'fbpage-scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    return wrap;
+  }
+
   private ctaButton(label: string): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.className = 'fbpage-btn';
@@ -205,6 +278,12 @@ function str(v: unknown): string {
 }
 function asArray<T = Record<string, unknown>>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
+}
+function el(tag: string, cls: string, text?: string): HTMLElement {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text) e.textContent = text;
+  return e;
 }
 function append(parent: HTMLElement, child: HTMLElement | null): void {
   if (child) parent.appendChild(child);

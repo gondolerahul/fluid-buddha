@@ -75,6 +75,9 @@ await Promise.all([
   // The recap page's renderer (M2-6): components only, no widget.
   build({ ...shared, entryPoints: ['src/recap.ts'], format: 'iife', globalName: 'FluidBuddhaRecap',
           minify: true, outfile: 'dist/fluid-buddha-recap.global.js' }),
+  // The hosted campaign page's script (M3-1): interactive sections + engagement.
+  build({ ...shared, entryPoints: ['src/page.ts'], format: 'iife', globalName: 'FluidBuddhaPage',
+          minify: true, outfile: 'dist/fluid-buddha-page.global.js' }),
 ]);
 
-console.log('built dist/fluid-buddha.{global.js,mjs,cjs} + particles + components + hindi + recap');
+console.log('built dist/fluid-buddha.{global.js,mjs,cjs} + particles + components + hindi + recap + page');
