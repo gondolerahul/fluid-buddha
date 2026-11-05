@@ -84,6 +84,8 @@ export class FluidBuddhaElement extends HTMLElement {
   private chipsEl: HTMLElement | null = null;
   private answers = 0;
   private recapOffered = false;
+  private memory: { offered?: boolean; remembered?: boolean; welcome_back?: string | null;
+    welcome_back_hi?: string | null } | null = null;
   /** The greeting is the site's fixed one, which the server also speaks on
    *  open: show it once (level 1 already shows it as the first message). */
   private greetEcho = false;
@@ -174,6 +176,8 @@ export class FluidBuddhaElement extends HTMLElement {
     if (site?.starters?.length) this.config.starters = site.starters.slice(0, 4);
     if (site?.starters_hi?.length) this.config.startersHi = site.starters_hi.slice(0, 4);
     if (site?.agent_name) setAgentName(site.agent_name);
+    this.memory = site?.memory || null;
+    this.config.visitor = this.experiment?.visitorId || undefined;
     if (pickLang(this.config.lang, site) === 'hi') {
       void prepareLang('hi').then((lang) => this.reveal(lang, site?.greeting_hi));
     } else {
@@ -189,8 +193,16 @@ export class FluidBuddhaElement extends HTMLElement {
       this.config.greeting = greetingHi || '';
       this.greetEcho = !!greetingHi;
     }
+    // A returning visitor who asked to be remembered (M3-3): welcomed back
+    // (the server speaks the same words).
+    const back = this.memory?.remembered && (lang === 'hi' ? this.memory.welcome_back_hi : this.memory.welcome_back);
+    if (back && !this._options.greeting && !optionsFromAttributes(this).greeting) {
+      this.config.greeting = back;
+      this.greetEcho = true;
+    }
     if (!this.config.greeting) this.config.greeting = t('greeting');
     this.build();
+    if (this.memory?.remembered) this.forgetChip();
     if (this.config.design === 'level1' && this.config.autoStart) {
       requestAnimationFrame(() => this.openPanel());
     }
@@ -331,6 +343,7 @@ export class FluidBuddhaElement extends HTMLElement {
       onCall: callBar(root),
       onProposal: (c, answer) => actionPrompt(root, c, answer),
       onActionAnswer: (runId, yes) => answerCard(root, runId, yes),
+      onForgotten: () => this.forgotten(),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -367,6 +380,7 @@ export class FluidBuddhaElement extends HTMLElement {
       onCall: callBar(root),
       onProposal: (c, answer) => actionPrompt(root, c, answer),
       onActionAnswer: (runId, yes) => answerCard(root, runId, yes),
+      onForgotten: () => this.forgotten(),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -491,6 +505,7 @@ export class FluidBuddhaElement extends HTMLElement {
       onCall: callBar(root),
       onProposal: (c, answer) => actionPrompt(root, c, answer),
       onActionAnswer: (runId, yes) => answerCard(root, runId, yes),
+      onForgotten: () => this.forgotten(),
       onPage: (p) => { this.hideThinking(); this.renderPage(p); },
       onAgentAudio: () => this.markSpeaking(),
       onTourStatus: (text) => { this.connText = t(text ? 'guidedTour' : 'online'); if (this.auraState === 'dormant') this.updateStatusText(); },
@@ -584,8 +599,67 @@ export class FluidBuddhaElement extends HTMLElement {
     this.chipsEl.prepend(c);
   }
 
+  private memoryCall(remember: boolean): Promise<Response> {
+    return fetch(`${(this.config.api || '').replace(/\/$/, '')}/memory`, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ key: this.config.key, site: this.config.site, visitor: this.config.visitor, remember }),
+    });
+  }
+
+  /** Ask once whether to remember the conversation (M3-3: the site offers it). */
+  private offerMemory(): void {
+    const m = this.memory;
+    const askedKey = `fluidbuddha:memask:${this.config.key}`;
+    if (!m?.offered || m.remembered || !this.config.visitor || !this.messagesEl) return;
+    try {
+      if (localStorage.getItem(askedKey)) return;
+      localStorage.setItem(askedKey, '1');
+    } catch {
+      return;
+    }
+    const box = h('div', 'bubble pragya fb-mem');
+    box.append(h('div', undefined, t('memAsk')));
+    const row = h('div', 'chips');
+    const yes = h('button', 'chip', t('memYes'));
+    const no = h('button', 'chip', t('memNo'));
+    yes.addEventListener('click', () => {
+      box.remove();
+      void this.memoryCall(true).then((r) => {
+        if (!r.ok) return;
+        m.remembered = true;
+        this.addMessage('pragya', t('memOn'));
+        this.forgetChip();
+      });
+    });
+    no.addEventListener('click', () => box.remove());
+    row.append(yes, no);
+    box.append(row);
+    this.messagesEl.insertBefore(box, this.canvasEl);
+    this.scrollDown();
+  }
+
+  private forgetChip(): void {
+    if (!this.chipsEl || this.chipsEl.querySelector('.fb-forget')) return;
+    const c = h('button', 'chip fb-forget', t('forgetMe'));
+    c.addEventListener('click', () => {
+      void this.memoryCall(false).then(() => {
+        this.forgotten();
+        this.addMessage('pragya', t('forgotten'));
+      });
+    });
+    this.chipsEl.append(c);
+  }
+
+  private forgotten(): void {
+    if (this.memory) this.memory.remembered = false;
+    this.chipsEl?.querySelector('.fb-forget')?.remove();
+  }
+
   private addMessage(sender: 'user' | 'pragya' | 'system', text: string, grounding?: Grounding): void {
-    if (sender === 'pragya' && grounding) this.offerRecap();
+    if (sender === 'pragya' && grounding) {
+      this.offerRecap();
+      queueMicrotask(() => this.offerMemory());
+    }
     const bubble = h('div', `bubble ${sender}`);
     const body = h('div');
     // Web links in the text become links (e.g. a recap, M2-6); the rest stays text.

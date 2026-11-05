@@ -94,6 +94,9 @@ export interface FluidBuddhaConfig {
   starters?: string[];
   /** Set by the widget: the site's Hindi suggestion chips. */
   startersHi?: string[];
+  /** Set by the widget: the anonymous visitor id, sent with the conversation
+   *  so a visitor who opted into memory is recognised (M3-3). */
+  visitor?: string;
 }
 
 export type FluidBuddhaOptions = Partial<Omit<FluidBuddhaConfig, 'hooks'>> & {

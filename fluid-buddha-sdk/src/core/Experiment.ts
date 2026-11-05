@@ -42,6 +42,9 @@ interface Defaults {
   starters_hi?: string[] | null;
   /** The agent's name from the site's profile. */
   agent_name?: string | null;
+  /** Returning-visitor memory (M3-3). */
+  memory?: { offered?: boolean; remembered?: boolean; welcome_back?: string | null;
+    welcome_back_hi?: string | null } | null;
 }
 
 interface Enrolment {

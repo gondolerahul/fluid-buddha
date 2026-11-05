@@ -888,5 +888,58 @@ offline.remove();
   ok(posted.length === 2 && said.some((t) => t.includes('/r/abc')), 'a spoken request makes the recap too');
 }
 
+// ---- Returning-visitor memory, opt-in (M3-3) ----
+{
+  const sent = [];
+  let memory = { offered: true, remembered: false };
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    const body = init && init.body ? JSON.parse(init.body) : null;
+    sent.push({ u, body });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => ({ defaults: { memory } }) };
+    if (u.endsWith('/memory')) return { ok: true, json: async () => ({ remembered: body.remember }) };
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'An answer.', session_id: 'sess-m',
+      grounding: { found: true, confidence: 0.9, sources: [] }, actions: [], components: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  window.localStorage.removeItem('fluidbuddha:memask:fbk_memory_site');
+  const mw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_memory_site', site: 'x', design: 'level1' });
+  await settle();
+  mw.ask('What does it cost?');
+  await settle();
+  const chat = sent.find((c) => c.u.endsWith('/chat'));
+  ok(chat && /^[A-Za-z0-9_-]{8,64}$/.test(chat.body.visitor || ''), 'the conversation carries the anonymous visitor id');
+  const ask = mw.shadowRoot.querySelector('.fb-mem');
+  ok(ask && ask.textContent.includes('remember this conversation'), 'after an answer the visitor is asked, once, whether to be remembered');
+  [...ask.querySelectorAll('.chip')].find((b) => b.textContent === 'Remember me').click();
+  await settle();
+  ok(sent.some((c) => c.u.endsWith('/memory') && c.body.remember === true && c.body.visitor === chat.body.visitor),
+    'Remember me opts in for this visitor');
+  const forget = mw.shadowRoot.querySelector('.fb-forget');
+  ok(!!forget && mw.shadowRoot.textContent.includes("I'll remember"), 'then says so and offers Forget me');
+  forget.click();
+  await settle();
+  ok(sent.some((c) => c.u.endsWith('/memory') && c.body.remember === false) && !mw.shadowRoot.querySelector('.fb-forget'),
+    'Forget me deletes it');
+  mw.remove();
+
+  const again = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_memory_site', site: 'x', design: 'level1' });
+  await settle();
+  again.ask('Another question?');
+  await settle();
+  ok(!again.shadowRoot.querySelector('.fb-mem'), 'the question is not asked again on this browser');
+  again.remove();
+
+  memory = { offered: true, remembered: true, welcome_back: 'Welcome back! Last time you asked about SSO.' };
+  const back = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_memory_back', site: 'x', design: 'level1' });
+  await settle();
+  back.openPanel();
+  ok(back.shadowRoot.textContent.includes('Welcome back! Last time you asked about SSO.') && !!back.shadowRoot.querySelector('.fb-forget'),
+    'a remembered visitor is welcomed back, with Forget me at hand');
+  back.session.feed({ channel: 'EVENTS', type: 'memory_forgotten', payload: {} });
+  ok(!back.shadowRoot.querySelector('.fb-forget'), 'a spoken "forget me" removes it too');
+  back.remove();
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

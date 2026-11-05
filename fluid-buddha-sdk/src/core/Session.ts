@@ -21,6 +21,8 @@ export interface SessionCallbacks {
   onStatus: (s: ConnectionStatus) => void;
   onUserTranscript: (text: string, interim: boolean) => void;
   onAgentMessage: (text: string, grounding?: Grounding) => void;
+  /** The visitor's memory was deleted ("forget me", M3-3). */
+  onForgotten?: () => void;
   /** The visitor answered an action's card by voice. */
   onActionAnswer?: (runId: string, confirm: boolean) => void;
   onComponent: (component: ComponentPayload) => void;
@@ -163,6 +165,9 @@ export class Session {
     // The widget key is what authorises a customer site; the backend resolves
     // the site and tier from it.
     if (this.config.key) q.set('key', this.config.key);
+    // The anonymous visitor id (M3-3): a visitor who opted into memory has
+    // this conversation remembered, voice welcome or not.
+    if (this.config.visitor) q.set('visitor', this.config.visitor);
     return `${base}/ws/voice?${q.toString()}`;
   }
 
@@ -235,6 +240,8 @@ export class Session {
         } else if (env.type === 'action_answer') {
           // "Yes, go ahead" / "no" said while the card is open (M2-8 follow-up).
           this.cb.onActionAnswer?.(String(env.payload.run_id || ''), env.payload.confirm === true);
+        } else if (env.type === 'memory_forgotten') {
+          this.cb.onForgotten?.();
         } else if (env.type === 'recap_request') {
           // "Send me this" said out loud (M2-6 follow-up).
           void this.recap((env.payload.email as string) || undefined);
@@ -528,6 +535,7 @@ export class Session {
           design: this.config.design,
           exp: this.config.exp,
           lang: getLang(),
+          visitor: this.config.visitor,
           page: ctx.page ?? (typeof location !== 'undefined' ? location.pathname : undefined),
           sections: ctx.sections,
         }),
@@ -540,6 +548,7 @@ export class Session {
       this.textSessionId = data.session_id ?? this.textSessionId;
       this.setTalkLang(data.lang);
       ((data.proposals as ActionCard[] | undefined) || []).forEach((c) => this.propose(c));
+      if (data.memory === 'forgotten') this.cb.onForgotten?.();
       if (data.takeover) {
         // A person has the chat: their replies come from /chat/live (M2-2).
         const base = (this.config.api || '').replace(/\/$/, '');
@@ -658,7 +667,7 @@ export class Session {
       // The test variant goes with the hello: the server speaks its greeting
       // and starts in its persona (M2-4).
       this.client?.sendHello({ ...this.withLevels(this.pageProvider?.() ?? {}), exp: this.config.exp,
-        lang: getLang() });
+        lang: getLang(), visitor: this.config.visitor });
     }
   }
 
