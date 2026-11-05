@@ -1,0 +1,27 @@
+# Dependency updates (M2-11, SOC 2 CC7.1/CC8.1): weekly pull requests for every
+# package manager in the repo. CI's pip-audit / npm audit gate blocks known
+# high-severity vulnerabilities on every push in between.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /fluid-buddha-sdk
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /fluid-buddha-frontend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /integrations/js
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /integrations/shopify
+    schedule: { interval: monthly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
