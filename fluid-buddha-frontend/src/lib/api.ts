@@ -129,6 +129,23 @@ export type Tenant = { id: string; email: string; name: string | null; role?: Ro
   csrf_token?: string | null; security?: Security };
 export type AuthResponse = { access_token: string; token_type: string; tenant: Tenant; role: Role; user: User;
   csrf_token?: string | null; expires_at?: string | null };
+/** Bring your own model (M3-4). */
+export type ModelProviderKind = "anthropic" | "openai" | "azure_openai";
+export type ModelPrice = { in?: number | null; out?: number | null };
+export type ModelProvider = {
+  configured: boolean; provider?: ModelProviderKind; fast_model?: string; thinker_model?: string;
+  endpoint?: string | null; api_version?: string | null; prices?: { fast?: ModelPrice; thinker?: ModelPrice };
+  enabled?: boolean; key_hint?: string; last_test_at?: string | null; last_test_ok?: boolean | null;
+  last_error?: string | null;
+  defaults: Record<ModelProviderKind, { fast_model: string; thinker_model: string }>;
+  list_prices: Record<string, { in: number; out: number }>;
+  sites: { id: string; name: string; byo_model: boolean }[];
+};
+export type ModelProviderIn = {
+  provider: ModelProviderKind; fast_model: string; thinker_model: string; api_key?: string;
+  endpoint?: string | null; api_version?: string | null;
+  prices?: { fast?: ModelPrice; thinker?: ModelPrice }; enabled: boolean;
+};
 export type MFAChallenge = { mfa_required: true; mfa_token: string };
 export type MFAStatus = { enabled: boolean; enabled_at: string | null; required: boolean; recovery_codes_left: number };
 export type SessionInfo = { id: string; method: string; created_at: string; last_seen_at: string;
@@ -762,6 +779,15 @@ export const Api = {
     if (!res.ok) throw new ApiError(res.status, "Could not export the access review");
     return res.blob();
   },
+  modelProvider: () => api<ModelProvider>("/tenant/model-provider"),
+  saveModelProvider: (body: ModelProviderIn) =>
+    api<ModelProvider>("/tenant/model-provider", { method: "PUT", body }),
+  deleteModelProvider: () => api<void>("/tenant/model-provider", { method: "DELETE" }),
+  testModelProvider: () =>
+    api<{ ok: boolean; results: { role: string; model: string; ok: boolean; answered_by?: string; error?: string }[] }>(
+      "/tenant/model-provider/test", { method: "POST" }),
+  siteModel: (wid: string, byo_model: boolean) =>
+    api<{ byo_model: boolean }>(`/tenant/websites/${wid}/model`, { method: "PUT", body: { byo_model } }),
   security: () => api<AccountSecurity>("/tenant/security"),
   saveSecurity: (require_mfa: boolean) =>
     api<{ require_mfa: boolean }>("/tenant/security", { method: "PUT", body: { require_mfa } }),
