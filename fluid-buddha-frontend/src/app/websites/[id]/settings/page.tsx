@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AgentProfile, Api, ApiError, Integrations, Persona, Privacy, Website } from "@/lib/api";
+import { AgentProfile, Api, ApiError, Integrations, Persona, Privacy, Website, TemplatePlan, TemplateSummary } from "@/lib/api";
 import { useWebsite } from "@/components/WebsiteContext";
 import { Spinner, useToast } from "@/components/ui";
 
@@ -122,15 +122,77 @@ function SiteForm({ website, onSaved }: { website: Website; onSaved: () => void 
 
 function ProfileSection({ id }: { id: string }) {
   const [state, setState] = useState<{ profile: AgentProfile | null; error: boolean } | null>(null);
+  const [version, setVersion] = useState(0);
   useEffect(() => {
     Api.getProfile(id)
       .then((profile) => setState({ profile, error: false }))
       .catch(() => setState({ profile: null, error: true }));
-  }, [id]);
+  }, [id, version]);
 
   if (!state) return <div className="skeleton" style={{ height: 320 }} />;
   if (!state.profile) return <div className="notice err">Couldn&apos;t load the agent profile.</div>;
-  return <ProfileForm id={id} initial={state.profile} />;
+  return <>
+    <TemplateCard id={id} current={state.profile.template?.id} onApplied={() => setVersion((v) => v + 1)} />
+    <ProfileForm key={version} id={id} initial={state.profile} />
+  </>;
+}
+
+/** Start from (or switch to) a vertical template (M2-9): preview, then apply. */
+function TemplateCard({ id, current, onApplied }: { id: string; current?: string; onApplied: () => void }) {
+  const toast = useToast();
+  const [list, setList] = useState<TemplateSummary[] | null>(null);
+  const [pick, setPick] = useState(current ?? "");
+  const [plan, setPlan] = useState<TemplatePlan | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { Api.templates().then((r) => setList(r.templates)).catch(() => setList([])); }, []);
+  const name = (tid?: string) => list?.find((t) => t.id === tid)?.name ?? tid;
+  const show = (v: unknown) => (Array.isArray(v) ? v.join(" · ") : v === "medical" ? "on" : String(v));
+
+  return (
+    <section className="card">
+      <h3 style={{ marginBottom: 4 }}>Template</h3>
+      <p className="muted" style={{ fontSize: "0.84rem", marginBottom: 12 }}>
+        {current ? <>Started from <b>{name(current)}</b>. </> : null}
+        A template fills in personas, starter questions, rules, triggers and what the tour covers for a kind of
+        business. Anything you&apos;ve changed by hand is kept.
+      </p>
+      <div className="row" style={{ gap: 8 }}>
+        <select className="select" style={{ maxWidth: 280 }} value={pick} aria-label="Template"
+          onChange={(e) => { setPick(e.target.value); setPlan(null); }}>
+          <option value="">Choose a template…</option>
+          {(list ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button className="btn btn-sm" disabled={!pick} onClick={async () => {
+          try { setPlan(await Api.previewTemplate(id, pick)); } catch { toast("Could not preview", "err"); }
+        }}>Preview changes</button>
+      </div>
+      {plan && (
+        <div className="stack" style={{ marginTop: 14, fontSize: "0.86rem" }}>
+          {plan.set.length > 0 && <div><span className="eyebrow">Will set</span>
+            <ul style={{ margin: "4px 0 0 18px" }}>{plan.set.map((s) => <li key={s.field}><b>{s.label}:</b> {show(s.value)}</li>)}</ul></div>}
+          {plan.personas_added.length > 0 && <div><span className="eyebrow">Adds personas</span>
+            <div>{plan.personas_added.map((p) => p.label).join(", ")}</div></div>}
+          {plan.triggers_added.length > 0 && <div><span className="eyebrow">Adds triggers</span>
+            <div>{plan.triggers_added.join(", ")}</div></div>}
+          {plan.kept.length > 0 && <div><span className="eyebrow">Keeps your edits to</span>
+            <div>{plan.kept.map((k) => k.label).join(", ")}</div></div>}
+          {plan.suggested_actions.length > 0 && <div><span className="eyebrow">Suggested actions (set up under Actions)</span>
+            <ul style={{ margin: "4px 0 0 18px" }}>{plan.suggested_actions.map((a) => <li key={a.label}><b>{a.label}</b> — {a.why}</li>)}</ul></div>}
+          {!plan.set.length && !plan.personas_added.length && !plan.triggers_added.length
+            ? <div className="faint">Nothing to change.</div> : (
+            <div className="row" style={{ justifyContent: "flex-end" }}>
+              <button className="btn btn-primary btn-sm" disabled={busy} onClick={async () => {
+                setBusy(true);
+                try { await Api.applyTemplate(id, pick); toast("Template applied"); setPlan(null); onApplied(); }
+                catch { toast("Could not apply", "err"); }
+                finally { setBusy(false); }
+              }}>{busy ? <Spinner /> : "Apply"}</button>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
 const EMPTY_PERSONA: Persona = { slug: "", label: "", focus: "", tone: "", landing: "" };
@@ -149,6 +211,9 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
   const [hindi, setHindi] = useState((initial.languages ?? []).includes("hi"));
   const [widgetLang, setWidgetLang] = useState(initial.widget_language ?? "auto");
   const [greetingHi, setGreetingHi] = useState(initial.greeting_hi ?? "");
+  const [starters, setStarters] = useState((initial.starter_questions ?? []).join("\n"));
+  const [rules, setRules] = useState((initial.guardrails ?? []).join("\n"));
+  const [medical, setMedical] = useState(initial.safety === "medical");
   const [personas, setPersonas] = useState<Persona[]>(initial.personas);
   const [routes, setRoutes] = useState(initial.routes.join("\n"));
   const [prefixes, setPrefixes] = useState(initial.dynamic_prefixes.join("\n"));
@@ -178,6 +243,9 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
         languages: hindi ? ["en", "hi"] : ["en"],
         widget_language: widgetLang,
         greeting_hi: greetingHi.trim(),
+        starter_questions: lines(starters).slice(0, 4),
+        guardrails: lines(rules).slice(0, 10),
+        safety: medical ? "medical" : "",
         personas: personas
           .filter((p) => p.slug.trim() || p.label.trim())
           .map((p) => ({
@@ -289,6 +357,22 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
             placeholder="https://yoursite.com/demo" onChange={(e) => setCtaUrl(e.target.value)} />
         </div>
       </div>
+      <div className="grid grid-2" style={{ gap: 14 }}>
+        <div className="field">
+          <label className="label" htmlFor="p-starters">Starter questions <span className="faint">(the widget&apos;s chips, one per line, up to 4)</span></label>
+          <textarea id="p-starters" className="textarea" rows={4} value={starters} onChange={(e) => setStarters(e.target.value)}
+            placeholder={"How much does it cost?\nIs there a free trial?"} />
+        </div>
+        <div className="field">
+          <label className="label" htmlFor="p-rules">Rules the agent always follows <span className="faint">(one per line)</span></label>
+          <textarea id="p-rules" className="textarea" rows={4} value={rules} onChange={(e) => setRules(e.target.value)}
+            placeholder="Never promise discounts the site doesn't mention." />
+        </div>
+      </div>
+      <label className="row" style={{ gap: 8, fontSize: "0.88rem" }}>
+        <input type="checkbox" checked={medical} onChange={(e) => setMedical(e.target.checked)} />
+        Medical safety: never give medical advice, diagnoses or doses; send urgent cases to 112
+      </label>
       <div className="field">
         <label className="label" htmlFor="p-closing">
           Tour closing example <span className="faint">(spoken at the end of the guided tour)</span>

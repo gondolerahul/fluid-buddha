@@ -153,6 +153,27 @@ export type AgentProfile = {
   languages?: ("en" | "hi")[];
   widget_language?: "auto" | "en" | "hi";
   greeting_hi?: string;
+  /** From a vertical template (M2-9), editable. */
+  starter_questions?: string[];
+  guardrails?: string[];
+  preferred_components?: string[];
+  lead_fields?: string[];
+  tour_outline?: string[];
+  safety?: "" | "medical";
+  template?: { id?: string; applied_at?: string };
+};
+/** Vertical templates (M2-9). */
+export type TemplateSummary = {
+  id: string; name: string; description: string; personas: string[];
+  suggested_actions: { kind: string; label: string; why: string }[];
+};
+export type TemplatePlan = {
+  template: string;
+  set: { field: string; label: string; value: unknown }[];
+  kept: { field: string; label: string }[];
+  personas_added: { slug: string; label: string }[];
+  triggers_added: string[];
+  suggested_actions: { kind: string; label: string; why: string }[];
 };
 
 export type WidgetConfig = {
@@ -690,7 +711,12 @@ export const Api = {
     api<void>(`/tenant/sso/domains/${encodeURIComponent(domain)}`, { method: "DELETE" }),
 
   listWebsites: () => api<Website[]>("/tenant/websites"),
-  createWebsite: (body: Partial<Website>) =>
+  templates: () => api<{ templates: TemplateSummary[] }>("/tenant/templates"),
+  previewTemplate: (wid: string, template: string) =>
+    api<TemplatePlan>(`/tenant/websites/${wid}/template/preview?template=${encodeURIComponent(template)}`),
+  applyTemplate: (wid: string, template: string) =>
+    api<TemplatePlan>(`/tenant/websites/${wid}/template`, { method: "POST", body: { template } }),
+  createWebsite: (body: Partial<Website> & { template?: string | null }) =>
     api<Website>("/tenant/websites", { method: "POST", body }),
   getWebsite: (id: string) => api<Website>(`/tenant/websites/${id}`),
   updateWebsite: (id: string, body: Partial<Website>) =>
