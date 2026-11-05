@@ -39,6 +39,10 @@ _RULES: list[tuple[object, str, str]] = [
     ("*", r"^/tenant/audit", "admin"),
     # The weekly digest: who gets the account's numbers.
     ("*", r"^/tenant/digest", "admin"),
+    # Actions hold payment keys and signing secrets (M2-8): Admins change them
+    # and read secrets; anyone can see them and their runs.
+    (READ, r"^/tenant/websites/[^/]+/actions/[^/]+/secret$", "admin"),
+    ({"PUT", "POST", "PATCH", "DELETE"}, r"^/tenant/websites/[^/]+/actions", "admin"),
     # Integrations hold the webhook signing secret, even to read.
     ("*", r"^/tenant/websites/[^/]+/integrations", "admin"),
     # Privacy settings and erasing a visitor's data.

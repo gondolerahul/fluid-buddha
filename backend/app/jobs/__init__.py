@@ -58,6 +58,12 @@ def build_scheduler(settings: Settings) -> Scheduler:
         async with session_scope() as db:
             return await digest.send_due(db) or None
 
+    async def action_payments() -> object:
+        """M2-8: unpaid payment links, checked with Razorpay (webhook fallback)."""
+        from app.routes.actions import check_payments
+
+        return await check_payments() or None
+
     s = Scheduler()
     s.add(Job("retention_sweep", settings.retention_sweep_minutes * 60, retention))
     s.add(Job("email_outbox", settings.email_outbox_interval_seconds, outbox, run_at_start=True))
@@ -67,4 +73,5 @@ def build_scheduler(settings: Settings) -> Scheduler:
     s.add(Job("live_presence_sweep", 300, live_sweep))
     s.add(Job("insights_classify", settings.insights_classify_seconds, classify_turns))
     s.add(Job("weekly_digest", settings.digest_check_seconds, weekly_digest))
+    s.add(Job("action_payments", settings.action_payments_seconds, action_payments))
     return s

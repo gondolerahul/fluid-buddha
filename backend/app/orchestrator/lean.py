@@ -33,7 +33,8 @@ _HEAVY_INTENTS = {"pricing_roi", "integration", "navigation"}
 _HEAVY_KW = re.compile(
     r"\b(show|diagram|chart|graph|table|compare|comparison|calculat|roi|pricing|"
     r"price|cost|quote|integrat|navigat|take me|go to|scroll|walk me|draw|visual|"
-    r"generate|build me|demo|tour)\b",
+    r"generate|build me|demo|tour|pay|buy|purchase|subscribe|checkout|quote|trial|"
+    r"book|schedule|meeting|sign me up)\b",
     re.IGNORECASE,
 )
 

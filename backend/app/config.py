@@ -190,6 +190,10 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
+    # Razorpay API for customer payment actions (M2-8); a fake server in local checks.
+    razorpay_api_base: str = "https://api.razorpay.com/v1"
+    # How often unpaid payment links are checked with Razorpay (0 = off).
+    action_payments_seconds: int = 300
     # Plan prices are in this currency's minor unit. INR is the default; USD
     # needs international payments enabled on the Razorpay account.
     billing_currency: str = "INR"

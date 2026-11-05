@@ -205,7 +205,7 @@ def test_erase_a_visitor():
         base = f"/tenant/websites/{site['id']}/privacy/erase"
         assert client.post(base, headers=h, json={"email": "nope"}).status_code == 422
         assert client.post(base, headers=h, json={"email": "Gone@Acme.io"}).json() == {
-            "leads": 1, "conversations": 1}
+            "leads": 1, "conversations": 1, "action_runs": 0}
         emails = [lead["email"] for lead in
                   client.get(f"/tenant/websites/{site['id']}/leads", headers=h).json()["items"]]
         assert emails == ["stays@acme.io"]

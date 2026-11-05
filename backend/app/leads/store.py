@@ -133,6 +133,9 @@ def lead_dict(r: Any) -> dict[str, Any]:
         "delivered_at": r["delivered_at"].isoformat() if r["delivered_at"] else None,
         "delivery_error": r["delivery_error"],
         "created_at": r["created_at"].isoformat(),
+        # Paid through a payment action (M2-8), in paise.
+        "paid_at": r["paid_at"].isoformat() if r.get("paid_at") else None,
+        "paid_amount": r.get("paid_amount"),
         # The conversation's recap link, if the visitor asked for one (M2-6).
         "recap": ({"views": r["recap_views"], "forwards": max(0, (r["recap_viewers"] or 0) - 1),
                    "last_viewed_at": r["recap_last"].isoformat() if r["recap_last"] else None}

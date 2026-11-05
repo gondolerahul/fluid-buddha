@@ -213,6 +213,7 @@ class CognitiveLoop:
         result.pages.extend(think.pages)
         result.patches.extend(think.patches)
         result.leads.extend(think.leads)
+        result.proposals.extend(think.proposals)
         for p in think.patches:
             state.update_component_state(p.target_sync_id, p.patch)
         result.grounding = think.grounding

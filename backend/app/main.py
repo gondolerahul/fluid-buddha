@@ -36,6 +36,7 @@ from app.routes import (
     triggers,
     digest,
     recaps,
+    actions,
     websites,
     widget,
 )
@@ -113,3 +114,5 @@ app.include_router(digest.admin)
 app.include_router(digest.public)
 app.include_router(recaps.public)
 app.include_router(recaps.admin)
+app.include_router(actions.public)
+app.include_router(actions.admin)

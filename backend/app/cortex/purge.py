@@ -29,6 +29,7 @@ _SITE_TABLES = (
     "live_presence", "live_takeovers", "live_messages",
     "trigger_rules",  # its events go with it (ON DELETE CASCADE)
     "recaps",  # its views go with it (ON DELETE CASCADE)
+    "action_runs", "site_actions", "site_components",  # M2-8
 )
 
 

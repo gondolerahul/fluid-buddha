@@ -22,6 +22,7 @@ from app.experiments.apply import session_settings
 from app.design.system import ensure_design
 from app.live import visitor as live
 from app.orchestrator.profile import ensure_profile, profile_for
+from app.routes.actions import ensure_extras, proposal_cards
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.state import normalize_sections
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
@@ -105,6 +106,7 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     # Load the site's agent profile (name, personas, sitemap) for the prompts.
     await ensure_profile(resolved.site_key)
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
+    await ensure_extras(resolved.site_key)  # the site's actions + components (M2-8)
 
     sid, state = await sessions.load(req.session_id, site_key=resolved.site_key)
     if req.session_id != sid and not req.icp:
@@ -226,7 +228,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     personal = personal or contains_pii(result.answer_text)
     if (settings.conversation_cache_enabled and result.answer_text
             and not result.patches and not result.leads and not personal
-            and not followup):
+            and not followup and not result.proposals):
         try:
             async with session_scope() as db:
                 await rt.episodic(db, state.site_key).record(
@@ -266,6 +268,8 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     payload["ack"] = PiiVault.spoken(payload["ack"])
     payload["session_id"] = sid
     payload["lang"] = state.lang
+    # Actions awaiting the visitor's confirmation (M2-8).
+    payload["proposals"] = await proposal_cards(state.site_key, sid, result.proposals)
     return payload
 
 

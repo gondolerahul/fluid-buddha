@@ -58,6 +58,9 @@ async def purge_expired(db: AsyncSession) -> dict[str, int]:
         # Shared recap links past their expiry (M2-6); a recap also goes with
         # its conversation (ON DELETE CASCADE), so erasure removes it too.
         "recaps": await recap_store.purge_expired(db),
+        # Action runs (M2-8) hold the visitor's details, like the transcript.
+        "action_runs": await _purge(db, "action_runs", "created_at",
+                                    "transcript_retention_days", DEFAULT_TRANSCRIPT_DAYS),
     }
     await db.commit()
     return removed
@@ -65,6 +68,13 @@ async def purge_expired(db: AsyncSession) -> dict[str, int]:
 
 async def erase_visitor(db: AsyncSession, site_key: str, email: str) -> dict[str, int]:
     email = (email or "").strip().lower()
+    # Actions they asked for (M2-8): by the email they gave, or in a
+    # conversation that goes below.
+    runs = (await db.execute(text(
+        "DELETE FROM action_runs r WHERE r.site_key = :s AND (lower(r.inputs->>'email') = :e "
+        "OR r.session_id IN (SELECT c.session_id FROM conversations c JOIN leads l "
+        "ON l.conversation_id = c.id WHERE l.site_key = :s AND lower(l.email) = :e))"
+    ), {"s": site_key, "e": email})).rowcount or 0
     await db.execute(text(
         "DELETE FROM live_messages m USING conversations c, leads l "
         "WHERE l.site_key = :s AND lower(l.email) = :e AND c.id = l.conversation_id "
@@ -79,7 +89,7 @@ async def erase_visitor(db: AsyncSession, site_key: str, email: str) -> dict[str
         "DELETE FROM leads WHERE site_key=:s AND lower(email)=:e"
     ), {"s": site_key, "e": email})).rowcount or 0
     await db.commit()
-    return {"leads": leads, "conversations": convs}
+    return {"leads": leads, "conversations": convs, "action_runs": runs}
 
 
 async def retention_sweep_loop(interval_s: float) -> None:

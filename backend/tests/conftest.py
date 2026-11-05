@@ -38,6 +38,7 @@ _HERMETIC = {
     "EMAIL_OUTBOX_INTERVAL_SECONDS": "0",
     # Classifier and digest jobs: tests call them directly.
     "INSIGHTS_CLASSIFY_SECONDS": "0", "DIGEST_CHECK_SECONDS": "0",
+    "ACTION_PAYMENTS_SECONDS": "0",
     "PUBLIC_RATE_LIMIT_PER_MIN": "120", "PUBLIC_DAILY_SPEND_CAP_USD": "0",
 }
 os.environ.update(_HERMETIC)

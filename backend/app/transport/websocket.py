@@ -256,6 +256,10 @@ class VoiceSession:
             self._call_started = None
             await live.catch_up(self.state, self.state.site_key, self.session_id)
             await self.send(Channel.EVENTS, "operator_left", {"name": name})
+        elif kind == "action_outcome":
+            # The visitor confirmed or cancelled an action (M2-8): the agent knows.
+            self.state.add_turn(f"(I confirmed: {ev.get('label', '')})",
+                                f"({ev.get('status', '')}: {ev.get('message', '')})")
         elif kind in ("call_offer", "call_ice", "call_hangup"):
             if kind == "call_hangup":
                 await self._call_ended("The team member hung up")
@@ -714,9 +718,15 @@ class VoiceSession:
                 if self.state.update_component_state(p.target_sync_id, p.patch) is not None:
                     await self.send(Channel.DATA, "patch", p.to_dict(), p.target_sync_id)
 
-            # 4. Emit EVENTS (DOM commands)
+            # 4. Emit EVENTS (DOM commands), and any action awaiting the
+            #    visitor's confirmation (M2-8)
             for action in think.actions:
                 await self._emit_action(action)
+            if think.proposals:
+                from app.routes.actions import proposal_cards
+                for card in await proposal_cards(self.state.site_key, self.session_id,
+                                                 think.proposals):
+                    await self.send(Channel.EVENTS, "action_proposal", card, _sid("evt"))
 
             # 5. Stream the grounded answer as TTS, synced to its component
             self._answer_speaking = True  # now interruptible by a real barge-in
@@ -736,7 +746,8 @@ class VoiceSession:
             # A patch targets this session's components, and a captured lead holds
             # one visitor's contact details, so neither turn may be replayed.
             personal = personal or contains_pii(think.answer_text)
-            if not think.patches and not think.leads and not personal and not followup:
+            if (not think.patches and not think.leads and not personal and not followup
+                    and not think.proposals):
                 self._spawn(self._record_turn(
                     question=transcript, answer_text=think.answer_text,
                     components=think.components, actions=think.actions,
@@ -1251,6 +1262,8 @@ async def voice_ws(websocket: WebSocket) -> None:
     # Load the site's agent profile (name, personas, sitemap) for the prompts.
     await ensure_profile(resolved.site_key)
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
+    from app.routes.actions import ensure_extras
+    await ensure_extras(resolved.site_key)  # the site's actions + components (M2-8)
     session = VoiceSession(
         websocket, runtime, site_key=resolved.site_key,
         intelligence=resolved.intelligence, tier_locked=resolved.tier_locked,

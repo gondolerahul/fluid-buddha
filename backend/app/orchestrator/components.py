@@ -19,11 +19,23 @@ KNOWN_COMPONENTS = {
 }
 
 
-def normalize_component(component_type: Any, state: Any) -> tuple[str, dict]:
+def normalize_component(component_type: Any, state: Any,
+                        site_key: str | None = None) -> tuple[str, dict]:
     """Return a ``(component_type, initial_state)`` pair safe to ship.
 
-    Unknown types fall back to ``table``; list fields are length-capped.
+    A site's own component (M2-8) is checked against its props schema and
+    expanded to the built-in component it's made of (or a sandboxed embed);
+    a props mismatch raises ``PropsError`` (a ValueError). Unknown types fall
+    back to ``table``; list fields are length-capped.
     """
+    if site_key and component_type not in KNOWN_COMPONENTS:
+        from app.orchestrator.custom_components import components_for, render
+        custom = components_for(site_key).get(str(component_type))
+        if custom is not None:
+            ctype, expanded = render(custom, state)
+            if ctype == "embed":
+                return ctype, expanded
+            return normalize_component(ctype, expanded)
     ctype = component_type if component_type in KNOWN_COMPONENTS else "table"
     if not isinstance(state, dict):
         return ctype, {}
