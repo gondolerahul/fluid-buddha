@@ -308,6 +308,28 @@ sources and the site's call to action (agent profile). The page loads
 per site (Privacy settings, default 90 days) and go with their conversation.
 Views and forwards show on the lead and in Leads → Shared recaps.
 
+## Self-hosted installs and the licence (M3-5)
+
+`deploy/selfhost/` is the whole product for one Linux host: Caddy (TLS, routing,
+the widget's files at `/sdk/`), backend, console, Postgres+pgvector, Redis,
+optional coturn — with health checks, rotated logs, `bin/install.sh`,
+`backup.sh` (base backup + WAL archive for point-in-time recovery, and a
+logical dump), `restore.sh`, `upgrade.sh` and `export-images.sh` /
+`import-images.sh` for air-gapped hosts. Its README is the runbook.
+
+With `SELF_HOSTED=true` the backend checks a licence: an Ed25519-signed token
+(`FBL1.<payload>.<signature>`) verified offline against `PUBLIC_KEYS` in
+`app/licence/core.py` — no phone-home. It names the customer, websites, seats
+(install-wide, pending invitations included), features (`*` or
+`byo_model`, `agent_access`, `campaigns`, `sso`, `voice_handoff`), expiry and
+grace period. From the console (Account → Licence, Owner; `PUT /tenant/licence`),
+`LICENCE_KEY` or `LICENCE_FILE`. 30 days before expiry, and in the grace
+period, the console shows a banner; after it (or with none / an invalid one)
+`/tenant` changes return 402 — reads still work, and visitors (widget, hosted
+pages, agent endpoint) are never affected. Issue licences with
+`scripts/licence_tool.py` (`keygen`, `issue`, `verify`); the private key lives
+outside the repo (`.licence-keys/`, gitignored).
+
 ## Generative landing pages: campaigns (M3-1)
 
 Console → website → Campaigns. A campaign is a brief: goal, audience, key
