@@ -139,6 +139,35 @@ export type AgentAccess = {
     by_client: { client: string; count: number }[];
     recent: { kind: string; tool: string | null; client: string | null; ok: boolean; error: string | null; at: string }[] };
 };
+/** Generative landing pages (M3-1). */
+export type CampaignStatus = "draft" | "live" | "paused";
+export type Testimonial = { quote: string; name: string; role?: string };
+export type CampaignLogo = { src: string; alt: string };
+export type CampaignVariant = { headline?: string; key_messages?: string[]; cta_label?: string };
+export type CampaignIn = {
+  name: string; slug?: string; status: CampaignStatus; goal: string; audience: string; persona: string | null;
+  key_messages: string[]; sections: string[]; cta_label: string; cta_url: string;
+  testimonials: Testimonial[]; logos: CampaignLogo[]; variant: CampaignVariant | null; embed_origins: string[];
+};
+export type Campaign = CampaignIn & {
+  id: string; slug: string; version: number; created_at: string; updated_at: string;
+  url: string; preview_url: string; embed_snippet: string; embed_note: string;
+  views_30d?: number; conversions_30d?: number;
+};
+export type CampaignList = {
+  campaigns: Campaign[]; personas: { slug: string; label: string }[];
+  sections: { type: string; label: string }[]; default_sections: string[];
+};
+export type CampaignCounts = { views: number; engaged: number; converted: number; conversion_rate: number };
+export type CampaignAnalytics = {
+  days: number; total: CampaignCounts;
+  by_arm: (CampaignCounts & { arm: string })[];
+  by_persona: (CampaignCounts & { persona: string | null })[];
+  by_source: (CampaignCounts & { source: string | null })[];
+  daily: { day: string; views: number; converted: number }[];
+  cache: { pages: number; hits: number; avg_build_ms: number; served_from_cache: number; page_views: number; hit_rate: number };
+  experiment?: { status: "winner" | "no_difference" | "keep_running"; winner: string | null };
+};
 /** Bring your own model (M3-4). */
 export type ModelProviderKind = "anthropic" | "openai" | "azure_openai";
 export type ModelPrice = { in?: number | null; out?: number | null };
@@ -799,6 +828,17 @@ export const Api = {
     api<AgentToken & { token: string }>(`/tenant/websites/${wid}/agent-tokens`, { method: "POST", body: { name, scopes } }),
   revokeAgentToken: (wid: string, id: string) =>
     api<void>(`/tenant/websites/${wid}/agent-tokens/${id}`, { method: "DELETE" }),
+  campaigns: (wid: string) => api<CampaignList>(`/tenant/websites/${wid}/campaigns`),
+  createCampaign: (wid: string, body: CampaignIn) =>
+    api<Campaign>(`/tenant/websites/${wid}/campaigns`, { method: "POST", body }),
+  saveCampaign: (wid: string, cid: string, body: CampaignIn) =>
+    api<Campaign>(`/tenant/websites/${wid}/campaigns/${cid}`, { method: "PUT", body }),
+  deleteCampaign: (wid: string, cid: string) =>
+    api<void>(`/tenant/websites/${wid}/campaigns/${cid}`, { method: "DELETE" }),
+  campaignAnalytics: (wid: string, cid: string) =>
+    api<CampaignAnalytics>(`/tenant/websites/${wid}/campaigns/${cid}/analytics`),
+  clearCampaignCache: (wid: string, cid: string) =>
+    api<{ cleared: number }>(`/tenant/websites/${wid}/campaigns/${cid}/cache/clear`, { method: "POST" }),
   modelProvider: () => api<ModelProvider>("/tenant/model-provider"),
   saveModelProvider: (body: ModelProviderIn) =>
     api<ModelProvider>("/tenant/model-provider", { method: "PUT", body }),
