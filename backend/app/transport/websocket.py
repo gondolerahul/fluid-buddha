@@ -178,6 +178,9 @@ class VoiceSession:
     async def run(self) -> None:
         await self.ws.accept()
         log_session_id.set(self.session_id[:8])  # on every log line of this socket
+        # The site's own model provider, if its account brought one (M3-4).
+        from app.ai.providers import current_site
+        current_site.set(self.state.site_key)
         try:
             async with session_scope() as db:
                 self.privacy = await get_privacy(db, self.state.site_key)

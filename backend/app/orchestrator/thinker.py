@@ -181,7 +181,7 @@ class HeavyThinker:
                 break
 
             # Replay the model's tool-call turn (required for Vertex ordering).
-            messages.append(ChatMessage(role="model", tool_calls=resp.tool_calls))
+            messages.append(ChatMessage(role="model", tool_calls=resp.tool_calls, raw=resp.raw))
             productive = False  # did this turn do anything other than over-budget search?
             for call in resp.tool_calls:
                 over_budget = (

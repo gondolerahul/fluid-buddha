@@ -307,6 +307,35 @@ sources and the site's call to action (agent profile). The page loads
 per site (Privacy settings, default 90 days) and go with their conversation.
 Views and forwards show on the lead and in Leads → Shared recaps.
 
+## Bring your own model (M3-4)
+
+An account can run its agent on its own **Anthropic**, **OpenAI** or **Azure
+OpenAI** account (Console → AI model, Owners/Admins). It sets the provider, its
+API key (encrypted with `SECRETS_KEY`, never returned), a *fast* model (routing,
+quick answers, labelling) and a *thinking* model (grounded answers with tools),
+and Azure's endpoint + API version (models are deployment names there). "Test
+connection" makes a one-line call with each model. Each website uses the
+account's provider unless switched back to the platform's.
+
+`rt.engines.llm` is a `RoutingLLM` (`app/ai/providers.py`): the site of the
+current request comes from a context variable set where a conversation, recap,
+tour plan or labelling task starts, and calls go to that site's provider
+(`app/ai/anthropic_llm.py` with the official `anthropic` SDK,
+`app/ai/openai_llm.py` with the official `openai` SDK). The platform's
+`HEAVY_MODEL` maps to the thinking model, everything else to the fast one. If
+the provider fails the call falls back to the platform model and the error
+shows in the console. Voice and embeddings stay on Google.
+
+Claude requests send no sampling parameters, set depth with
+`output_config.effort` (low for quick calls; thinking off where the model
+allows it), replay a tool turn's content blocks (thinking included) verbatim,
+handle `refusal`, and use the server-side fallback (`fallbacks: "default"`) on
+the models that support it.
+
+Usage records the provider; that model cost is priced at the account's
+prices (or the provider's list price where known), shown separately on
+Analytics (`byo_llm_cost`) and left out of the daily spend cap.
+
 ## Install surfaces
 
 Every way of installing the agent — the plain snippet, the WordPress plugin, the

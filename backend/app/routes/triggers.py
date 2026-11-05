@@ -76,7 +76,10 @@ async def trigger_message(request: Request,
             if is_bot(request.headers.get("user-agent"), None):
                 return {"message": rule["message"]}
             rt = getattr(request.app.state, "runtime", None)
-            llm = None if settings.mock_ai or rt is None else rt.engines.llm
+            from app.ai.providers import config_for_site, current_site
+            current_site.set(resolved.site_key)
+            byo = await config_for_site(resolved.site_key)
+            llm = None if rt is None or (settings.mock_ai and byo is None) else rt.engines.llm
             profile = await load_profile(db, resolved.site_key)
             message = await message_for(db, site_key=resolved.site_key, rule=rule, page=page,
                                         title=title, lang=lang, llm=llm, model=settings.fast_model,

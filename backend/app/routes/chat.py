@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from typing import Any
 
+from app.ai.providers import current_site
 from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
 from app.experiments.apply import session_settings
@@ -107,6 +108,7 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     await ensure_profile(resolved.site_key)
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
     await ensure_extras(resolved.site_key)  # the site's actions + components (M2-8)
+    current_site.set(resolved.site_key)     # its own model provider, if any (M3-4)
 
     sid, state = await sessions.load(req.session_id, site_key=resolved.site_key)
     if req.session_id != sid and not req.icp:

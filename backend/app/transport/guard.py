@@ -89,13 +89,15 @@ async def _allow(site_key: str, limit: int) -> bool:
 
 
 async def spent_today_usd(db: AsyncSession, site_key: str) -> float:
-    """Recorded model/TTS spend for ``site_key`` in the current UTC day."""
+    """Recorded model/TTS spend for ``site_key`` in the current UTC day — the
+    platform's part: model cost an account pays its own provider (M3-4) is
+    left out, since it costs the platform nothing."""
     exists = (await db.execute(text("SELECT to_regclass('usage_events')"))).scalar()
     if not exists:
         return 0.0
     res = await db.execute(
         text(
-            "SELECT COALESCE(SUM(total_cost), 0) FROM usage_events "
+            "SELECT COALESCE(SUM(total_cost - byo_llm_cost), 0) FROM usage_events "
             "WHERE site_key = :sk "
             "AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date"
         ),

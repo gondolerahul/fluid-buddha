@@ -38,6 +38,10 @@ _RULES: list[tuple[object, str, str]] = [
     (READ, r"^/tenant/team", "viewer"),
     ("*", r"^/tenant/team", "admin"),
     ("*", r"^/tenant/audit", "admin"),
+    # The account's own model provider (M3-4): its API key is a contract with a
+    # provider, so Admins and Owners only, even to look; also a site's switch.
+    ("*", r"^/tenant/model-provider", "admin"),
+    ({"PUT"}, r"^/tenant/websites/[^/]+/model$", "admin"),
     # Account security (two-factor requirement): Admins look, the Owner decides.
     (READ, r"^/tenant/security", "admin"),
     ("*", r"^/tenant/security", "owner"),

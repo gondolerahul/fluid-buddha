@@ -227,6 +227,8 @@ async def classify_pending(db: Any, *, llm: Any = None, model: Optional[str] = N
         if r["intent"] == "greeting" or (r["question"] or "").startswith("("):
             return Signals()   # small talk, or a synthetic turn like the welcome
         async with gate:
+            from app.ai.providers import current_site
+            current_site.set(r["site_key"])   # this task only: the site's own model (M3-4)
             return await classify(r["question"], competitors=known[r["site_key"]],
                                   found=bool(r["found"]), llm=llm, model=model,
                                   tokens=spent.setdefault(r["site_key"], [0, 0]))

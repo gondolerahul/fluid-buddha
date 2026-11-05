@@ -44,6 +44,9 @@ class TurnMetrics:
     # Voice: question received → first byte of speech sent (F-3). None when
     # nothing was spoken (text turns, the Basic tier).
     ttfa_ms: Optional[float] = None
+    # Set when recorded: who answered (M3-4) — "platform", or the account's
+    # own provider, whose model cost the account pays directly.
+    provider: str = "platform"
 
     def add_llm(self, *, kind: str, input_tokens: int, output_tokens: int,
                 tool_calls: int = 0) -> None:
@@ -57,16 +60,25 @@ class TurnMetrics:
         self.tool_calls += int(tool_calls)
 
 
-def _costs(m: TurnMetrics, p: Pricing) -> dict:
+def _costs(m: TurnMetrics, p: Pricing, byo=None) -> dict:
     asr = p.cost_asr(m.asr_ms)
     tts = p.cost_tts(m.tts_chars)
-    fast = p.cost_fast(m.fast_in_tok, m.fast_out_tok)
-    thinker = p.cost_thinker(m.thinker_in_tok, m.thinker_out_tok)
     tool = p.cost_tool(m.tool_calls)
+    byo_cost = 0.0
+    if byo is not None:
+        # The account's own provider, at its prices (USD per 1M tokens).
+        fin, fout = byo.price(byo.fast_model)
+        tin, tout = byo.price(byo.thinker_model)
+        fast = (m.fast_in_tok * fin + m.fast_out_tok * fout) / 1e6
+        thinker = (m.thinker_in_tok * tin + m.thinker_out_tok * tout) / 1e6
+        byo_cost = fast + thinker
+    else:
+        fast = p.cost_fast(m.fast_in_tok, m.fast_out_tok)
+        thinker = p.cost_thinker(m.thinker_in_tok, m.thinker_out_tok)
     return {
         "asr_cost": asr, "tts_cost": tts, "fast_cost": fast,
         "thinker_cost": thinker, "tool_cost": tool,
-        "total_cost": asr + tts + fast + thinker + tool,
+        "total_cost": asr + tts + fast + thinker + tool, "byo_llm_cost": byo_cost,
     }
 
 
@@ -75,16 +87,22 @@ async def record_turn(db: AsyncSession, metrics: TurnMetrics,
     """Persist one usage event. Best-effort: analytics must never break a turn."""
     pricing = pricing or get_pricing()
     try:
-        costs = _costs(metrics, pricing)
+        from app.ai.providers import cached_for_site
+        byo = None if metrics.served_from_cache else cached_for_site(metrics.site_key)
+        if byo is not None:
+            metrics.provider = byo.provider
+        costs = _costs(metrics, pricing, byo)
         await db.execute(text(
             "INSERT INTO usage_events (id, site_key, session_id, channel, intent, "
             " persona, page, served_from_cache, asr_ms, tts_chars, fast_in_tok, "
             " fast_out_tok, thinker_in_tok, thinker_out_tok, tool_calls, asr_cost, "
-            " tts_cost, fast_cost, thinker_cost, tool_cost, total_cost, latency_ms, ttfa_ms) "
+            " tts_cost, fast_cost, thinker_cost, tool_cost, total_cost, latency_ms, ttfa_ms, "
+            " provider, byo_llm_cost) "
             "VALUES (:id, :sk, :sid, :ch, :intent, :persona, :page, :cache, :asr_ms, "
             " :tts_chars, :fi, :fo, :ti, :to, :tc, :asr_cost, :tts_cost, :fast_cost, "
-            " :thinker_cost, :tool_cost, :total_cost, :lat, :ttfa)"
+            " :thinker_cost, :tool_cost, :total_cost, :lat, :ttfa, :provider, :byo_llm_cost)"
         ), {
+            "provider": metrics.provider,
             "id": uuid.uuid4(), "sk": metrics.site_key, "sid": metrics.session_id,
             "ch": metrics.channel, "intent": metrics.intent, "persona": metrics.persona,
             "page": metrics.page, "cache": metrics.served_from_cache,
@@ -121,6 +139,7 @@ _SUMS = (
     "sum(asr_cost) AS asr_cost, sum(tts_cost) AS tts_cost, "
     "sum(fast_cost) AS fast_llm_cost, sum(thinker_cost) AS thinker_llm_cost, "
     "sum(tool_cost) AS tool_cost, sum(total_cost) AS total_cost, "
+    "sum(byo_llm_cost) AS byo_llm_cost, "
     f"count(*) FILTER (WHERE {_TURN}) AS turns, "
     f"count(*) FILTER (WHERE {_TURN} AND served_from_cache) AS cached_turns, "
     f"count(*) FILTER (WHERE {_TURN} AND NOT served_from_cache) AS generated_turns, "
@@ -195,6 +214,7 @@ async def analytics(
     totals = _round_row({k: tot.get(k) for k in (
         "asr_cost", "tts_cost", "fast_llm_cost", "thinker_llm_cost", "tool_cost",
         "total_cost", "turns", "cached_turns", "generated_turns", "avg_latency_ms",
+        "byo_llm_cost",
     )})
     turns = totals["turns"] or 0
     cached = totals["cached_turns"] or 0

@@ -80,7 +80,12 @@ async def make_recap(body: RecapRequest, request: Request, background: Backgroun
         if blocked:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, blocked)
         privacy = await get_privacy(db, resolved.site_key)
-        llm = None if settings.mock_ai else rt.engines.llm
+        from app.ai.providers import config_for_site, current_site
+        current_site.set(resolved.site_key)
+        # The account's own model writes the summary too (M3-4); the platform's
+        # summary is the plain "you asked…" in mock mode.
+        byo = await config_for_site(resolved.site_key)
+        llm = rt.engines.llm if (byo is not None or not settings.mock_ai) else None
         try:
             recap = await recaps.create_or_refresh(
                 db, resolved.site_key, body.session_id, recap_days=privacy.recap_days,
