@@ -75,6 +75,7 @@ const TABS = [
   { key: "experiment", label: "Holdout" },
   { key: "tests", label: "A/B tests" },
   { key: "triggers", label: "Triggers" },
+  { key: "actions", label: "Actions" },
   { key: "settings", label: "Settings" },
 ];
 

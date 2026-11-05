@@ -72,6 +72,8 @@ export default function LeadsPage() {
                     <td>{l.company || "—"}</td>
                     <td>
                       {l.source}
+                      {l.paid_at && <div><span className="badge ok">paid{l.paid_amount
+                        ? ` ₹${(l.paid_amount / 100).toLocaleString("en-IN")}` : ""}</span></div>}
                       {l.recap && <div className="faint" style={{ fontSize: "0.78rem" }}>
                         recap: {l.recap.views} view{l.recap.views === 1 ? "" : "s"}
                         {l.recap.forwards ? `, ${l.recap.forwards} forward${l.recap.forwards === 1 ? "" : "s"}` : ""}</div>}

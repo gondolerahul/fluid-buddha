@@ -477,6 +477,9 @@ export type Lead = {
   delivered_at: string | null;
   delivery_error: string | null;
   created_at: string;
+  /** Paid through a payment action (M2-8); paise. */
+  paid_at?: string | null;
+  paid_amount?: number | null;
   /** The conversation's shared recap, if the visitor asked for one (M2-6). */
   recap?: { views: number; forwards: number; last_viewed_at: string | null } | null;
 };
@@ -536,6 +539,40 @@ export type TriggerStats = { shown: number; clicked: number; dismissed: number; 
 export type TriggerRule = TriggerRuleIn & { id: string; updated_at: string; stats: TriggerStats | null };
 
 // ---- endpoint helpers ------------------------------------------------------
+/** Actions marketplace (M2-8). */
+export type ActionKind = "payment_link" | "quote_request" | "trial" | "meeting_link" | "webhook";
+export type ActionField = {
+  key: string; label: string; type: "text" | "email" | "number" | "integer" | "boolean" | "choice";
+  required: boolean; options?: string[]; max?: number;
+};
+export type Price = { key: string; label: string; amount: number; currency?: string };
+export type ActionConfig = {
+  max_per_hour?: number; key_id?: string; prices?: Price[]; url?: string;
+  booking_url?: string; style?: "calendly" | "cal" | "plain"; fields?: ActionField[];
+};
+export type SiteAction = {
+  id: string; kind: ActionKind; name: string; label: string; description: string; enabled: boolean;
+  config: ActionConfig; has_secret: boolean; fields: ActionField[]; razorpay_webhook_url?: string;
+};
+export type ActionIn = {
+  kind?: ActionKind; name: string; label: string; description: string; enabled: boolean;
+  config: ActionConfig; secrets?: { key_secret?: string; webhook_secret?: string };
+};
+export type ActionRun = {
+  id: string; action_name: string; kind: ActionKind; session_id: string;
+  status: "proposed" | "cancelled" | "expired" | "done" | "failed" | "paid";
+  inputs: Record<string, unknown>; summary: { label: string; value: string }[];
+  amount: number | null; currency: string | null; result: { url?: string; message?: string };
+  error: string | null; lead_id: string | null; created_at: string; confirmed_at: string | null;
+  finished_at: string | null; paid_at: string | null;
+};
+export type CustomComponentIn = {
+  name: string; label: string; description: string; kind: "template" | "iframe";
+  props_schema: Record<string, unknown>; template: { base: string; state: Record<string, unknown> } | null;
+  iframe_url: string | null; enabled: boolean;
+};
+export type CustomComponent = CustomComponentIn & { id: string };
+
 export const Api = {
   register: (email: string, password: string, name?: string) =>
     api<AuthResponse>("/auth/register", { method: "POST", auth: false, body: { email, password, name } }),
@@ -596,6 +633,27 @@ export const Api = {
     api<TriggerRule>(`/tenant/websites/${wid}/triggers/${id}`, { method: "PUT", body }),
   deleteTrigger: (wid: string, id: string) =>
     api<void>(`/tenant/websites/${wid}/triggers/${id}`, { method: "DELETE" }),
+  actions: (wid: string) => api<{ actions: SiteAction[] }>(`/tenant/websites/${wid}/actions`),
+  createAction: (wid: string, body: ActionIn) =>
+    api<SiteAction>(`/tenant/websites/${wid}/actions`, { method: "POST", body }),
+  updateAction: (wid: string, id: string, body: ActionIn) =>
+    api<SiteAction>(`/tenant/websites/${wid}/actions/${id}`, { method: "PUT", body }),
+  deleteAction: (wid: string, id: string) =>
+    api<void>(`/tenant/websites/${wid}/actions/${id}`, { method: "DELETE" }),
+  actionSecret: (wid: string, id: string) =>
+    api<{ signing_secret: string | null; razorpay_webhook_url: string | null; has_razorpay_webhook_secret: boolean }>(
+      `/tenant/websites/${wid}/actions/${id}/secret`),
+  actionRuns: (wid: string) => api<{ runs: ActionRun[] }>(`/tenant/websites/${wid}/action-runs`),
+  components: (wid: string) => api<{ components: CustomComponent[] }>(`/tenant/websites/${wid}/components`),
+  createComponent: (wid: string, body: CustomComponentIn) =>
+    api<CustomComponent>(`/tenant/websites/${wid}/components`, { method: "POST", body }),
+  updateComponent: (wid: string, id: string, body: CustomComponentIn) =>
+    api<CustomComponent>(`/tenant/websites/${wid}/components/${id}`, { method: "PUT", body }),
+  deleteComponent: (wid: string, id: string) =>
+    api<void>(`/tenant/websites/${wid}/components/${id}`, { method: "DELETE" }),
+  previewComponent: (wid: string, spec: CustomComponentIn, props: Record<string, unknown>) =>
+    api<{ component_type: string; initial_state: Record<string, unknown> }>(
+      `/tenant/websites/${wid}/components/preview`, { method: "POST", body: { spec, props } }),
 
   team: () => api<Team>("/tenant/team"),
   invite: (email: string, role: Role) =>
