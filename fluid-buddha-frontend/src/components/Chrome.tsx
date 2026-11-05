@@ -53,6 +53,7 @@ export function AppHeader() {
           {tenant && <Link href="/team" className="btn btn-ghost btn-sm">Team</Link>}
           {tenant && can("admin") && <Link href="/audit" className="btn btn-ghost btn-sm">Audit log</Link>}
           {tenant && can("admin") && <Link href="/billing" className="btn btn-ghost btn-sm">Billing</Link>}
+          {tenant && <Link href="/security" className="btn btn-ghost btn-sm">Security</Link>}
           {tenant && <span className="muted" style={{ fontSize: "0.86rem" }}
             title={tenant.role ? `Your role: ${tenant.role}` : undefined}>
             {tenant.user?.email ?? tenant.email}{tenant.role && tenant.role !== "owner" ? ` · ${tenant.role}` : ""}

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRequireAuth } from "@/lib/auth";
-import { Api, ApiError, Member, ROLES, Role, SSOConfig, Team } from "@/lib/api";
+import { AccountSecurity, Api, ApiError, Member, ROLES, Role, SSOConfig, Team } from "@/lib/api";
 import { AppHeader } from "@/components/Chrome";
 import { DigestCard } from "@/components/DigestCard";
 import { LoadingScreen, Spinner, fmtDate, useToast } from "@/components/ui";
@@ -51,7 +51,7 @@ export default function TeamPage() {
           <h3 style={{ marginBottom: 12 }}>Members</h3>
           {!team ? <div className="skeleton" style={{ height: 120 }} /> : (
             <table className="table">
-              <thead><tr><th>Person</th><th>Role</th><th>Last sign-in</th><th /></tr></thead>
+              <thead><tr><th>Person</th><th>Role</th><th>Two-factor</th><th>Last sign-in</th><th /></tr></thead>
               <tbody>
                 {team.members.map((m) => (
                   <MemberRow key={m.id} m={m} me={team.me.id === m.id} viewerRole={auth.role!}
@@ -87,6 +87,8 @@ export default function TeamPage() {
           </section>
         )}
 
+        {isAdmin && <AccountSecurityCard isOwner={auth.role === "owner"}
+          meHasMfa={!!auth.tenant.security?.mfa_enabled} onChange={load} />}
         {isAdmin && <DigestCard />}
         {isAdmin && <SSOCard isOwner={auth.role === "owner"} />}
       </main>
@@ -115,6 +117,8 @@ function MemberRow({ m, me, viewerRole, onRole, onRemove }: {
           </select>
         ) : m.role}
       </td>
+      <td>{!m.has_password ? <span className="faint">via SSO</span>
+        : m.mfa_enabled ? <span className="badge ok">On</span> : <span className="badge">Off</span>}</td>
       <td className="faint">{fmtDate(m.last_login_at)}</td>
       <td style={{ textAlign: "right" }}>
         {canManage && !me && <button className="btn btn-sm btn-ghost" onClick={onRemove}>Remove</button>}
@@ -307,6 +311,94 @@ function SSOForm({ cfg, isOwner, reload, toast }: {
           </div>
         </div>
       </fieldset>
+    </section>
+  );
+}
+
+/** Two-factor for the whole account and the quarterly access review (M2-11). */
+function AccountSecurityCard({ isOwner, meHasMfa, onChange }: {
+  isOwner: boolean; meHasMfa: boolean; onChange: () => void;
+}) {
+  const toast = useToast();
+  const [sec, setSec] = useState<AccountSecurity | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => Api.security().then(setSec).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = async () => {
+    if (!sec) return;
+    setBusy(true);
+    try {
+      await Api.saveSecurity(!sec.require_mfa);
+      toast(sec.require_mfa ? "Two-factor is optional again" : "Two-factor is now required");
+      await load();
+      onChange();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Could not save", "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const download = async () => {
+    try {
+      const blob = await Api.accessReviewCsv();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `access-review-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Could not download", "err");
+    }
+  };
+
+  return (
+    <section className="card" id="access-review">
+      <h3>Account security</h3>
+      {!sec ? <div className="skeleton" style={{ height: 80, marginTop: 12 }} /> : (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <div className="row between wrap" style={{ gap: 12 }}>
+            <div>
+              <strong>Require two-factor</strong>
+              <p className="faint" style={{ fontSize: "0.84rem", marginTop: 4 }}>
+                {sec.require_mfa
+                  ? "Everyone signing in with a password must enter a code from an authenticator app."
+                  : "Password sign-ins can skip the code. SSO sign-ins always use your identity provider's two-factor."}
+                {sec.members_without_mfa.length > 0 &&
+                  ` Without two-factor: ${sec.members_without_mfa.join(", ")}${sec.require_mfa ? " (asked at their next request)" : ""}.`}
+              </p>
+            </div>
+            {isOwner ? (
+              <button className={`btn btn-sm ${sec.require_mfa ? "" : "btn-primary"}`} disabled={busy || (!sec.require_mfa && !meHasMfa)}
+                title={!sec.require_mfa && !meHasMfa ? "Turn on two-factor for yourself first (Security)" : undefined}
+                onClick={toggle}>
+                {busy ? <Spinner /> : sec.require_mfa ? "Make optional" : "Require"}
+              </button>
+            ) : <span className="badge">{sec.require_mfa ? "Required" : "Optional"}</span>}
+          </div>
+          {isOwner && !sec.require_mfa && !meHasMfa && (
+            <p className="faint" style={{ fontSize: "0.8rem" }}>
+              Turn on two-factor for yourself on the <a href="/security">Security</a> page first, so you can&apos;t be locked out.
+            </p>
+          )}
+          <p className="faint" style={{ fontSize: "0.82rem" }}>
+            Sessions end after {sec.session_idle_minutes} minutes without activity and after {sec.session_absolute_hours} hours
+            in any case. {sec.login_max_attempts} wrong passwords or codes in a row lock a person out for {sec.login_lockout_minutes} minutes.
+          </p>
+          <div className="row between wrap" style={{ gap: 12 }}>
+            <div>
+              <strong>Access review</strong>
+              <p className="faint" style={{ fontSize: "0.84rem", marginTop: 4 }}>
+                Everyone who can sign in, their role, last activity and two-factor. Owners and Admins get a reminder
+                each quarter; keep the downloaded list as your record of the review.
+              </p>
+            </div>
+            <button className="btn btn-sm" onClick={download}>Download CSV</button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

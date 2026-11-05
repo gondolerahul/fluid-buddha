@@ -1,6 +1,12 @@
 /**
- * Typed client for the FluidBuddha backend admin API. Attaches the JWT bearer
- * token to every request and throws a friendly ApiError on non-2xx responses.
+ * Typed client for the FluidBuddha backend admin API.
+ *
+ * Signed-in state is an httpOnly session cookie set by the backend (M2-11):
+ * page scripts never see the token. Every request goes with credentials, and
+ * a request that changes something carries the session's CSRF token, which
+ * the backend hands back at sign-in and from /auth/me. Non-2xx answers throw
+ * a friendly ApiError; an ended session or a pending two-factor setup is
+ * announced on window so the app can react in one place.
  */
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:8080";
@@ -15,18 +21,25 @@ export const WIDGET_BACKEND =
 export const SDK_URL =
   process.env.NEXT_PUBLIC_SDK_URL || "http://localhost:4000/dist/fluid-buddha.global.js";
 
-const TOKEN_KEY = "fb_token";
+// Before M2-11 the console kept a bearer token in localStorage; drop it.
+const LEGACY_TOKEN_KEY = "fb_token";
+export function clearLegacyToken() {
+  if (typeof window !== "undefined") window.localStorage.removeItem(LEGACY_TOKEN_KEY);
+}
 
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
+let csrfToken: string | null = null;
+/** The session's CSRF token (from sign-in or /auth/me); kept in memory only. */
+export function setCsrf(token: string | null | undefined) {
+  csrfToken = token ?? null;
 }
-export function setToken(token: string) {
-  window.localStorage.setItem(TOKEN_KEY, token);
+export function getCsrf(): string | null {
+  return csrfToken;
 }
-export function clearToken() {
-  window.localStorage.removeItem(TOKEN_KEY);
-}
+
+/** Fired on window when the backend says the session ended (idle, expired,
+ *  revoked) or that this account requires two-factor first. */
+export const SESSION_ENDED = "fb:session-ended";
+export const MFA_REQUIRED = "fb:mfa-required";
 
 export class ApiError extends Error {
   status: number;
@@ -43,13 +56,18 @@ type Options = {
   form?: FormData;
 };
 
+/** fetch() against the backend with the session cookie and, for changes, the
+ *  CSRF token. */
+export function backendFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const method = (init.method || "GET").toUpperCase();
+  const headers = new Headers(init.headers);
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  return fetch(`${API_BASE}${path}`, { ...init, method, headers, credentials: "include" });
+}
+
 export async function api<T = unknown>(path: string, opts: Options = {}): Promise<T> {
   const { method = "GET", body, auth = true, form } = opts;
   const headers: Record<string, string> = {};
-  if (auth) {
-    const token = getToken();
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-  }
   let payload: BodyInit | undefined;
   if (form) {
     payload = form;
@@ -58,12 +76,20 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
     payload = JSON.stringify(body);
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { method, headers, body: payload });
+  const res = await backendFetch(path, { method, headers, body: payload });
   if (res.status === 204) return undefined as T;
 
   const text = await res.text();
   const data = text ? safeJson(text) : null;
-  if (!res.ok) throw new ApiError(res.status, errorMessage(data, res.statusText));
+  if (!res.ok) {
+    const message = errorMessage(data, res.statusText);
+    if (auth && typeof window !== "undefined") {
+      if (res.status === 401) window.dispatchEvent(new Event(SESSION_ENDED));
+      if (res.status === 403 && message === "mfa_setup_required") window.dispatchEvent(new Event(MFA_REQUIRED));
+    }
+    throw new ApiError(res.status, message === "csrf_failed"
+      ? "Your session needs refreshing. Reload the page and try again." : message);
+  }
   return data as T;
 }
 
@@ -97,11 +123,21 @@ export type Role = "owner" | "admin" | "editor" | "viewer";
 export const ROLES: Role[] = ["viewer", "editor", "admin", "owner"];
 export type User = { id: string; email: string; name: string | null };
 /** The account you act in, with your role in it and who you are (M2-1). */
-export type Tenant = { id: string; email: string; name: string | null; role?: Role; user?: User };
-export type AuthResponse = { access_token: string; token_type: string; tenant: Tenant; role: Role; user: User };
+export type Security = { mfa_enabled: boolean; mfa_required: boolean; session_mfa: boolean;
+  mfa_setup_required: boolean; idle_minutes: number };
+export type Tenant = { id: string; email: string; name: string | null; role?: Role; user?: User;
+  csrf_token?: string | null; security?: Security };
+export type AuthResponse = { access_token: string; token_type: string; tenant: Tenant; role: Role; user: User;
+  csrf_token?: string | null; expires_at?: string | null };
+export type MFAChallenge = { mfa_required: true; mfa_token: string };
+export type MFAStatus = { enabled: boolean; enabled_at: string | null; required: boolean; recovery_codes_left: number };
+export type SessionInfo = { id: string; method: string; created_at: string; last_seen_at: string;
+  ip: string | null; user_agent: string | null; account: string };
+export type AccountSecurity = { require_mfa: boolean; members_without_mfa: string[]; session_idle_minutes: number;
+  session_absolute_hours: number; login_max_attempts: number; login_lockout_minutes: number };
 export type Account = { id: string; name: string; role: Role };
 export type Member = { id: string; email: string; name: string | null; role: Role; joined_at: string;
-  last_login_at: string | null; has_password: boolean };
+  last_login_at: string | null; has_password: boolean; mfa_enabled?: boolean };
 export type Invitation = { id: string; email: string; role: Role; invited_by: string | null;
   created_at: string; expires_at: string };
 export type Team = { members: Member[]; invitations: Invitation[]; me: { id: string; role: Role } };
@@ -598,8 +634,25 @@ export const Api = {
   register: (email: string, password: string, name?: string) =>
     api<AuthResponse>("/auth/register", { method: "POST", auth: false, body: { email, password, name } }),
   login: (email: string, password: string) =>
-    api<AuthResponse>("/auth/login", { method: "POST", auth: false, body: { email, password } }),
-  me: () => api<Tenant>("/auth/me"),
+    api<AuthResponse | MFAChallenge>("/auth/login", { method: "POST", auth: false, body: { email, password } }),
+  loginMfa: (mfa_token: string, code: { code?: string; recovery_code?: string }) =>
+    api<AuthResponse>("/auth/login/mfa", { method: "POST", auth: false, body: { mfa_token, ...code } }),
+  logout: () => api<void>("/auth/logout", { method: "POST", auth: false }),
+  me: () => api<Tenant>("/auth/me", { auth: false }),
+  sessions: () => api<{ current: string; sessions: SessionInfo[] }>("/auth/sessions"),
+  endSession: (id: string) => api<void>(`/auth/sessions/${id}`, { method: "DELETE" }),
+  endOtherSessions: () => api<{ ended: number }>("/auth/sessions/revoke-others", { method: "POST" }),
+  changePassword: (current_password: string, new_password: string) =>
+    api<{ changed: boolean; other_sessions_ended: number }>("/auth/password",
+      { method: "POST", body: { current_password, new_password } }),
+  mfaStatus: () => api<MFAStatus>("/auth/mfa"),
+  mfaSetup: () => api<{ secret: string; otpauth_uri: string }>("/auth/mfa/setup", { method: "POST" }),
+  mfaEnable: (code: string) =>
+    api<{ enabled: boolean; recovery_codes: string[] }>("/auth/mfa/enable", { method: "POST", body: { code } }),
+  mfaDisable: (code: string, password: string) =>
+    api<{ enabled: boolean }>("/auth/mfa/disable", { method: "POST", body: { code, password } }),
+  mfaRecoveryCodes: (code: string) =>
+    api<{ recovery_codes: string[] }>("/auth/mfa/recovery-codes", { method: "POST", body: { code } }),
   accounts: () => api<Account[]>("/auth/accounts"),
   switchAccount: (tenant_id: string) =>
     api<AuthResponse>("/auth/switch", { method: "POST", body: { tenant_id } }),
@@ -692,12 +745,18 @@ export const Api = {
     return api<AuditEvent[]>(`/tenant/audit?${p}`);
   },
   auditCsv: async (): Promise<Blob> => {
-    const res = await fetch(`${API_BASE}/tenant/audit.csv`, {
-      headers: { Authorization: `Bearer ${getToken() ?? ""}` },
-    });
+    const res = await backendFetch("/tenant/audit.csv");
     if (!res.ok) throw new ApiError(res.status, "Could not export the audit log");
     return res.blob();
   },
+  accessReviewCsv: async (): Promise<Blob> => {
+    const res = await backendFetch("/tenant/team/access-review.csv");
+    if (!res.ok) throw new ApiError(res.status, "Could not export the access review");
+    return res.blob();
+  },
+  security: () => api<AccountSecurity>("/tenant/security"),
+  saveSecurity: (require_mfa: boolean) =>
+    api<{ require_mfa: boolean }>("/tenant/security", { method: "PUT", body: { require_mfa } }),
   ssoConfig: () => api<SSOConfig>("/tenant/sso"),
   saveSSO: (body: { issuer: string; client_id: string; client_secret?: string;
     default_role: string; require_sso: boolean; enabled: boolean }) =>

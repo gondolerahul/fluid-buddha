@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRequireAuth } from "@/lib/auth";
-import { API_BASE, Api, ApiError, LiveConversation, LiveLine, LiveSession, getToken } from "@/lib/api";
+import { API_BASE, Api, ApiError, LiveConversation, LiveLine, LiveSession, getCsrf } from "@/lib/api";
 import { OperatorCall } from "@/lib/operatorCall";
 import { useQueryParam } from "@/lib/location";
 import { AppHeader } from "@/components/Chrome";
@@ -113,7 +113,7 @@ export default function LivePage() {
     const open = () => {
       ws = new WebSocket(EVENTS_URL);
       ws.onopen = () => {
-        ws?.send(JSON.stringify({ token: getToken() }));
+        ws?.send(JSON.stringify({ csrf: getCsrf() }));
         setConnected(true);
       };
       ws.onmessage = (e) => {

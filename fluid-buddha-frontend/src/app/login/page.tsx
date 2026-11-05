@@ -13,9 +13,13 @@ function safeNext(next: string | null): string {
 }
 
 export default function LoginPage() {
-  const { login, tenant, loading } = useAuth();
+  const { login, loginMfa, tenant, loading } = useAuth();
   const router = useRouter();
   const ssoError = useQueryParam("sso_error");
+  const expired = useQueryParam("expired");
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
   const next = safeNext(useQueryParam("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,9 +37,22 @@ export default function LoginPage() {
     if (ssoMode) return startSSO("oidc");
     setBusy("password");
     try {
-      await login(email, password);
+      if (mfaToken) {
+        await loginMfa(mfaToken, useRecovery ? { recovery_code: code } : { code });
+        router.replace(next);
+        return;
+      }
+      const challenge = await login(email, password);
+      if (challenge) {
+        setMfaToken(challenge.mfaToken);   // the password was right; now the code
+        return;
+      }
       router.replace(next);
     } catch (e) {
+      if (mfaToken && e instanceof ApiError && e.status === 401 && /too long|password again/.test(e.message)) {
+        setMfaToken(null);
+        setCode("");
+      }
       setErr(e instanceof ApiError ? e.message : "Could not sign in.");
     } finally {
       setBusy(null);
@@ -64,6 +81,34 @@ export default function LoginPage() {
         <h1 style={{ fontSize: "1.4rem", marginBottom: 4 }}>Welcome back</h1>
         <p className="muted" style={{ marginBottom: 22 }}>Sign in to your console.</p>
         {ssoError && <div className="notice err" style={{ marginBottom: 14 }}>{ssoError}</div>}
+        {expired && !mfaToken && (
+          <div className="notice warn" style={{ marginBottom: 14 }}>
+            Your session ended, so you were signed out. Sign in again to carry on.
+          </div>
+        )}
+        {mfaToken ? (
+          <form onSubmit={submit} className="stack">
+            <div className="field">
+              <label className="label">{useRecovery ? "Recovery code" : "Code from your authenticator app"}</label>
+              <input className="input mono" autoFocus required value={code}
+                inputMode={useRecovery ? "text" : "numeric"} autoComplete="one-time-code"
+                maxLength={useRecovery ? 20 : 6} placeholder={useRecovery ? "xxxxx-xxxxx" : "123456"}
+                onChange={(e) => setCode(e.target.value.trim())} />
+            </div>
+            {err && <div className="badge err" style={{ alignSelf: "flex-start" }}>{err}</div>}
+            <button className="btn btn-primary" disabled={busy !== null}>
+              {busy ? <Spinner /> : "Verify"}
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm"
+              onClick={() => { setUseRecovery(!useRecovery); setCode(""); setErr(""); }}>
+              {useRecovery ? "Use a code from the app" : "Lost your phone? Use a recovery code"}
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm"
+              onClick={() => { setMfaToken(null); setCode(""); setErr(""); }}>
+              Back
+            </button>
+          </form>
+        ) : (<>
         <form onSubmit={submit} className="stack">
           <div className="field">
             <label className="label">{ssoMode ? "Work email" : "Email"}</label>
@@ -90,6 +135,7 @@ export default function LoginPage() {
             {ssoMode ? "Use a password instead" : "Sign in with your company's SSO"}
           </button>
         </div>
+        </>)}
         <p className="muted" style={{ marginTop: 18, fontSize: "0.88rem" }}>
           New here? <Link href="/register" style={{ color: "var(--accent)" }}>Create an account</Link>
         </p>
