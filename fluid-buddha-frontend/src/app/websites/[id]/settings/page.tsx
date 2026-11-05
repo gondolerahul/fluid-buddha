@@ -689,6 +689,28 @@ function PrivacyForm({ id, initial }: { id: string; initial: Privacy }) {
             </p>
           </div>
         </div>
+        <div className="field">
+          <label className="row" style={{ gap: 8, fontSize: "0.9rem" }}>
+            <input type="checkbox" checked={!!cfg.memory_enabled}
+              onChange={(e) => set("memory_enabled", e.target.checked)} />
+            Remember returning visitors who ask to be remembered
+          </label>
+          <p className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+            The agent asks once; visitors who say yes are welcomed back with what they explored last time (topics,
+            components, open questions — never their details), on this site only. They can say &ldquo;forget me&rdquo;
+            any time. Switching this off deletes every memory.
+          </p>
+          {cfg.memory_enabled && (
+            <div className="row" style={{ gap: 8, marginTop: 8, alignItems: "center" }}>
+              <span className="faint" style={{ fontSize: "0.84rem" }}>Keep a memory for</span>
+              <select className="select" style={{ width: "auto" }} value={cfg.memory_days ?? 180}
+                onChange={(e) => set("memory_days", Number(e.target.value))}>
+                {[30, 90, 180, 365].map((d) => <option key={d} value={d}>{daysLabel(d)}</option>)}
+              </select>
+              <span className="faint" style={{ fontSize: "0.84rem" }}>after their last visit</span>
+            </div>
+          )}
+        </div>
         <div className="row" style={{ justifyContent: "flex-end" }}>
           <button className="btn btn-primary" disabled={busy}>{busy ? <Spinner /> : "Save privacy settings"}</button>
         </div>

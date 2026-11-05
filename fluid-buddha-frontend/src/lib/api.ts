@@ -584,6 +584,9 @@ export type Privacy = {
   lead_retention_days: number;
   /** How long a shared recap link works (M2-6). */
   recap_days?: number;
+  /** Remember returning visitors who opt in (M3-3), kept this long after their last visit. */
+  memory_enabled?: boolean;
+  memory_days?: number;
 };
 export type Integrations = {
   webhook_url: string | null;
