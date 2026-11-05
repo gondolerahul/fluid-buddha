@@ -107,10 +107,14 @@ The final stop has no move. A stop's `move` runs AFTER its narration is spoken."
 
 def _planner_system(site_key: str) -> str:
     profile = profile_for(site_key)
-    return (
+    out = (
         _PLANNER_TEMPLATE.replace("{agent}", profile.agent_name)
         .replace("{company}", profile.company_name)
     )
+    if profile.tour_outline:   # from a vertical template (M2-9)
+        out += ("\nWhere the site has pages for them, cover these, in this order: "
+                + "; ".join(profile.tour_outline) + ".")
+    return out
 
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)

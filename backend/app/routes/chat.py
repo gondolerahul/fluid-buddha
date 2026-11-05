@@ -161,6 +161,21 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     if req.lang in ("en", "hi"):
         state.ui_lang = req.lang
     state.pick_language(message, enabled)
+
+    # Medical safety (M2-9): advice and emergencies get a fixed answer,
+    # before any cache or model, and are never cached.
+    if profile_for(state.site_key).safety == "medical":
+        from app.trust.safety import check, reply
+        verdict = check(message)
+        if verdict:
+            text = reply(verdict, state.lang)
+            state.add_turn(message, text)
+            await _record_conversation(state, sid, pii.stored(message), text, f"safety_{verdict}",
+                                       {"confidence": 1.0, "found": True, "sources": []},
+                                       served_from_cache=False)
+            return {"text": text, "ack": "", "intent": f"safety_{verdict}", "persona": state.persona,
+                    "actions": [], "components": [], "pages": [], "patches": [],
+                    "grounding": None, "session_id": sid, "lang": state.lang, "proposals": []}
     # A mid-conversation follow-up is answered fresh and never cached (WS5).
     followup = depends_on_history(message, state.history)
 

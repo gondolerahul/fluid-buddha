@@ -37,6 +37,7 @@ from app.routes import (
     digest,
     recaps,
     actions,
+    templates,
     websites,
     widget,
 )
@@ -116,3 +117,4 @@ app.include_router(recaps.public)
 app.include_router(recaps.admin)
 app.include_router(actions.public)
 app.include_router(actions.admin)
+app.include_router(templates.router)

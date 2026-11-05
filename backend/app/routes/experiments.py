@@ -118,7 +118,9 @@ async def enroll(request: Request) -> dict:
     defaults = {"greeting": profile.greeting or None, "design": resolved.website.design,
                 # Languages (M2-7): the widget picks its labels from these.
                 "languages": profile.languages, "widget_language": profile.widget_language,
-                "greeting_hi": profile.greeting_hi or None}
+                "greeting_hi": profile.greeting_hi or None,
+                # Suggestion chips (M2-9 templates); empty = the widget's own.
+                "starters": profile.starter_questions}
     return {**(result or _NO_ARM), "defaults": defaults}
 
 

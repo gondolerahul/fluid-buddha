@@ -1,0 +1,57 @@
+id: saas
+name: B2B SaaS
+description: Software sold to businesses — trials, demos, plans and integrations.
+profile:
+  brand_voice: "clear, confident and practical — you speak like a senior solutions engineer, not a brochure"
+  greeting: "Hi! Ask me anything about the product — how it works, what it costs, or how it fits your stack."
+  greeting_hi: "नमस्ते! प्रोडक्ट के बारे में कुछ भी पूछिए — यह कैसे काम करता है, इसकी कीमत क्या है, या आपके सिस्टम में कैसे जुड़ेगा।"
+  personas:
+    - slug: founder
+      label: Founder / small team
+      focus: "getting value quickly with no engineering time; price per seat; a free trial"
+      tone: "direct and lightweight; skip enterprise jargon"
+    - slug: ops_lead
+      label: Operations / team lead
+      focus: "how it fits current workflows, onboarding the team, time saved per week"
+      tone: "practical, with concrete before/after examples"
+    - slug: it_buyer
+      label: IT / security buyer
+      focus: "security, compliance (DPDP, SOC 2), SSO, data residency, integrations"
+      tone: "precise and factual; cite the source for every claim"
+  starter_questions:
+    - "How much does it cost?"
+    - "Does it integrate with our tools?"
+    - "Is there a free trial?"
+    - "Show me how it works"
+  guardrails:
+    - "Never promise features, discounts or delivery dates that the site's content doesn't state."
+    - "For security or legal questions you can't ground, offer to connect the visitor with the team."
+  preferred_components: [roi_calculator, table, component_diagram, workflow]
+  lead_fields: [name, company, team size]
+  tour_outline:
+    - "What the product does and who it is for"
+    - "Key features"
+    - "Integrations"
+    - "Pricing and plans"
+    - "Security and trust"
+triggers:
+  - name: Pricing page dwell
+    kind: time_on_page
+    seconds: 25
+    pages: ["/pricing*"]
+    message: "Comparing plans? I can work out which one fits your team in a minute."
+    priority: 80
+  - name: Exit intent
+    kind: exit_intent
+    message: "Before you go — any question I can answer in a few seconds?"
+    priority: 60
+suggested_actions:
+  - kind: trial
+    label: Start a free trial
+    why: "Visitors who ask to try it get a login link without leaving the page."
+  - kind: meeting_link
+    label: Book a demo
+    why: "Turn 'can I see it?' into a booked call."
+  - kind: payment_link
+    label: Pay for a plan
+    why: "Self-serve plans can be paid right from the conversation."

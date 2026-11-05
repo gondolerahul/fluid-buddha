@@ -169,6 +169,24 @@ _PROBE_DIRECTIVE = (
 )
 
 
+def _site_rules_fragment(site_key: str, *, tools: bool) -> str:
+    """The site's own rules (M2-9 templates, editable in Settings): what the
+    agent must always do or never do, what to ask for on follow-up, and
+    (with tools) which components fit this kind of business."""
+    profile = profile_for(site_key)
+    parts = []
+    if profile.guardrails:
+        parts.append("SITE RULES (always follow, they override everything else):\n"
+                     + "\n".join(f"- {g}" for g in profile.guardrails))
+    if profile.lead_fields:
+        parts.append("When the visitor wants follow-up, besides their email also ask (once, "
+                     "naturally) for: " + ", ".join(profile.lead_fields) + ".")
+    if tools and profile.preferred_components:
+        parts.append("When a visual helps, prefer these components: "
+                     + ", ".join(profile.preferred_components) + ".")
+    return "\n".join(parts)
+
+
 def _page_fragment(page: str | None, section: str | None) -> str:
     if not page:
         return "The visitor's current page is unknown."
@@ -251,6 +269,7 @@ def build_lean_system(
     parts = [
         _fill(_LEAN_TEMPLATE, site_key),
         f"CONTEXT: {persona_fragment(persona, site_key)}",
+        _site_rules_fragment(site_key, tools=False),
         _page_fragment(page, section),
         _related_fragment(related),
         _PROBE_DIRECTIVE if probe else "",
@@ -300,6 +319,7 @@ def build_thinker_system(
         _fill(_THINKER_TEMPLATE, site_key),
         f"CONTEXT: site={site_key}. {persona_fragment(persona, site_key)}",
         _capability_fragment(intelligence),
+        _site_rules_fragment(site_key, tools=intelligence in ("advance", "extreme")),
         _page_fragment(page, section),
         _sections_fragment(sections),
         _related_fragment(related),

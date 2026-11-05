@@ -641,6 +641,8 @@ class VoiceSession:
         # this conversation: answer it fresh and don't cache it (WS5).
         followup = depends_on_history(transcript, self.state.history)
         await self._set_language(transcript)
+        if await self._safety_reply(heard, transcript):
+            return
 
         # Cache-first (Feature 2): if we've answered a near-identical question for
         # this persona before and have enough history, replay it verbatim
@@ -654,6 +656,34 @@ class VoiceSession:
                 await self._respond_fresh(heard, transcript, personal, followup)
         finally:
             self._turn_t0 = None  # later speech (a reaction, the tour) isn't this turn
+
+    async def _safety_reply(self, heard: str, transcript: str) -> bool:
+        """Medical safety (M2-9): advice and emergencies get a fixed answer,
+        spoken without a model call, and are never cached."""
+        if profile_for(self.state.site_key).safety != "medical":
+            return False
+        from app.trust.safety import check, reply
+        verdict = check(transcript)
+        if not verdict:
+            return False
+        text = reply(verdict, self.state.lang)
+        try:
+            await self.send(Channel.STATE, "transcript", {"text": heard})
+            self._answer_speaking = True
+            try:
+                await self._speak(text, _sid("utt"))
+            finally:
+                self._answer_speaking = False
+        except asyncio.CancelledError:
+            await self.send(Channel.EVENTS, "interrupted", {})
+            raise
+        self.state.add_turn(transcript, text)
+        self._last_utt_text = ""
+        self._spawn(self._record_conversation(
+            question=self.state.pii.stored(transcript), answer=text, intent=f"safety_{verdict}",
+            grounding={"confidence": 1.0, "found": True, "sources": []}, served_from_cache=False,
+            lang=self.state.lang_seen))
+        return True
 
     async def _respond_fresh(self, heard: str, transcript: str, personal: bool,
                              followup: bool) -> None:

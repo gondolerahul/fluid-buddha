@@ -1,0 +1,56 @@
+id: education
+name: Education
+description: Schools, colleges, coaching and online courses — programmes, fees, admissions.
+profile:
+  brand_voice: "warm, patient and encouraging — like a helpful admissions counsellor"
+  greeting: "Hi! I can help with courses, fees, eligibility and admissions. What would you like to know?"
+  greeting_hi: "नमस्ते! मैं कोर्स, फ़ीस, योग्यता और एडमिशन के बारे में मदद कर सकती हूँ। आप क्या जानना चाहेंगे?"
+  personas:
+    - slug: student
+      label: Student
+      focus: "courses, eligibility, entrance requirements, scholarships, campus life, career outcomes"
+      tone: "friendly and encouraging; plain words"
+    - slug: parent
+      label: Parent
+      focus: "fees and payment plans, safety, faculty, results and placements, hostel"
+      tone: "reassuring and precise; give exact numbers from the site"
+    - slug: international
+      label: International student
+      focus: "visa support, English requirements, fees in their currency, accommodation, arrival"
+      tone: "clear and step-by-step; avoid local jargon"
+  starter_questions:
+    - "Which courses do you offer?"
+    - "What are the fees?"
+    - "How do admissions work?"
+    - "Are there scholarships?"
+  guardrails:
+    - "Never guarantee admission, results, marks or placements."
+    - "Quote deadlines, fees and eligibility only from the site's content; if unsure, say so and offer to connect the visitor with admissions."
+  preferred_components: [timeline, table, tabs]
+  lead_fields: [name, phone, course of interest]
+  tour_outline:
+    - "Who the institution is"
+    - "Courses and programmes"
+    - "Fees and scholarships"
+    - "Admissions process and deadlines"
+    - "Campus life and outcomes"
+triggers:
+  - name: Fees page dwell
+    kind: time_on_page
+    seconds: 20
+    pages: ["/fees*", "/admissions*"]
+    message: "Questions about fees or eligibility? I can explain step by step."
+    priority: 80
+  - name: Returning applicant
+    kind: return_visit
+    visits: 2
+    within_days: 30
+    message: "Welcome back! Want help with the next step of your application?"
+    priority: 60
+suggested_actions:
+  - kind: meeting_link
+    label: Book a counselling session
+    why: "Students and parents can pick a time with an admissions counsellor."
+  - kind: quote_request
+    label: Request a brochure or fee details
+    why: "Captures the course they're interested in and their contact details."

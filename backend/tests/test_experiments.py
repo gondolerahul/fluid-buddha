@@ -169,7 +169,8 @@ def test_experiment_flow_measures_lift():
         off = _beacon(client, "/experiment/enroll", {"key": key, "visitor": "visitor-aaaa"}).json()
         assert off == {"experiment_id": None, "arm": None, "goal_path": None, "overrides": {},
                        "defaults": {"greeting": None, "design": "level1", "languages": ["en"],
-                                    "widget_language": "auto", "greeting_hi": None}}
+                                    "widget_language": "auto", "greeting_hi": None,
+                                    "starters": []}}
 
         bad = client.put(base, json={"enabled": True, "goal_path": "thanks"}, headers=h)
         assert bad.status_code == 422

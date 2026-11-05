@@ -66,6 +66,12 @@ class ProfileUpdate(BaseModel):
     languages: Optional[list[Literal["en", "hi"]]] = Field(None, max_length=2)
     widget_language: Optional[Literal["auto", "en", "hi"]] = None
     greeting_hi: Optional[str] = Field(None, max_length=300)
+    starter_questions: Optional[list[str]] = Field(None, max_length=4)
+    guardrails: Optional[list[str]] = Field(None, max_length=10)
+    preferred_components: Optional[list[str]] = Field(None, max_length=8)
+    lead_fields: Optional[list[str]] = Field(None, max_length=6)
+    tour_outline: Optional[list[str]] = Field(None, max_length=9)
+    safety: Optional[Literal["", "medical"]] = None
 
     @field_validator("cta_url")
     @classmethod

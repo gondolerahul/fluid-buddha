@@ -30,6 +30,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.i18n.detect import clean_languages, clean_ui
+from app.orchestrator.components import KNOWN_COMPONENTS as _KNOWN_COMPONENTS
 from app.orchestrator.personas import PERSONAS as _HIREBUDDHA_PERSONAS
 from app.orchestrator.sitemap import (
     HIREBUDDHA_DYNAMIC_PREFIXES,
@@ -86,6 +87,19 @@ class SiteProfile:
     languages: list[str] = field(default_factory=lambda: ["en"])
     widget_language: str = "auto"
     greeting_hi: str = ""
+    # From a vertical template (M2-9), all editable: the widget's suggestion
+    # chips, rules the agent always follows, components it prefers, what it
+    # asks for when the visitor wants follow-up, what the guided tour covers,
+    # and a safety mode ("medical": no advice, urgent cases to emergency).
+    starter_questions: list[str] = field(default_factory=list)
+    guardrails: list[str] = field(default_factory=list)
+    preferred_components: list[str] = field(default_factory=list)
+    lead_fields: list[str] = field(default_factory=list)
+    tour_outline: list[str] = field(default_factory=list)
+    safety: str = ""
+    # Which template was applied, and the values it set (so a later apply
+    # never overwrites what the tenant changed by hand).
+    template: dict[str, Any] = field(default_factory=dict)
 
     @property
     def persona_slugs(self) -> list[str]:
@@ -132,7 +146,24 @@ class SiteProfile:
             languages=clean_languages(merged.get("languages")),
             widget_language=clean_ui(merged.get("widget_language")),
             greeting_hi=str(merged.get("greeting_hi") or "").strip()[:300],
+            starter_questions=_clean_lines(merged.get("starter_questions"), 4, 80),
+            guardrails=_clean_lines(merged.get("guardrails"), 10, 300),
+            preferred_components=[c for c in _clean_lines(merged.get("preferred_components"), 8, 40)
+                                  if c in _KNOWN_COMPONENTS],
+            lead_fields=_clean_lines(merged.get("lead_fields"), 6, 40),
+            tour_outline=_clean_lines(merged.get("tour_outline"), 9, 120),
+            safety="medical" if merged.get("safety") == "medical" else "",
+            template=merged.get("template") if isinstance(merged.get("template"), dict) else {},
         )
+
+
+def _clean_lines(raw: Any, limit: int, size: int) -> list[str]:
+    out: list[str] = []
+    for x in raw if isinstance(raw, list) else []:
+        x = " ".join(str(x).split())[:size]
+        if x and x not in out:
+            out.append(x)
+    return out[:limit]
 
 
 def _clean_cta(url: str) -> str:
