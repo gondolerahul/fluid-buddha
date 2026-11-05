@@ -574,6 +574,23 @@ offline.remove();
   ok(pinned.getAttribute('data-design') === 'level1' && pinned.shadowRoot.textContent.includes('Site hello.'),
     "an embed that sets its design keeps it, and shows the site's greeting");
   pinned.remove();
+
+  // A key-only install (M2-10 plugins) takes the site's colour; an embed that
+  // sets data-accent keeps its own.
+  reply = { experiment_id: null, arm: null, goal_path: null, overrides: {}, defaults: { accent: '#123abc' } };
+  const keyOnly = init(opts('fbk_accent_site'));
+  await settle();
+  ok(keyOnly.style.getPropertyValue('--fb-accent') === '#123abc', "a key-only install uses the site's accent");
+  keyOnly.remove();
+  const own = init(opts('fbk_accent_site', { accent: '#ff0000' }));
+  await settle();
+  ok(own.style.getPropertyValue('--fb-accent') === '#ff0000', 'an embed that sets its accent keeps it');
+  own.remove();
+  reply = { experiment_id: null, arm: null, goal_path: null, overrides: {}, defaults: { accent: 'red;x:url(evil)' } };
+  const junk = init(opts('fbk_accent_junk'));
+  await settle();
+  ok(junk.style.getPropertyValue('--fb-accent') !== 'red;x:url(evil)', 'an accent that is not a hex colour is ignored');
+  junk.remove();
 }
 
 // ---- Recap pages (M2-6) ----

@@ -31,6 +31,8 @@ export interface Overrides {
 interface Defaults {
   greeting?: string | null;
   design?: DesignLevel | null;
+  /** The site's brand colour, for embeds that don't set one (M2-10). */
+  accent?: string | null;
   /** The site's languages (M2-7). */
   languages?: string[] | null;
   widget_language?: string | null;

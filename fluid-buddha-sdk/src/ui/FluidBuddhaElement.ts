@@ -80,6 +80,7 @@ export class FluidBuddhaElement extends HTMLElement {
   private talked = false;
   /** The embed chose its design level (data-design / options). */
   private designSet = false;
+  private accentSet = false;
   /** The greeting is the site's fixed one, which the server also speaks on
    *  open: show it once (level 1 already shows it as the first message). */
   private greetEcho = false;
@@ -102,6 +103,7 @@ export class FluidBuddhaElement extends HTMLElement {
     if (this.built) return;
     const opts = { ...optionsFromAttributes(this), ...this._options };
     this.designSet = !!opts.design;
+    this.accentSet = !!opts.accent;
     this.config = resolveConfig(opts);
     this.style.setProperty('--fb-accent', this.config.accent);
     this.setAttribute('data-position', this.config.position);
@@ -145,6 +147,11 @@ export class FluidBuddhaElement extends HTMLElement {
     if (design && DESIGN_LEVELS.includes(design)) {
       c.design = design;
       this.setAttribute('data-design', design);
+    }
+    // A plugin install carries only the key: the site's colour comes from here.
+    if (!this.accentSet && d.accent && /^#[0-9a-f]{3,8}$/i.test(d.accent)) {
+      c.accent = d.accent;
+      this.style.setProperty('--fb-accent', d.accent);
     }
     if (typeof o.tour === 'boolean') c.tour = o.tour;
     const greeting = o.greeting || d.greeting;
