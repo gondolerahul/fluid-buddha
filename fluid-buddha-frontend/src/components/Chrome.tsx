@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Account, Api } from "@/lib/api";
+import { Account, Api, LicenceState } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 /** Shown only to people in more than one account. */
@@ -25,9 +25,47 @@ function AccountSwitcher() {
   );
 }
 
+/** Self-hosted installs (M3-5): the licence, when it needs attention. */
+function useLicence(): LicenceState | null {
+  const { tenant } = useAuth();
+  const [st, setSt] = useState<LicenceState | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => { if (tenant) Api.licence().then((s) => { if (live) setSt(s); }).catch(() => {}); };
+    load();
+    // The Licence page says when it installs a new one.
+    window.addEventListener("fluidbuddha:licence", load);
+    return () => { live = false; window.removeEventListener("fluidbuddha:licence", load); };
+  }, [tenant]);
+  return st;
+}
+
+function LicenceBanner({ st }: { st: LicenceState | null }) {
+  const { can } = useAuth();
+  if (!st?.self_hosted || st.state === "valid") return null;
+  const until = st.grace_until ? new Date(st.grace_until).toLocaleDateString() : "";
+  const text = st.state === "expiring" ? `This install's licence expires in ${st.days_left} day${st.days_left === 1 ? "" : "s"}.`
+    : st.state === "grace" ? `This install's licence has expired. Everything keeps working until ${until}; renew it before then.`
+    : st.state === "expired" ? "This install's licence has expired, so the console is read-only. Visitors aren't affected."
+    : st.state === "invalid" ? "This install's licence key isn't valid, so the console is read-only. Visitors aren't affected."
+    : "This install has no licence yet, so the console is read-only. Visitors aren't affected.";
+  const urgent = st.state !== "expiring";
+  return (
+    <div role="status" style={{ background: urgent ? "rgba(248,113,113,0.14)" : "rgba(251,191,36,0.12)",
+      borderBottom: "1px solid var(--line)", padding: "8px 40px", fontSize: "0.86rem", textAlign: "center" }}>
+      {text}{" "}
+      {can("owner") ? <Link href="/licence" style={{ textDecoration: "underline" }}>Install a licence</Link>
+        : "Ask the account Owner to install a new licence."}
+    </div>
+  );
+}
+
 export function AppHeader() {
   const { tenant, logout, can } = useAuth();
+  const licence = useLicence();
   return (
+    <>
+    <LicenceBanner st={licence} />
     <header
       style={{
         borderBottom: "1px solid var(--line)",
@@ -54,6 +92,7 @@ export function AppHeader() {
           {tenant && can("admin") && <Link href="/audit" className="btn btn-ghost btn-sm">Audit log</Link>}
           {tenant && can("admin") && <Link href="/billing" className="btn btn-ghost btn-sm">Billing</Link>}
           {tenant && can("admin") && <Link href="/model" className="btn btn-ghost btn-sm">AI model</Link>}
+          {tenant && can("owner") && licence?.self_hosted && <Link href="/licence" className="btn btn-ghost btn-sm">Licence</Link>}
           {tenant && <Link href="/security" className="btn btn-ghost btn-sm">Security</Link>}
           {tenant && <span className="muted" style={{ fontSize: "0.86rem" }}
             title={tenant.role ? `Your role: ${tenant.role}` : undefined}>
@@ -63,6 +102,7 @@ export function AppHeader() {
         </div>
       </div>
     </header>
+    </>
   );
 }
 

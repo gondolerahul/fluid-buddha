@@ -139,6 +139,16 @@ export type AgentAccess = {
     by_client: { client: string; count: number }[];
     recent: { kind: string; tool: string | null; client: string | null; ok: boolean; error: string | null; at: string }[] };
 };
+/** Self-hosted licence (M3-5). */
+export type LicenceState = {
+  self_hosted: boolean;
+  state?: "valid" | "expiring" | "grace" | "expired" | "missing" | "invalid";
+  usable?: boolean; reason?: string; source?: "console" | "env" | "file" | null;
+  days_left?: number; grace_until?: string;
+  licence?: { lid: string; customer: string; sites: number; seats: number; features: string[];
+    issued_at: string; expires_at: string; grace_days: number };
+  usage?: { sites: number; seats: number };
+};
 /** Generative landing pages (M3-1). */
 export type CampaignStatus = "draft" | "live" | "paused";
 export type Testimonial = { quote: string; name: string; role?: string };
@@ -828,6 +838,8 @@ export const Api = {
     api<AgentToken & { token: string }>(`/tenant/websites/${wid}/agent-tokens`, { method: "POST", body: { name, scopes } }),
   revokeAgentToken: (wid: string, id: string) =>
     api<void>(`/tenant/websites/${wid}/agent-tokens/${id}`, { method: "DELETE" }),
+  licence: () => api<LicenceState>("/tenant/licence"),
+  installLicence: (key: string) => api<LicenceState>("/tenant/licence", { method: "PUT", body: { key } }),
   campaigns: (wid: string) => api<CampaignList>(`/tenant/websites/${wid}/campaigns`),
   createCampaign: (wid: string, body: CampaignIn) =>
     api<Campaign>(`/tenant/websites/${wid}/campaigns`, { method: "POST", body }),
