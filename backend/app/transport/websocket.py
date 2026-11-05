@@ -21,7 +21,7 @@ import uuid
 import zlib
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -116,9 +116,12 @@ class VoiceSession:
     def __init__(
         self, ws: WebSocket, runtime, site_key: str = "hirebuddha",
         intelligence: str = "advance", tier_locked: bool = False,
-        binary_audio: bool = False,
+        binary_audio: bool = False, visitor: Optional[str] = None,
     ) -> None:
         self.ws = ws
+        # The widget's anonymous visitor id, from the socket URL (M3-3).
+        self._visitor = visitor
+        self._memory: Optional[dict] = None
         # The client asked for TTS audio as binary frames (WS5).
         self.binary_audio = binary_audio
         self.rt = runtime
@@ -188,6 +191,7 @@ class VoiceSession:
             logger.warning("ws[%s]: privacy settings unavailable: %s",
                            self.session_id[:8], exc)
         self.state.pii = PiiVault(enabled=self.privacy.redact_pii)
+        await self._recognise(self._visitor)
         await self.send(Channel.EVENTS, "ready", {
             "session_id": self.session_id,
             "privacy": self.privacy.public(),
@@ -523,11 +527,19 @@ class VoiceSession:
             self._opener = start["greeting"]
         if start["persona"] and not payload.get("persona"):
             self.state.persona = start["persona"]
+        # A returning visitor who asked to be remembered (M3-3): welcomed back.
+        from app.memory import store as memory
+        mem = await self._recognise(payload.get("visitor") or self.state.visitor_id)
+        if mem is not None:
+            back = memory.greeting(mem, self.state.lang)
+            if back:
+                self._opener = back
 
         # Only offer the tour if the client hasn't opted out (data-tour="false")
         # and the site hasn't switched it off; otherwise the visitor still gets
-        # the spoken welcome.
-        if payload.get("tour", True) is not False and start["tour"]:
+        # the spoken welcome. A returning visitor welcomed back has had it.
+        welcomed_back = mem is not None and memory.greeting(mem, self.state.lang) is not None
+        if payload.get("tour", True) is not False and start["tour"] and not welcomed_back:
             plan = await self._load_tour()
             if plan is not None:
                 self._tour_plan = plan
@@ -650,6 +662,8 @@ class VoiceSession:
         await self._set_language(transcript)
         if await self._voice_answer(heard):
             return
+        if await self._forget_request(heard):
+            return
         if await self._recap_request(heard):
             return
         if await self._safety_reply(heard, transcript):
@@ -681,6 +695,52 @@ class VoiceSession:
         self._pending_run = None
         await self.send(Channel.STATE, "transcript", {"text": heard})
         await self.send(Channel.EVENTS, "action_answer", {"run_id": pending[0], "confirm": yes})
+        return True
+
+    async def _recognise(self, visitor: Any) -> Optional[dict]:
+        """The widget's anonymous visitor id (M3-3): the conversation is linked
+        to it while they have opted into memory (the record checks), and a
+        returning visitor's memory goes into the history. Once per socket."""
+        from app.memory import store as memory
+        visitor = memory.valid_visitor(visitor)
+        if not visitor or not self._tier_locked:
+            return None
+        if self.state.visitor_id == visitor:
+            return self._memory
+        self.state.visitor_id = visitor
+        try:
+            async with session_scope() as mdb:
+                self._memory = await memory.get(mdb, self.state.site_key, visitor)
+                if self._memory is not None:
+                    await memory.seen(mdb, self.state.site_key, visitor)
+                    await mdb.commit()
+        except Exception as exc:
+            logger.warning("ws[%s]: visitor memory unavailable: %s", self.session_id[:8], exc)
+            self._memory = None
+        if self._memory is not None:
+            self.state.remember(visitor, self._memory)
+        return self._memory
+
+    async def _forget_request(self, heard: str) -> bool:
+        """"Forget me" said out loud (M3-3): the memory goes, and the visitor hears so."""
+        from app.memory import store as memory
+        if not self._tier_locked or not memory.wants_forget(heard):
+            return False
+        gone = False
+        if self.state.visitor_id:
+            async with session_scope() as mdb:
+                gone = await memory.forget(mdb, self.state.site_key, self.state.visitor_id)
+                await mdb.commit()
+        self.state.visitor_id = None
+        self.state.memory_loaded = False
+        text = (memory.FORGOT if gone else memory.NOTHING)["hi" if self.state.lang == "hi" else "en"]
+        await self.send(Channel.STATE, "transcript", {"text": heard})
+        await self.send(Channel.EVENTS, "memory_forgotten", {})
+        self._answer_speaking = True
+        try:
+            await self._speak(text, _sid("utt"))
+        finally:
+            self._answer_speaking = False
         return True
 
     async def _recap_request(self, heard: str) -> bool:
@@ -1071,7 +1131,7 @@ class VoiceSession:
                     persona=self.state.persona, page=self.state.page,
                     grounding=grounding, served_from_cache=served_from_cache,
                     consent_at=self._consent_at, components=list(components),
-                    lang=lang,
+                    lang=lang, visitor_id=self.state.visitor_id,
                 )
         except Exception as exc:
             logger.warning("ws[%s]: conversation record failed: %s",
@@ -1337,5 +1397,6 @@ async def voice_ws(websocket: WebSocket) -> None:
         websocket, runtime, site_key=resolved.site_key,
         intelligence=resolved.intelligence, tier_locked=resolved.tier_locked,
         binary_audio=websocket.query_params.get("audio") == "binary",
+        visitor=websocket.query_params.get("visitor"),
     )
     await session.run()

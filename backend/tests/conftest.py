@@ -38,7 +38,7 @@ _HERMETIC = {
     "EMAIL_OUTBOX_INTERVAL_SECONDS": "0",
     # Classifier and digest jobs: tests call them directly.
     "INSIGHTS_CLASSIFY_SECONDS": "0", "DIGEST_CHECK_SECONDS": "0",
-    "ACTION_PAYMENTS_SECONDS": "0", "ACCESS_REVIEW_CHECK_SECONDS": "0",
+    "ACTION_PAYMENTS_SECONDS": "0", "ACCESS_REVIEW_CHECK_SECONDS": "0", "MEMORY_BUILD_SECONDS": "0",
     # Session cookies are Secure, so the suite's http://testserver clients never send
     # them back: each test authenticates the way it says (tests/test_security.py
     # checks cookies over https).

@@ -100,7 +100,8 @@ def test_masking_can_be_turned_off_per_site():
         base = f"/tenant/websites/{site['id']}/privacy"
         cfg = client.get(base, headers=h).json()
         assert cfg == {"redact_pii": True, "consent_required": True, "privacy_policy_url": None,
-                       "transcript_retention_days": 90, "lead_retention_days": 0, "recap_days": 90}
+                       "transcript_retention_days": 90, "lead_retention_days": 0, "recap_days": 90,
+                       "memory_enabled": False, "memory_days": 180}
         client.put(base, headers=h, json={**cfg, "redact_pii": False}).raise_for_status()
         client.post("/chat", json={"message": "Write to jo@acme.io please",
                                    "key": site["public_key"]})
@@ -119,7 +120,8 @@ def test_privacy_settings_are_validated_and_public():
                     {"transcript_retention_days": 45}, {"lead_retention_days": -1}):
             assert client.put(base, headers=h, json={**good, **bad}).status_code == 422
         # recap_days (M2-6) is optional and defaults to 90.
-        assert client.put(base, headers=h, json=good).json() == {**good, "recap_days": 90}
+        assert client.put(base, headers=h, json=good).json() == {**good, "recap_days": 90,
+                                                                 "memory_enabled": False, "memory_days": 180}
         cfg = client.get("/widget/config", params={"key": site["public_key"]}).json()
         assert cfg["privacy"] == {"consent_required": False,
                                   "policy_url": "https://example.com/privacy",
@@ -205,7 +207,7 @@ def test_erase_a_visitor():
         base = f"/tenant/websites/{site['id']}/privacy/erase"
         assert client.post(base, headers=h, json={"email": "nope"}).status_code == 422
         assert client.post(base, headers=h, json={"email": "Gone@Acme.io"}).json() == {
-            "leads": 1, "conversations": 1, "action_runs": 0}
+            "leads": 1, "conversations": 1, "action_runs": 0, "memories": 0}
         emails = [lead["email"] for lead in
                   client.get(f"/tenant/websites/{site['id']}/leads", headers=h).json()["items"]]
         assert emails == ["stays@acme.io"]

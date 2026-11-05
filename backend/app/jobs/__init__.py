@@ -82,6 +82,13 @@ def build_scheduler(settings: Settings) -> Scheduler:
             await db.commit()
             return res.rowcount or None
 
+    async def visitor_memory() -> object:
+        """M3-3: refresh returning visitors' memories after their conversations end."""
+        from app.memory import store as memory
+
+        async with session_scope() as db:
+            return await memory.build_due(db) or None
+
     s = Scheduler()
     s.add(Job("retention_sweep", settings.retention_sweep_minutes * 60, retention))
     s.add(Job("email_outbox", settings.email_outbox_interval_seconds, outbox, run_at_start=True))
@@ -94,4 +101,5 @@ def build_scheduler(settings: Settings) -> Scheduler:
     s.add(Job("action_payments", settings.action_payments_seconds, action_payments))
     s.add(Job("access_review", settings.access_review_check_seconds, access_review))
     s.add(Job("session_cleanup", 24 * 3600, session_cleanup))
+    s.add(Job("visitor_memory", settings.memory_build_seconds, visitor_memory))
     return s

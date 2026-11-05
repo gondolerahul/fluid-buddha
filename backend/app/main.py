@@ -42,6 +42,7 @@ from app.routes import (
     websites,
     model_provider,
     agent_access,
+    memory,
     widget,
 )
 from app.runtime import build_runtime
@@ -126,3 +127,4 @@ app.include_router(templates.router)
 app.include_router(model_provider.router)
 app.include_router(agent_access.public)
 app.include_router(agent_access.admin)
+app.include_router(memory.router)

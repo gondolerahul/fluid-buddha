@@ -69,6 +69,12 @@ class ConversationState:
     lang_pref: Optional[str] = None     # asked for ("reply in Hindi"), kept
     ui_lang: Optional[str] = None       # the widget's language (hello / chat)
     used_hindi: bool = False            # wrote in Devanagari at some point
+    # ---- returning-visitor memory (M3-3) ----
+    # The widget's anonymous visitor id. Their conversation is linked to it
+    # only while they have opted in (the record checks), so a visitor who says
+    # "Remember me" mid-conversation has this conversation remembered too.
+    visitor_id: Optional[str] = None
+    memory_loaded: bool = False         # their memory is in ``history`` already
 
     def pick_language(self, text: str, enabled) -> str:
         """Decide this turn's reply language from what the visitor wrote."""
@@ -99,6 +105,7 @@ class ConversationState:
             "live_seen": self.live_seen,
             "lang": self.lang, "lang_seen": self.lang_seen, "lang_pref": self.lang_pref,
             "ui_lang": self.ui_lang, "used_hindi": self.used_hindi,
+            "visitor_id": self.visitor_id, "memory_loaded": self.memory_loaded,
         }
 
     @classmethod
@@ -122,7 +129,20 @@ class ConversationState:
         state.lang_pref = data.get("lang_pref") if data.get("lang_pref") in ("en", "hi") else None
         state.ui_lang = data.get("ui_lang") if data.get("ui_lang") in ("en", "hi") else None
         state.used_hindi = bool(data.get("used_hindi"))
+        state.visitor_id = data.get("visitor_id") or None
+        state.memory_loaded = bool(data.get("memory_loaded"))
         return state
+
+    def remember(self, visitor: str, mem: Optional[dict]) -> None:
+        """A returning visitor who opted in (M3-3): put what the agent remembers
+        at the start of the history, once."""
+        from app.memory.store import note
+        self.visitor_id = visitor
+        text = note(mem) if mem else None
+        if text and not self.memory_loaded:
+            self.history[:0] = [ChatMessage(role="user", text="(I've talked to you before.)"),
+                                ChatMessage(role="model", text=text)]
+        self.memory_loaded = True
 
     def add_turn(self, user_text: str, model_text: str) -> None:
         self.history.append(ChatMessage(role="user", text=user_text))

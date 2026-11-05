@@ -35,7 +35,7 @@ async def record_turn(
     persona: Optional[str] = None, page: Optional[str] = None,
     grounding: Optional[dict] = None, served_from_cache: bool = False,
     consent_at: Optional[datetime] = None, components: Optional[list] = None,
-    lang: str = "en",
+    lang: str = "en", visitor_id: Optional[str] = None,
 ) -> None:
     """Append one turn to the session's conversation (created on first turn).
     ``consent_at`` is when the visitor allowed the microphone (WS8). The caller
@@ -48,17 +48,23 @@ async def record_turn(
     conv_id = (await db.execute(text(
         "INSERT INTO conversations "
         "(id, site_key, session_id, channel, persona, first_page, turns, ungrounded, "
-        " consent_at) VALUES (:id, :s, :sid, :ch, :p, :pg, 1, :ug, :ca) "
+        " consent_at, visitor_id) VALUES (:id, :s, :sid, :ch, :p, :pg, 1, :ug, :ca, "
+        # Linked only if the visitor opted into memory on this site (M3-3).
+        " (SELECT m.visitor_id FROM visitor_memories m WHERE m.site_key = :s AND m.visitor_id = :vis)) "
         "ON CONFLICT (site_key, session_id) DO UPDATE SET "
         "turns = conversations.turns + 1, "
         "ungrounded = conversations.ungrounded + EXCLUDED.ungrounded, "
         "persona = COALESCE(EXCLUDED.persona, conversations.persona), "
         "consent_at = COALESCE(conversations.consent_at, EXCLUDED.consent_at), "
+        # A visitor who opted into memory (M3-3), even mid-conversation: their
+        # conversation is theirs ("forget me" unlinks it again).
+        "visitor_id = COALESCE(EXCLUDED.visitor_id, conversations.visitor_id), "
         "last_at = now() "
         "RETURNING id"
     ), {
         "id": uuid.uuid4(), "s": site_key, "sid": session_id, "ch": channel,
         "p": persona, "pg": page, "ug": 1 if unanswered else 0, "ca": consent_at,
+        "vis": visitor_id,
     })).scalar_one()
     await db.execute(text(
         "INSERT INTO conversation_turns "

@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     login_max_attempts: int = 10              # wrong passwords/codes in a row before a lockout
     login_lockout_minutes: int = 15
     access_review_check_seconds: int = 6 * 3600   # quarterly review emails (0 = off)
+    memory_build_seconds: int = 120           # returning-visitor memories (M3-3; 0 = off)
 
     # ---- Sync / UX ----
     ui_filler_delay_ms: int = 1500

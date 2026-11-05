@@ -22,6 +22,7 @@ from app.db import session_scope
 from app.experiments.apply import session_settings
 from app.design.system import ensure_design
 from app.live import visitor as live
+from app.memory import store as memory
 from app.orchestrator.profile import ensure_profile, profile_for
 from app.routes.actions import ensure_extras, proposal_cards
 from app.orchestrator.rewrite import depends_on_history
@@ -55,6 +56,7 @@ async def _record_conversation(state, sid: str, question: str, answer: str, inte
                 persona=state.persona, page=state.page,
                 grounding=grounding, served_from_cache=served_from_cache,
                 components=list(components), lang=state.lang_seen,
+                visitor_id=state.visitor_id,
             )
     except Exception as exc:
         logger.warning("conversation record failed: %s", exc)
@@ -81,6 +83,8 @@ class ChatRequest(BaseModel):
     exp: dict[str, Any] | None = None
     # The widget's language, 'en' or 'hi' (M2-7).
     lang: str | None = None
+    # The anonymous visitor id (M3-3): remembered only if they opted in.
+    visitor: str | None = Field(None, max_length=64)
 
 
 @router.post("/chat")
@@ -111,6 +115,17 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     current_site.set(resolved.site_key)     # its own model provider, if any (M3-4)
 
     sid, state = await sessions.load(req.session_id, site_key=resolved.site_key)
+    # A returning visitor who asked to be remembered (M3-3).
+    visitor = memory.valid_visitor(req.visitor)
+    if visitor and state.visitor_id != visitor and resolved.website is not None:
+        async with session_scope() as mdb:
+            mem = await memory.get(mdb, resolved.site_key, visitor)
+            if mem is not None:
+                await memory.seen(mdb, resolved.site_key, visitor)
+                await mdb.commit()
+        state.visitor_id = visitor
+        if mem is not None:
+            state.remember(visitor, mem)
     if req.session_id != sid and not req.icp:
         start = await session_settings(resolved.site_key, req.exp)
         if start["persona"]:
@@ -164,6 +179,17 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
         state.ui_lang = req.lang
     state.pick_language(message, enabled)
 
+    # "Forget me" (M3-3): deletes the visitor's memory here; no agent turn.
+    if memory.wants_forget(req.message) and req.visitor:
+        async with session_scope() as mdb:
+            gone = await memory.forget(mdb, state.site_key, req.visitor)
+            await mdb.commit()
+        state.visitor_id = None
+        state.memory_loaded = False
+        text = (memory.FORGOT if gone else memory.NOTHING)["hi" if state.lang == "hi" else "en"]
+        return {"text": text, "ack": "", "intent": "forget_me", "persona": state.persona,
+                "actions": [], "components": [], "pages": [], "patches": [], "grounding": None,
+                "session_id": sid, "lang": state.lang, "proposals": [], "memory": "forgotten"}
     # Medical safety (M2-9): advice and emergencies get a fixed answer,
     # before any cache or model, and are never cached.
     if profile_for(state.site_key).safety == "medical":

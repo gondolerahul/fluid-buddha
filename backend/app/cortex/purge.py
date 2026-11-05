@@ -30,6 +30,8 @@ _SITE_TABLES = (
     "trigger_rules",  # its events go with it (ON DELETE CASCADE)
     "recaps",  # its views go with it (ON DELETE CASCADE)
     "action_runs", "site_actions", "site_components",  # M2-8
+    "visitor_memories",  # M3-3
+    "agent_tokens", "agent_requests",  # M3-2
 )
 
 

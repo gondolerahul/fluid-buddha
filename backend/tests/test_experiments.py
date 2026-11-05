@@ -173,7 +173,8 @@ def test_experiment_flow_measures_lift():
                        "defaults": {"greeting": None, "design": "level1", "accent": ANY,
                                     "languages": ["en"],
                                     "widget_language": "auto", "greeting_hi": None,
-                                    "starters": [], "starters_hi": [], "agent_name": ANY}}
+                                    "starters": [], "starters_hi": [], "agent_name": ANY,
+                                    "memory": {"offered": False, "remembered": False, "welcome_back": None, "welcome_back_hi": None}}}
 
         bad = client.put(base, json={"enabled": True, "goal_path": "thanks"}, headers=h)
         assert bad.status_code == 422

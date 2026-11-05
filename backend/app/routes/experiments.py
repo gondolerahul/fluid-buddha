@@ -115,6 +115,10 @@ async def enroll(request: Request) -> dict:
         bot = is_bot(request.headers.get("user-agent"), data.get("automated"))
         result = await exp_store.enroll(db, resolved.site_key, visitor, bot=bot)
     profile = await ensure_profile(resolved.site_key)
+    from app.memory import store as memory
+    async with session_scope() as mdb:
+        mem_on = await memory.enabled(mdb, resolved.site_key)
+        mem = await memory.get(mdb, resolved.site_key, visitor) if mem_on else None
     defaults = {"greeting": profile.greeting or None, "design": resolved.website.design,
                 # Brand colour (M2-10): plugin installs carry only the key.
                 "accent": resolved.website.accent or None,
@@ -125,7 +129,11 @@ async def enroll(request: Request) -> dict:
                 "starters": profile.starter_questions,
                 "starters_hi": profile.starter_questions_hi,
                 # The agent's name for the widget's labels (M2-7 follow-up).
-                "agent_name": profile.agent_name}
+                "agent_name": profile.agent_name,
+                # Returning-visitor memory (M3-3): offered, opted in, the welcome back.
+                "memory": {"offered": mem_on, "remembered": mem is not None,
+                           "welcome_back": memory.greeting(mem, "en") if mem else None,
+                           "welcome_back_hi": memory.greeting(mem, "hi") if mem else None}}
     return {**(result or _NO_ARM), "defaults": defaults}
 
 

@@ -22,7 +22,8 @@ from app.tenancy import store
 from app.tenancy.deps import owned_website
 from app.trust import retention
 from app.trust.settings import (
-    DEFAULT_RECAP_DAYS, LEAD_RETENTION_DAYS, RECAP_DAYS, TRANSCRIPT_RETENTION_DAYS, Privacy,
+    DEFAULT_MEMORY_DAYS, DEFAULT_RECAP_DAYS, LEAD_RETENTION_DAYS, MEMORY_DAYS, RECAP_DAYS,
+    TRANSCRIPT_RETENTION_DAYS, Privacy,
     get_privacy, save_privacy,
 )
 
@@ -36,6 +37,15 @@ class PrivacyUpdate(BaseModel):
     transcript_retention_days: int
     lead_retention_days: int
     recap_days: int = DEFAULT_RECAP_DAYS
+    memory_enabled: bool = False
+    memory_days: int = DEFAULT_MEMORY_DAYS
+
+    @field_validator("memory_days")
+    @classmethod
+    def _memory(cls, v: int) -> int:
+        if v not in MEMORY_DAYS:
+            raise ValueError(f"must be one of {MEMORY_DAYS}")
+        return v
 
     @field_validator("recap_days")
     @classmethod
@@ -98,6 +108,11 @@ async def update_privacy(
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     saved = await save_privacy(db, site.site_key, Privacy(**body.model_dump()))
+    if not saved.memory_enabled:
+        # No longer offered: nothing remembered is kept (M3-3).
+        from app.memory import store as memory
+        await memory.forget_site(db, site.site_key)
+        await db.commit()
     return saved.to_dict()
 
 
