@@ -272,6 +272,30 @@ sources and the site's call to action (agent profile). The page loads
 per site (Privacy settings, default 90 days) and go with their conversation.
 Views and forwards show on the lead and in Leads → Shared recaps.
 
+## Install surfaces
+
+Every way of installing the agent — the plain snippet, the WordPress plugin, the
+Shopify app embed, Google Tag Manager, Webflow, Framer, `@fluidbuddha/react` and
+`@fluidbuddha/vue` (all in [`integrations/`](../integrations)) — loads one script:
+
+```html
+<script src="https://<this server>/widget/loader.js" data-key="fbk_…" async></script>
+```
+
+The loader adds the widget from `WIDGET_SDK_BASE` with the same `data-*`
+settings (or the same settings from its query string, for GTM) and points it
+back at the server it came from, so a page needs only the key. Design, colour,
+greeting and tier come from the console. `data-auto="false"` loads the widget
+without showing it (the framework wrappers create it themselves);
+`fluidbuddha:ready` fires on `window` when it's loaded. It's the same for every
+site, cached for 5 minutes.
+
+`/widget/gtm-template.tpl` is a GTM custom template whose only permission is to
+inject this server's loader (built from `PUBLIC_API_URL`).
+
+Plugins take the server and key as one *install code*, `https://fbk_…@<server>`,
+shown in the console's Install tab.
+
 ## Live takeover and voice handoff
 
 Console → Live lists who is talking to the agent right now on the account's

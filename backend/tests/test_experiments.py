@@ -7,6 +7,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from unittest.mock import ANY
+
 from fastapi.testclient import TestClient
 
 from app.experiments.bots import is_bot
@@ -168,7 +170,8 @@ def test_experiment_flow_measures_lift():
         # Before an experiment runs, enrolment is a no-op and the widget shows.
         off = _beacon(client, "/experiment/enroll", {"key": key, "visitor": "visitor-aaaa"}).json()
         assert off == {"experiment_id": None, "arm": None, "goal_path": None, "overrides": {},
-                       "defaults": {"greeting": None, "design": "level1", "languages": ["en"],
+                       "defaults": {"greeting": None, "design": "level1", "accent": ANY,
+                                    "languages": ["en"],
                                     "widget_language": "auto", "greeting_hi": None,
                                     "starters": []}}
 

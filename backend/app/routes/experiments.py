@@ -116,6 +116,8 @@ async def enroll(request: Request) -> dict:
         result = await exp_store.enroll(db, resolved.site_key, visitor, bot=bot)
     profile = await ensure_profile(resolved.site_key)
     defaults = {"greeting": profile.greeting or None, "design": resolved.website.design,
+                # Brand colour (M2-10): plugin installs carry only the key.
+                "accent": resolved.website.accent or None,
                 # Languages (M2-7): the widget picks its labels from these.
                 "languages": profile.languages, "widget_language": profile.widget_language,
                 "greeting_hi": profile.greeting_hi or None,
