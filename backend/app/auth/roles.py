@@ -42,6 +42,9 @@ _RULES: list[tuple[object, str, str]] = [
     # provider, so Admins and Owners only, even to look; also a site's switch.
     ("*", r"^/tenant/model-provider", "admin"),
     ({"PUT"}, r"^/tenant/websites/[^/]+/model$", "admin"),
+    # Agent access (M3-2): opening the site to AI assistants and issuing tokens
+    # that can take leads or run actions.
+    ({"PUT", "POST", "DELETE"}, r"^/tenant/websites/[^/]+/agent-(access|tokens)", "admin"),
     # Account security (two-factor requirement): Admins look, the Owner decides.
     (READ, r"^/tenant/security", "admin"),
     ("*", r"^/tenant/security", "owner"),

@@ -41,6 +41,7 @@ from app.routes import (
     templates,
     websites,
     model_provider,
+    agent_access,
     widget,
 )
 from app.runtime import build_runtime
@@ -123,3 +124,5 @@ app.include_router(actions.public)
 app.include_router(actions.admin)
 app.include_router(templates.router)
 app.include_router(model_provider.router)
+app.include_router(agent_access.public)
+app.include_router(agent_access.admin)

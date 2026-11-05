@@ -307,6 +307,31 @@ sources and the site's call to action (agent profile). The page loads
 per site (Privacy settings, default 90 days) and go with their conversation.
 Views and forwards show on the lead and in Leads → Shared recaps.
 
+## Agent endpoint: MCP + llms.txt (M3-2)
+
+A website can let AI assistants ask it directly (Console → website → Agent
+access, off by default; Admins switch it on). With the site's public widget
+key in the path:
+
+- `POST /mcp/{key}` — an MCP server over streamable HTTP (JSON-RPC 2.0,
+  answered as JSON; stateless; protocol versions 2025-11-25 back to
+  2024-11-05). Tools: `search_knowledge` (the site's own agent, one grounded
+  turn with sources and the same guardrails), `get_page`, `list_offerings`
+  (knowledge + payment price lists). Resources: the site's crawled pages.
+  `capture_lead` and the site's actions (`action_<name>`) appear only for a
+  token the customer issued with the `leads` / `actions` scope
+  (`Authorization: Bearer fbat_…`, stored hashed); the token is the
+  authorisation, so actions run at once (amounts still from the price list).
+- `GET /sites/{key}/llms.txt`, `GET /sites/{key}/openapi.json`,
+  `POST /agent/{key}/ask`, `GET /agent/{key}/offerings` — for assistants that
+  read llms.txt or call OpenAPI tools.
+
+Rate-limited per site and client address (30/min), under the site's daily
+spend cap, browser `Origin`s limited to the site's domain (MCP's DNS-rebinding
+rule), and every call logged in `agent_requests` (the console's agent
+traffic: by tool, by assistant). Usage from these calls is recorded with
+channel `agent` and no session, so it never counts as a billed conversation.
+
 ## Bring your own model (M3-4)
 
 An account can run its agent on its own **Anthropic**, **OpenAI** or **Azure
