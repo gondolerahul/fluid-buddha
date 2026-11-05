@@ -308,6 +308,34 @@ sources and the site's call to action (agent profile). The page loads
 per site (Privacy settings, default 90 days) and go with their conversation.
 Views and forwards show on the lead and in Leads → Shared recaps.
 
+## Reliability (M3-6)
+
+- **`/readyz`** checks every dependency (2 s timeout each, run together):
+  `db`, `migrations` (schema at this version's head), `redis` (when used) and
+  `draining` are critical — 503, so the load balancer moves traffic;
+  `scheduler`, `models`, `email` are reported (`degraded`) without failing it.
+  Each result also sets `fb_ready{check}` for alerting.
+- **Graceful shutdown** (`app/transport/drain.py`): on SIGTERM the replica
+  turns not-ready, tells each voice session `EVENTS/reconnect`, lets it finish
+  the answer it is speaking, closes it with 1012 and refuses new sockets with
+  1013; the widget reconnects in about 2 s without counting it as a failure.
+  `DRAIN_SECONDS` (25) < uvicorn `--timeout-graceful-shutdown` (45) < the
+  platform's grace period (Compose 60 s). `WEB_CONCURRENCY` sets uvicorn
+  workers.
+- **Status page** at `/status` (and `/status.json`): the `status_probe` job
+  (`STATUS_PROBE_SECONDS`, 60) records each component (API, voice, jobs, email)
+  every minute; 90 days of bars and uptime; incidents posted with
+  `Authorization: Bearer $STATUS_TOKEN` to `POST /status/incidents` and
+  `/status/incidents/{id}/updates`.
+- **Alerts**: `deploy/monitoring/alerts.yml` (error-budget burn, not ready,
+  down, stuck drain, time to first audio, model errors, jobs, spend caps), each
+  linked to `docs/operations/incident-runbook.md`; SLOs in
+  `docs/operations/sla.md`.
+- **Voice load test**: `python -m loadtest.voice --url ws://…/ws/voice --key fbk_… --sessions 50 --turns 3`
+  (also inside the backend image); exits non-zero on failed turns or
+  `--max-p95-ttfa`. Raise `PUBLIC_RATE_LIMIT_PER_MIN` on the target when
+  measuring capacity, or turns are counted as `rate_limited`.
+
 ## Self-hosted installs and the licence (M3-5)
 
 `deploy/selfhost/` is the whole product for one Linux host: Caddy (TLS, routing,
