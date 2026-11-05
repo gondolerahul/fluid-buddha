@@ -129,6 +129,16 @@ export type Tenant = { id: string; email: string; name: string | null; role?: Ro
   csrf_token?: string | null; security?: Security };
 export type AuthResponse = { access_token: string; token_type: string; tenant: Tenant; role: Role; user: User;
   csrf_token?: string | null; expires_at?: string | null };
+/** The site's agent endpoint for AI assistants (M3-2). */
+export type AgentToken = { id: string; name: string; scopes: string[]; created_at: string; last_used_at: string | null };
+export type AgentAccess = {
+  enabled: boolean;
+  endpoints: { mcp: string; llms_txt: string; openapi: string; ask: string } | null;
+  tokens: AgentToken[];
+  traffic: { days: number; total: number; by_tool: { tool: string; count: number; failed: number }[];
+    by_client: { client: string; count: number }[];
+    recent: { kind: string; tool: string | null; client: string | null; ok: boolean; error: string | null; at: string }[] };
+};
 /** Bring your own model (M3-4). */
 export type ModelProviderKind = "anthropic" | "openai" | "azure_openai";
 export type ModelPrice = { in?: number | null; out?: number | null };
@@ -779,6 +789,13 @@ export const Api = {
     if (!res.ok) throw new ApiError(res.status, "Could not export the access review");
     return res.blob();
   },
+  agentAccess: (wid: string) => api<AgentAccess>(`/tenant/websites/${wid}/agent-access`),
+  setAgentAccess: (wid: string, enabled: boolean) =>
+    api<{ enabled: boolean }>(`/tenant/websites/${wid}/agent-access`, { method: "PUT", body: { enabled } }),
+  createAgentToken: (wid: string, name: string, scopes: string[]) =>
+    api<AgentToken & { token: string }>(`/tenant/websites/${wid}/agent-tokens`, { method: "POST", body: { name, scopes } }),
+  revokeAgentToken: (wid: string, id: string) =>
+    api<void>(`/tenant/websites/${wid}/agent-tokens/${id}`, { method: "DELETE" }),
   modelProvider: () => api<ModelProvider>("/tenant/model-provider"),
   saveModelProvider: (body: ModelProviderIn) =>
     api<ModelProvider>("/tenant/model-provider", { method: "PUT", body }),
