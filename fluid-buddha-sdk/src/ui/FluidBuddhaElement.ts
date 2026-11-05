@@ -27,7 +27,7 @@ import { callBar, callPrompt } from './call';
 import { consentPrompt } from './consent';
 import { actionPrompt } from './actionCard';
 import { showNudge } from './nudge';
-import { Lang, pickLang, prepareLang, setLang, t } from '../i18n';
+import { Lang, getLang, pickLang, prepareLang, setLang, t } from '../i18n';
 
 const ICONS = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
@@ -161,6 +161,7 @@ export class FluidBuddhaElement extends HTMLElement {
     // the visitor's browser. Hindi words are fetched first (English if they
     // can't be); English shows at once.
     const site = this.experiment?.eligible ? this.experiment.defaults : null;
+    if (site?.starters?.length) this.config.starters = site.starters.slice(0, 4);
     if (pickLang(this.config.lang, site) === 'hi') {
       void prepareLang('hi').then((lang) => this.reveal(lang, site?.greeting_hi));
     } else {
@@ -399,7 +400,10 @@ export class FluidBuddhaElement extends HTMLElement {
 
     // — Suggestion seeds —
     const chips = h('div', 'chips');
-    [t('chipPricing'), t('chipIntegrate'), t('chipTour')].forEach((label) => {
+    // The site's own starter questions (English), else the built-in ones.
+    const starters = getLang() === 'en' && this.config.starters?.length ? this.config.starters
+      : [t('chipPricing'), t('chipIntegrate'), t('chipTour')];
+    starters.forEach((label) => {
       const c = h('button', 'chip', label);
       c.addEventListener('click', () => this.submitText(label));
       chips.append(c);

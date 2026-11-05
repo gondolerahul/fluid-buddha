@@ -90,6 +90,8 @@ export interface FluidBuddhaConfig {
   /** The widget's language (M2-7): `auto` (the site's setting / the visitor's
    *  browser), `en` or `hi` (`data-lang`). Hindi needs the site to allow it. */
   lang: 'auto' | 'en' | 'hi';
+  /** Set by the widget: the site's suggestion chips (M2-9 templates). */
+  starters?: string[];
 }
 
 export type FluidBuddhaOptions = Partial<Omit<FluidBuddhaConfig, 'hooks'>> & {

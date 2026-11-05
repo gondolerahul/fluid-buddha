@@ -743,5 +743,17 @@ offline.remove();
   box.remove();
 }
 
+// ---- Vertical templates (M2-9): the site's starter questions as chips ----
+{
+  globalThis.fetch = async (url) => String(url).includes('/experiment/enroll')
+    ? { ok: true, json: async () => ({ defaults: { starters: ['Which courses do you offer?', 'What are the fees?'] } }) }
+    : { ok: true, json: async () => ({}) };
+  const sw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_tpl_site', site: 'x', design: 'level1' });
+  await settle();
+  const chips = [...sw.shadowRoot.querySelectorAll('.chip')].map((c) => c.textContent);
+  ok(chips.join('|') === 'Which courses do you offer?|What are the fees?', "the site's starter questions become the chips");
+  sw.remove();
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

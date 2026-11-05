@@ -35,6 +35,8 @@ interface Defaults {
   languages?: string[] | null;
   widget_language?: string | null;
   greeting_hi?: string | null;
+  /** Suggestion chips from the site's template (M2-9). */
+  starters?: string[] | null;
 }
 
 interface Enrolment {
