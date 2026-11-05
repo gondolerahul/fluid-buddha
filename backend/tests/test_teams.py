@@ -209,14 +209,16 @@ def test_existing_person_joins_a_second_account_and_switches():
         assert login.json()["tenant"]["id"] == b["tenant"]["id"]
 
 
-def test_tokens_without_an_account_id_still_work():
-    """Tokens issued before teams named only the account; migrated Owners have
-    the account id as their user id."""
+def test_tokens_from_before_sessions_ask_to_sign_in_again():
+    """Since M2-11 a token must name a live session; older tokens (with or
+    without an account id) get a clear "sign in again"."""
     with TestClient(app) as client:
         _, owner = _register(client)
-        legacy = create_access_token(uuid.UUID(owner["user"]["id"]))
-        me = client.get("/auth/me", headers={"Authorization": f"Bearer {legacy}"}).json()
-        assert me["id"] == owner["tenant"]["id"] and me["role"] == "owner"
+        for legacy in (create_access_token(uuid.UUID(owner["user"]["id"])),
+                       create_access_token(uuid.UUID(owner["user"]["id"]),
+                                           uuid.UUID(owner["tenant"]["id"]))):
+            r = client.get("/auth/me", headers={"Authorization": f"Bearer {legacy}"})
+            assert r.status_code == 401 and "sign in again" in r.json()["detail"]
 
 
 def test_require_sso_blocks_passwords_for_the_domain_but_not_the_owner():

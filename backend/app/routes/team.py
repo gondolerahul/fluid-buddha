@@ -21,10 +21,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit
-from app.auth import roles, team
+from app.auth import roles, sessions, team
 from app.auth.security import current_member
 from app.config import get_settings
 from app.db import get_session
@@ -135,7 +136,92 @@ async def remove_member(user_id: uuid.UUID, m: team.Member = Depends(current_mem
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an Owner can remove an Owner.")
     await _keep_an_owner(db, m, current)
     await team.remove_member(db, m.tenant.id, user_id)
+    # Their sessions in this account end now, not at the next request (M2-11).
+    await sessions.revoke_all(db, user_id, tenant_id=m.tenant.id)
     await db.commit()
+
+
+# ---- account security (M2-11) ---------------------------------------------------
+
+class SecurityIn(BaseModel):
+    require_mfa: bool
+
+
+@router.get("/security")
+async def get_security(m: team.Member = Depends(current_member),
+                       db: AsyncSession = Depends(get_session)) -> dict:
+    s = get_settings()
+    members = await team.members(db, m.tenant.id)
+    return {"require_mfa": m.require_mfa,
+            "members_without_mfa": [x["email"] for x in members if not x["mfa_enabled"]],
+            "session_idle_minutes": s.session_idle_minutes,
+            "session_absolute_hours": s.session_absolute_hours,
+            "login_max_attempts": s.login_max_attempts,
+            "login_lockout_minutes": s.login_lockout_minutes}
+
+
+@router.put("/security")
+async def put_security(body: SecurityIn, m: team.Member = Depends(current_member),
+                       db: AsyncSession = Depends(get_session)) -> dict:
+    """Two-factor for every password sign-in in this account. The Owner turning
+    it on must have it on themselves, so they can't lock themselves out; people
+    without it are asked to set it up at their next request (SSO sign-ins count
+    as two-factor: the identity provider handles it)."""
+    if body.require_mfa and not m.mfa_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Turn on two-factor for yourself first (your profile → Security).")
+    await db.execute(text("UPDATE tenants SET require_mfa = :r WHERE id = :t"),
+                     {"r": body.require_mfa, "t": m.tenant.id})
+    await db.commit()
+    return {"require_mfa": body.require_mfa}
+
+
+# ---- access review (M2-11) --------------------------------------------------------
+
+def _csv_safe(v):
+    # A leading =,+,-,@ would run as a formula in a spreadsheet.
+    return ("'" + v) if isinstance(v, str) and v[:1] and v[0] in "=+-@" else v
+
+
+async def access_review_rows(db: AsyncSession, tenant_id: uuid.UUID) -> list[list]:
+    rows = (await db.execute(text(
+        "SELECT u.email, u.name, m.role, m.created_at, u.last_login_at, "
+        "u.password_hash IS NOT NULL AS has_password, u.totp_enabled_at IS NOT NULL AS mfa, "
+        "(SELECT max(s.last_seen_at) FROM user_sessions s WHERE s.user_id = u.id "
+        " AND s.tenant_id = m.tenant_id) AS last_active "
+        "FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.tenant_id = :t "
+        "ORDER BY m.role DESC, u.email"), {"t": tenant_id})).mappings().all()
+    out = []
+    for r in rows:
+        out.append(["member", r["email"], r["name"] or "", r["role"], r["created_at"].date().isoformat(),
+                    r["last_login_at"].isoformat() if r["last_login_at"] else "",
+                    r["last_active"].isoformat() if r["last_active"] else "",
+                    "yes" if r["has_password"] else "no (SSO only)",
+                    "yes" if r["mfa"] else "no", ""])
+    for inv in await team.pending_invitations(db, tenant_id):
+        out.append(["pending invitation", inv["email"], "", inv["role"], inv["created_at"][:10], "", "",
+                    "", "", f"invited by {inv['invited_by'] or 'unknown'}, expires {inv['expires_at'][:10]}"])
+    return out
+
+
+ACCESS_REVIEW_HEADER = ["kind", "email", "name", "role", "since", "last_sign_in", "last_active",
+                        "password", "two_factor", "note"]
+
+
+@router.get("/team/access-review.csv")
+async def access_review(m: team.Member = Depends(current_member),
+                        db: AsyncSession = Depends(get_session)) -> Response:
+    """Who can get into this account and how — for the quarterly access review."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(ACCESS_REVIEW_HEADER)
+    for row in await access_review_rows(db, m.tenant.id):
+        w.writerow([_csv_safe(v) for v in row])
+    await audit.record(db, action="access_review.export", tenant_id=m.tenant.id,
+                       actor_user_id=m.user_id, actor_email=m.email)
+    await db.commit()
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="access-review.csv"'})
 
 
 # ---- audit log -----------------------------------------------------------------
@@ -162,7 +248,7 @@ async def get_audit_csv(
     w.writerow(["time", "who", "action", "target_type", "target_id", "ip", "request_id"])
     for r in rows:
         # A leading =,+,-,@ would run as a formula in a spreadsheet.
-        safe = [("'" + v) if isinstance(v, str) and v[:1] in "=+-@" else v
+        safe = [("'" + v) if isinstance(v, str) and v[:1] and v[0] in "=+-@" else v
                 for v in (r["at"], r["actor_email"], r["action"], r["target_type"],
                           r["target_id"], r["ip"], r["request_id"])]
         w.writerow(safe)

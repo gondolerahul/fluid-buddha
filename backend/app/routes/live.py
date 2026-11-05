@@ -21,14 +21,13 @@ import logging
 import uuid
 from typing import Any, Literal, Optional
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import team
-from app.auth.security import current_member, decode_token
+from app.auth import sessions, team
+from app.auth.security import current_member, member_from_token
 from app.db import get_session, session_scope
 from app.live import store as live
 from app.live.bus import bus, session_topic, site_topic
@@ -188,16 +187,29 @@ async def call_signal(session_id: str, body: CallIn,
 # ---- the console's event socket ----------------------------------------------------
 
 async def _authenticate(ws: WebSocket) -> Optional[team.Member]:
+    """The first message carries a bearer ``token``, or — for the console's
+    cookie session (M2-11) — its ``csrf`` token, which a page on another site
+    can't know, so a cross-site page can't open the socket with the cookie."""
     try:
-        first = await asyncio.wait_for(ws.receive_text(), timeout=10)
-        token = json.loads(first).get("token", "")
-        payload = decode_token(token)
-        user_id = uuid.UUID(payload["sub"])
-        tenant_id = uuid.UUID(payload["tid"]) if payload.get("tid") else None
-    except (asyncio.TimeoutError, ValueError, KeyError, jwt.PyJWTError, WebSocketDisconnect):
+        first = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
+    except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+        return None
+    token = first.get("token") if isinstance(first, dict) else None
+    via_cookie = False
+    if not token:
+        token, via_cookie = ws.cookies.get(sessions.COOKIE), True
+    if not token:
         return None
     async with session_scope() as db:
-        return await team.member(db, user_id, tenant_id)
+        try:
+            m, sess = await member_from_token(db, token)
+        except HTTPException:
+            return None
+    if via_cookie and not sessions.check_csrf(sess.id, first.get("csrf")):
+        return None
+    if m.require_mfa and not sess.mfa:
+        return None
+    return m
 
 
 @router.websocket("/live/events")

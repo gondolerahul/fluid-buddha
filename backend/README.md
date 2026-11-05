@@ -222,6 +222,41 @@ Client secrets are encrypted with `SECRETS_KEY`.
 The audit log (`app/audit.py`) records every successful change through the
 console API plus sign-ins; Console → Audit log, CSV export, kept a year.
 
+## Security controls (M2-11)
+
+- **Sessions** (`app/auth/sessions.py`): every sign-in is a row in
+  `user_sessions`; tokens name it, so sessions end when idle
+  (`SESSION_IDLE_MINUTES`), at an absolute limit (`SESSION_ABSOLUTE_HOURS`), on
+  sign-out, "sign out everywhere", a password change, or removal from the
+  team. Tokens from before this release ask the person to sign in again.
+- **Console cookie**: the console holds the session in an httpOnly, Secure,
+  SameSite cookie; cookie requests that change something need `X-CSRF-Token`
+  (from sign-in and `/auth/me`). The live inbox socket takes the CSRF token in
+  its first message. Bearer tokens keep working for API clients.
+- **Two-factor** (`app/auth/mfa.py`, RFC 6238, no extra dependency): setup with
+  a QR code, ten one-time recovery codes (hashed), codes can't be replayed.
+  An Owner can require it for the account (`/tenant/security`); password
+  sessions without it are held at the setup page. SSO sign-ins count as
+  two-factor (the identity provider's).
+- **Lockout**: `LOGIN_MAX_ATTEMPTS` wrong passwords or codes in a row lock the
+  person out for `LOGIN_LOCKOUT_MINUTES`.
+- **Stored secrets** encrypted with `SECRETS_KEY`: SSO client secrets, action
+  keys, lead webhook signing secrets and Slack webhook URLs (migration 0024
+  converted the existing ones), two-factor seeds.
+- **Access review**: `/tenant/team/access-review.csv` (Admin+), and each
+  quarter Owners and Admins get an email summary to review.
+- **Security headers** on every response (`app/security/headers.py`):
+  nosniff, `DENY` framing, referrer policy, `no-store` on `/auth` and
+  `/tenant`, HSTS outside dev. The console sets its own CSP
+  (`fluid-buddha-frontend/next.config.ts`).
+- **Backups**: `scripts/backup.sh` (pg_dump, SHA-256, optional `age`
+  encryption, retention, `backup-log.jsonl`) and `scripts/restore_drill.sh`
+  (restores into a scratch database, checks it, writes `drills/*.json`).
+  Both work against a server URL or through the Postgres container
+  (`PG_CONTAINER=a2ui-cortex-db PGUSER=cortex PGDATABASE=cortex`).
+
+Policies and the SOC 2 control matrix are in [`docs/compliance/`](../docs/compliance).
+
 ## Proactive triggers
 
 Website → Triggers: rules for when the agent speaks up first — after time on

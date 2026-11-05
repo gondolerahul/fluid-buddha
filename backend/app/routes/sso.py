@@ -29,7 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit
-from app.auth import sso, team
+from app.auth import sessions, sso, team
 from app.auth.security import create_access_token, current_member
 from app.config import get_settings
 from app.db import get_session
@@ -95,9 +95,16 @@ async def callback(request: Request, state: str = "", code: str = "", error: str
                        actor_email=m.email, details={"method": f"sso:{ident.provider.name}"},
                        **audit.request_meta(request))
     await db.commit()
-    token = create_access_token(m.user_id, m.tenant.id)
-    # In the fragment: never sent to a server or written to access logs.
-    return RedirectResponse(_to_console(f"/sso#token={token}"), 303)
+    # The session cookie rides on the redirect (M2-11); the console's /sso page
+    # then reads who signed in from /auth/me. No token in the address.
+    sess = await sessions.start(db, user_id=m.user_id, tenant_id=m.tenant.id,
+                                method=f"sso:{ident.provider.name}", request=request)
+    await db.commit()
+    token = create_access_token(m.user_id, m.tenant.id, session_id=sess.id,
+                                expires_at=sess.expires_at)
+    out = RedirectResponse(_to_console("/sso"), 303)
+    sessions.set_cookie(out, token)
+    return out
 
 
 # ---- the account's identity provider ---------------------------------------------------

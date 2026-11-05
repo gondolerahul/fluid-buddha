@@ -64,6 +64,24 @@ def build_scheduler(settings: Settings) -> Scheduler:
 
         return await check_payments() or None
 
+    async def access_review() -> object:
+        """M2-11: each account's Owners and Admins get the quarter's access review."""
+        from app.notify import access_review as review
+
+        async with session_scope() as db:
+            return await review.send_due(db) or None
+
+    async def session_cleanup() -> object:
+        """M2-11: sessions that ended more than 30 days ago (kept a while for review)."""
+        from sqlalchemy import text
+
+        async with session_scope() as db:
+            res = await db.execute(text(
+                "DELETE FROM user_sessions WHERE expires_at < now() - interval '30 days' "
+                "OR revoked_at < now() - interval '30 days'"))
+            await db.commit()
+            return res.rowcount or None
+
     s = Scheduler()
     s.add(Job("retention_sweep", settings.retention_sweep_minutes * 60, retention))
     s.add(Job("email_outbox", settings.email_outbox_interval_seconds, outbox, run_at_start=True))
@@ -74,4 +92,6 @@ def build_scheduler(settings: Settings) -> Scheduler:
     s.add(Job("insights_classify", settings.insights_classify_seconds, classify_turns))
     s.add(Job("weekly_digest", settings.digest_check_seconds, weekly_digest))
     s.add(Job("action_payments", settings.action_payments_seconds, action_payments))
+    s.add(Job("access_review", settings.access_review_check_seconds, access_review))
+    s.add(Job("session_cleanup", 24 * 3600, session_cleanup))
     return s

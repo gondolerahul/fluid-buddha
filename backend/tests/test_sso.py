@@ -105,9 +105,13 @@ def _callback(client, url, code):
 
 
 def _token_from(resp) -> str:
+    """The session the callback started: the console lands on /sso (no token in
+    the address) with an httpOnly session cookie (M2-11)."""
     loc = resp.headers["location"]
-    assert "/sso#token=" in loc, loc
-    return loc.split("#token=")[1]
+    assert loc.endswith("/sso") and "token" not in loc, loc
+    cookie = resp.headers["set-cookie"]
+    assert "fb_session=" in cookie and "HttpOnly" in cookie, cookie
+    return cookie.split("fb_session=")[1].split(";")[0]
 
 
 def test_domain_must_be_proven_before_it_signs_anyone_in(idp):
@@ -183,7 +187,7 @@ def test_tampered_or_replayed_sign_ins_are_refused(idp):
         # A state works once.
         url = client.post("/auth/sso/start", json={"email": email}).json()["url"]
         code = idp.authorize(url, email)
-        assert "/sso#token=" in _callback(client, url, code).headers["location"]
+        assert _token_from(_callback(client, url, code))
         assert "sso_error=" in _callback(client, url, idp.authorize(url, email)).headers["location"]
         # A token signed by another key.
         other = rsa.generate_private_key(public_exponent=65537, key_size=2048)

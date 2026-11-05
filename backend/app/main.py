@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from app.audit import AuditMiddleware
 from app.config import get_settings
 from app.cors import ScopedCORSMiddleware
+from app.security.headers import SecurityHeadersMiddleware
 from app.db import dispose_engine, init_db
 from app.logging_config import configure_logging
 from app.observability.errors import setup_sentry
@@ -76,6 +77,8 @@ app.add_middleware(
     public_origins=settings.cors_origin_list,
     admin_origins=settings.admin_cors_origin_list,
 )
+# Security headers on every response (M2-11).
+app.add_middleware(SecurityHeadersMiddleware, hsts=not settings.is_dev_env)
 # Every successful change made through /tenant routes goes in the audit log (M2-1).
 app.add_middleware(AuditMiddleware)
 # Outermost: every response (CORS preflights included) gets an X-Request-ID,

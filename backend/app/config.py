@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from functools import lru_cache
+from typing import Optional
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -88,7 +89,17 @@ class Settings(BaseSettings):
     # (enforced in _require_strong_secret).
     jwt_secret: str = _DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
-    jwt_expire_min: int = 60 * 24 * 7  # access token lifetime (7 days)
+    jwt_expire_min: int = 60 * 24 * 7  # unused since M2-11 (tokens end with their session)
+
+    # ---- Console sessions and sign-in protection (M2-11) ----
+    session_idle_minutes: int = 60            # signed out after this long without a request
+    session_absolute_hours: int = 12          # and after this long whatever happens
+    session_cookie_samesite: str = "lax"      # "none" if console and API are on different sites
+    session_cookie_secure: Optional[bool] = None   # default: secure outside dev
+    session_cookie_domain: str = ""
+    login_max_attempts: int = 10              # wrong passwords/codes in a row before a lockout
+    login_lockout_minutes: int = 15
+    access_review_check_seconds: int = 6 * 3600   # quarterly review emails (0 = off)
 
     # ---- Sync / UX ----
     ui_filler_delay_ms: int = 1500

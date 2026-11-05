@@ -32,6 +32,12 @@ class Member:
     name: Optional[str]
     role: str
     tenant: store.Tenant
+    # Security (M2-11): two-factor on for this person / required by the account,
+    # and the session this request belongs to (set by current_member).
+    mfa_enabled: bool = False
+    require_mfa: bool = False
+    session_id: Optional[uuid.UUID] = None
+    session_mfa: bool = False
 
     def public(self) -> dict:
         return {"user": {"id": str(self.user_id), "email": self.email, "name": self.name},
@@ -100,6 +106,7 @@ async def member(db: AsyncSession, user_id: uuid.UUID,
     """The user's membership in ``tenant_id`` (or their oldest one)."""
     row = (await db.execute(text(
         "SELECT u.id AS user_id, u.email AS user_email, u.name AS user_name, m.role, "
+        "u.totp_enabled_at IS NOT NULL AS mfa_enabled, t.require_mfa, "
         "t.id, t.email, t.name, t.created_at FROM memberships m "
         "JOIN users u ON u.id = m.user_id JOIN tenants t ON t.id = m.tenant_id "
         "WHERE m.user_id = :u AND (CAST(:t AS uuid) IS NULL OR m.tenant_id = :t) "
@@ -109,7 +116,8 @@ async def member(db: AsyncSession, user_id: uuid.UUID,
     return Member(user_id=row["user_id"], email=row["user_email"], name=row["user_name"],
                   role=row["role"], tenant=store.Tenant(id=row["id"], email=row["email"],
                                                         name=row["name"],
-                                                        created_at=row["created_at"]))
+                                                        created_at=row["created_at"]),
+                  mfa_enabled=bool(row["mfa_enabled"]), require_mfa=bool(row["require_mfa"]))
 
 
 async def accounts(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
@@ -124,12 +132,14 @@ async def accounts(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
 async def members(db: AsyncSession, tenant_id: uuid.UUID) -> list[dict]:
     rows = (await db.execute(text(
         "SELECT u.id, u.email, u.name, m.role, m.created_at, u.last_login_at, "
-        "u.password_hash IS NOT NULL AS has_password FROM memberships m "
+        "u.password_hash IS NOT NULL AS has_password, "
+        "u.totp_enabled_at IS NOT NULL AS mfa_enabled FROM memberships m "
         "JOIN users u ON u.id = m.user_id WHERE m.tenant_id = :t ORDER BY m.created_at"),
         {"t": tenant_id})).mappings().all()
     return [{"id": str(r["id"]), "email": r["email"], "name": r["name"], "role": r["role"],
              "joined_at": r["created_at"].isoformat(),
              "last_login_at": r["last_login_at"].isoformat() if r["last_login_at"] else None,
+             "mfa_enabled": bool(r["mfa_enabled"]),
              "has_password": r["has_password"]} for r in rows]
 
 

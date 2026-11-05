@@ -111,7 +111,10 @@ async def _send(site_key: str, spent: float, levels: list[tuple[str, float]]) ->
                 "LEFT JOIN site_integrations i ON i.site_key = w.site_key "
                 "WHERE w.site_key = :s"), {"s": site_key})).mappings().first()
         name = (row and row["name"]) or site_key
-        slack = row and row["slack_webhook_url"]
+        slack = None
+        if row and row["slack_webhook_url"]:
+            from app.leads.store import _open
+            slack = _open(row["slack_webhook_url"])
         for level, limit in new:
             COST_ALERTS.labels(level).inc()
             logger.warning("cost alert %s for site %s: spent $%.2f of $%.2f",

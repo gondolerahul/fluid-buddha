@@ -33,10 +33,14 @@ _RULES: list[tuple[object, str, str]] = [
     # SSO settings.
     (READ, r"^/tenant/sso", "admin"),
     ("*", r"^/tenant/sso", "owner"),
-    # Team and audit log.
+    # Team and audit log. The access review lists everyone's sign-in details.
+    (READ, r"^/tenant/team/access-review", "admin"),
     (READ, r"^/tenant/team", "viewer"),
     ("*", r"^/tenant/team", "admin"),
     ("*", r"^/tenant/audit", "admin"),
+    # Account security (two-factor requirement): Admins look, the Owner decides.
+    (READ, r"^/tenant/security", "admin"),
+    ("*", r"^/tenant/security", "owner"),
     # The weekly digest: who gets the account's numbers.
     ("*", r"^/tenant/digest", "admin"),
     # Actions hold payment keys and signing secrets (M2-8): Admins change them
