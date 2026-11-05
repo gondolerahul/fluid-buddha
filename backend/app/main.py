@@ -42,6 +42,7 @@ from app.routes import (
     websites,
     model_provider,
     agent_access,
+    campaigns,
     memory,
     widget,
 )
@@ -128,3 +129,5 @@ app.include_router(model_provider.router)
 app.include_router(agent_access.public)
 app.include_router(agent_access.admin)
 app.include_router(memory.router)
+app.include_router(campaigns.public)
+app.include_router(campaigns.admin)

@@ -32,6 +32,7 @@ _SITE_TABLES = (
     "action_runs", "site_actions", "site_components",  # M2-8
     "visitor_memories",  # M3-3
     "agent_tokens", "agent_requests",  # M3-2
+    "campaigns",  # M3-1: its pages and events go with it (ON DELETE CASCADE)
 )
 
 

@@ -235,6 +235,14 @@ async def get_website_by_public_key(
     return _row_to_website(row) if row else None
 
 
+async def get_website_by_site_key(db: AsyncSession, site_key: str) -> Optional[Website]:
+    """A website by its site key (hosted campaign pages, M3-1)."""
+    res = await db.execute(
+        text(f"SELECT {_WEBSITE_COLS} FROM tenant_websites WHERE site_key = :s"), {"s": site_key})
+    row = res.mappings().first()
+    return _row_to_website(row) if row else None
+
+
 async def rotate_public_key(
     db: AsyncSession, website_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> Optional[Website]:

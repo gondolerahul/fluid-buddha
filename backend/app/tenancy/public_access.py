@@ -57,6 +57,10 @@ def _origin_allowed(website: store.Website, origin: Optional[str]) -> bool:
     """
     if get_settings().is_dev_env:
         return True
+    host = _origin_host(origin)
+    # The site's hosted campaign pages (M3-1) are served from our own origin.
+    if host and host == (urlsplit(get_settings().public_api_url).hostname or "").lower():
+        return True
     domain = (website.domain or "").strip().lower()
     if not domain:
         return True
