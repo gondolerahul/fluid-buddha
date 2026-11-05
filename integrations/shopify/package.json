@@ -1,0 +1,13 @@
+{
+  "name": "fluidbuddha-shopify",
+  "private": true,
+  "description": "FluidBuddha theme app extension for Shopify (M2-10).",
+  "scripts": {
+    "dev": "shopify app dev",
+    "deploy": "shopify app deploy",
+    "test": "node test/embed.test.mjs"
+  },
+  "devDependencies": {
+    "liquidjs": "^10.30.1"
+  }
+}

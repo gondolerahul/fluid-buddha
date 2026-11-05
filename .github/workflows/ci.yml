@@ -71,6 +71,34 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=high
 
+  # Install surfaces (M2-10): framework wrappers, the Shopify embed, and the
+  # WordPress plugin's lint + unit tests.
+  integrations:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            integrations/js/package-lock.json
+            integrations/shopify/package-lock.json
+      - name: React + Vue wrappers
+        working-directory: integrations/js
+        run: npm ci && npm run typecheck && npm run build && npm test && npm audit --audit-level=high
+      - name: Shopify app embed
+        working-directory: integrations/shopify
+        run: npm ci && npm test
+      - name: WordPress plugin
+        run: |
+          docker run --rm -v "$PWD/wordpress:/w" -w /w php:8.3-cli sh -c '
+            for f in fluidbuddha/*.php fluidbuddha/includes/*.php tests/*.php; do php -l "$f" || exit 1; done
+            php tests/test-functions.php'
+
   console:
     runs-on: ubuntu-latest
     defaults:

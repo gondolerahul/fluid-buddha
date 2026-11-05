@@ -1,0 +1,28 @@
+{
+  "name": "FluidBuddha agent",
+  "settings": {
+    "install_code": {
+      "label": "Install code",
+      "info": "From the FluidBuddha console: your website → Install → Shopify."
+    },
+    "position": {
+      "label": "Position",
+      "default": "Default (bottom right)",
+      "right": "Bottom right",
+      "left": "Bottom left"
+    },
+    "lang": {
+      "label": "Widget language",
+      "info": "Hindi needs Hindi switched on for the website in the FluidBuddha console.",
+      "auto": "Console setting / visitor's browser",
+      "en": "English",
+      "hi": "Hindi"
+    },
+    "show_on_cart": {
+      "label": "Show on the cart page"
+    },
+    "show_on_account": {
+      "label": "Show on customer account pages"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+api_version = "2025-10"
+
+[[extensions]]
+name = "FluidBuddha agent"
+handle = "fluidbuddha-embed"
+type = "theme"
