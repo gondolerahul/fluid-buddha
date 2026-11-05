@@ -308,6 +308,50 @@ sources and the site's call to action (agent profile). The page loads
 per site (Privacy settings, default 90 days) and go with their conversation.
 Views and forwards show on the lead and in Leads → Shared recaps.
 
+## Generative landing pages: campaigns (M3-1)
+
+Console → website → Campaigns. A campaign is a brief: goal, audience, key
+messages (the first is the headline), which sections the page may use
+(feature cards, text, pricing, testimonials, logos, FAQ, comparison, ROI
+calculator, chart, enquiry form, image; a hero and a call to action always),
+the call to action and its link, and the proof the customer supplies —
+testimonials and logos, which the page quotes but never invents. Optionally a
+version B (headline, messages, CTA) shown to half the visitors.
+
+Live at `GET /p/{site_key}/{slug}`. The link steers the page:
+`?persona=` (or `utm_content`), `?q=` (or `utm_term`) — answered first,
+`?account=` ("Prepared for Acme", and pre-filled in the form), `?lang=hi`,
+`utm_source` (reported). Drafts open only with the preview link from the
+console (not counted, no agent on the page).
+
+Composition (`app/campaigns/compose.py`): the site's knowledge retrieved for
+the messages, the persona's focus and the question (above the grounding
+threshold), the pinned answers (word for word) and the blocked questions
+(never answered). The account's own model (M3-4) or the platform's composes
+typed sections that cite their sources; in mock mode, past the composition
+rate (20 a minute per site) or past the daily spend cap, a rule-based composer
+that only quotes the material does. Whatever composed it, the checks run:
+only the campaign's sections; factual sections cite real sources; every
+number appears in what it cites (or in the brief); testimonials and logos only
+as supplied; the enquiry form is always the same safe one. Failures are
+dropped and listed on the cached spec (`dropped`).
+
+Pages are cached per campaign version, arm, persona, question, language and
+content version (re-ingesting composes afresh); `?account=` is drawn at
+render time and never costs a composition. The `Server-Timing` header says
+`cache`, `rules` or `model`. The page is server-rendered (no script needed to
+read it or paint the hero); `fluid-buddha-page.global.js` draws the ROI
+calculator and charts and reports engagement once; the site's widget is on
+the page (the widget accepts our own origin for hosted pages).
+
+Numbers per unique visitor, credited to the arm, persona and source of their
+first view: views, engaged (scrolled past half, 15 s visible, or used a
+component or the agent), converted (the page's form — a lead with source
+`campaign` — or the call to action through `/p/…/go`). Bots aren't counted.
+With a version B, the A/B verdict uses the same always-valid test as M2-4.
+Embedding: `?embed=1` in an iframe, allowed from the site's domain and the
+origins listed on the campaign.
+
 ## Returning-visitor memory (M3-3)
 
 Off by default. A website switches it on in Privacy settings ("Remember
