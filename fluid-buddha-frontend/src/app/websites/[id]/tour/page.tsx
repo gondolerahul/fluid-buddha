@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Api, ApiError, TourStop } from "@/lib/api";
 import { Spinner, useToast } from "@/components/ui";
+import { EditOnly, Editable } from "@/components/Permission";
 
 type EditStop = { narration: string; moveType: "none" | "scroll" | "navigate"; target: string };
 
@@ -85,27 +86,27 @@ export default function TourPage() {
             {edited && " You've edited this tour, so re-ingesting content won't replace it — use Generate to start over."}
           </p>
         </div>
-        <div className="row" style={{ gap: 8 }}>
+        <EditOnly><div className="row" style={{ gap: 8 }}>
           <button className="btn" onClick={generate} disabled={gen}>
             {gen ? <Spinner /> : "✨ Generate from content"}
           </button>
           <button className="btn btn-primary" onClick={save} disabled={busy}>
             {busy ? <Spinner /> : "Save tour"}
           </button>
-        </div>
+        </div></EditOnly>
       </div>
 
-      <div className="stack">
+      <Editable><div className="stack">
         {stops.length === 0 && <div className="empty">No stops yet. Add one or generate from your content.</div>}
         {stops.map((s, i) => (
           <div key={i} className="card card-pad-sm">
             <div className="row between" style={{ marginBottom: 10 }}>
               <span className="eyebrow">Stop {i + 1}</span>
-              <div className="row" style={{ gap: 4 }}>
+              <EditOnly><div className="row" style={{ gap: 4 }}>
                 <button className="btn btn-ghost btn-sm" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => move(i, 1)} disabled={i === stops.length - 1}>↓</button>
                 <button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(i)}>✕</button>
-              </div>
+              </div></EditOnly>
             </div>
             <div className="field" style={{ marginBottom: 12 }}>
               <label className="label">Narration <span className="faint">(spoken aloud)</span></label>
@@ -134,9 +135,9 @@ export default function TourPage() {
             </div>
           </div>
         ))}
-      </div>
+      </div></Editable>
 
-      <button className="btn" style={{ marginTop: 16 }} onClick={add}>+ Add stop</button>
+      <EditOnly><button className="btn" style={{ marginTop: 16 }} onClick={add}>+ Add stop</button></EditOnly>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Api, ApiError, CacheEntry, CacheStatus } from "@/lib/api";
 import { Modal, Spinner, fmtDate, useToast } from "@/components/ui";
+import { EditOnly } from "@/components/Permission";
 
 export default function CachePage() {
   const id = String(useParams().id);
@@ -98,7 +99,7 @@ export default function CachePage() {
                   </td>
                   <td className="muted" style={{ fontSize: "0.82rem" }}>{fmtDate(e.created_at)}</td>
                   <td>
-                    <div className="row" style={{ gap: 4 }}>
+                    <EditOnly><div className="row" style={{ gap: 4 }}>
                       <button className="btn btn-ghost btn-sm" onClick={() => setEditing(e)}>Edit</button>
                       {e.status !== "pinned" && (
                         <button className="btn btn-ghost btn-sm" onClick={() => setStatus(e, "pinned")}>Pin</button>
@@ -110,7 +111,7 @@ export default function CachePage() {
                         <button className="btn btn-ghost btn-sm" onClick={() => setStatus(e, "auto")}>Unset</button>
                       )}
                       <button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(e.id)}>Delete</button>
-                    </div>
+                    </div></EditOnly>
                   </td>
                 </tr>
               ))}

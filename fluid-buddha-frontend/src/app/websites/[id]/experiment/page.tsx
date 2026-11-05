@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import { Api, ApiError, ExperimentPlan, ExperimentResults, ExperimentSettings, LiftArm } from "@/lib/api";
 import { Spinner, fmtDate, useToast } from "@/components/ui";
+import { EditOnly, Editable } from "@/components/Permission";
 
 // Series colours, validated as a pair on the card surface (#12151c): lightness
 // band, chroma, CVD and normal-vision separation, contrast.
@@ -103,16 +104,16 @@ function SettingsCard({ cfg, busy, onSave, onRestart }: {
                 : <span className="muted">Not running</span>}
           </div>
         </div>
-        <div className="row" style={{ gap: 8 }}>
+        <EditOnly><div className="row" style={{ gap: 8 }}>
           {running && <button className="btn btn-sm" onClick={onRestart} disabled={busy}>Restart</button>}
           <button className={`btn btn-sm ${running ? "btn-danger" : "btn-primary"}`} disabled={busy}
             onClick={() => onSave({ ...draft, enabled: !running })}>
             {busy ? <Spinner /> : running ? "Stop" : "Start experiment"}
           </button>
-        </div>
+        </div></EditOnly>
       </div>
 
-      <div className="grid grid-2" style={{ gap: 14, marginTop: 16 }}>
+      <Editable><div className="grid grid-2" style={{ gap: 14, marginTop: 16 }}>
         <div className="field">
           <label className="label">Visitors held out (no agent)</label>
           <select className="select" value={draft.holdout_pct} aria-label="Visitors held out (no agent)"
@@ -132,7 +133,7 @@ function SettingsCard({ cfg, busy, onSave, onRestart }: {
             A visit to this page (or below it) counts as a conversion, in both groups.
           </p>
         </div>
-      </div>
+      </div></Editable>
       {running && (draft.goal_path !== cfg.goal_path || shareChanged) && (
         <div className="row" style={{ justifyContent: "flex-end", marginTop: 8 }}>
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onSave({ ...draft, enabled: true })}>

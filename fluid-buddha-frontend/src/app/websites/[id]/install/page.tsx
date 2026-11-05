@@ -4,6 +4,7 @@ import Link from "next/link";
 import { API_BASE, Api, ApiError, SDK_URL, WIDGET_BACKEND, Website } from "@/lib/api";
 import { useWebsite } from "@/components/WebsiteContext";
 import { Spinner, useToast } from "@/components/ui";
+import { EditOnly } from "@/components/Permission";
 
 type Check = { label: string; ok: boolean; detail: string };
 
@@ -250,9 +251,11 @@ export default function InstallPage() {
           </div>
           <div className="row" style={{ gap: 8 }}>
             {key && <button className="btn btn-sm" onClick={() => copy(key, "Widget key")}>Copy</button>}
-            <button className="btn btn-sm" onClick={rotate} disabled={rotating}>
-              {rotating ? <Spinner /> : key ? "Rotate key" : "Create key"}
-            </button>
+            <EditOnly role="admin">
+              <button className="btn btn-sm" onClick={rotate} disabled={rotating}>
+                {rotating ? <Spinner /> : key ? "Rotate key" : "Create key"}
+              </button>
+            </EditOnly>
           </div>
         </div>
         {key ? (

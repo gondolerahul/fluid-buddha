@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { AgentProfile, Api, ApiError, Integrations, Persona, Privacy, Website, TemplatePlan, TemplateSummary } from "@/lib/api";
 import { useWebsite } from "@/components/WebsiteContext";
 import { Spinner, useToast } from "@/components/ui";
+import { EditOnly, Editable } from "@/components/Permission";
 
 const INTELLIGENCE: [string, string][] = [
   ["basic", "Basic — text answers and navigation"],
@@ -37,11 +38,12 @@ export default function SettingsPage() {
           How this site&apos;s agent behaves, what it&apos;s called, and where it can take visitors.
         </p>
       </div>
-      <SiteForm key={website.id} website={website} onSaved={reload} />
-      <ProfileSection id={website.id} />
-      <IntegrationsSection id={website.id} />
-      <PrivacySection id={website.id} />
-      <DangerZone website={website} />
+      <Editable><SiteForm key={website.id} website={website} onSaved={reload} /></Editable>
+      <Editable><ProfileSection id={website.id} /></Editable>
+      {/* Integrations hold the signing secret: Admins only, even to look. */}
+      <EditOnly role="admin"><IntegrationsSection id={website.id} /></EditOnly>
+      <Editable role="admin"><PrivacySection id={website.id} /></Editable>
+      <EditOnly role="admin"><DangerZone website={website} /></EditOnly>
     </div>
   );
 }
@@ -212,6 +214,8 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
   const [widgetLang, setWidgetLang] = useState(initial.widget_language ?? "auto");
   const [greetingHi, setGreetingHi] = useState(initial.greeting_hi ?? "");
   const [starters, setStarters] = useState((initial.starter_questions ?? []).join("\n"));
+  const [startersHi, setStartersHi] = useState((initial.starter_questions_hi ?? []).join("\n"));
+  const [currency, setCurrency] = useState(initial.currency ?? "INR");
   const [rules, setRules] = useState((initial.guardrails ?? []).join("\n"));
   const [medical, setMedical] = useState(initial.safety === "medical");
   const [personas, setPersonas] = useState<Persona[]>(initial.personas);
@@ -244,6 +248,8 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
         widget_language: widgetLang,
         greeting_hi: greetingHi.trim(),
         starter_questions: lines(starters).slice(0, 4),
+        starter_questions_hi: lines(startersHi).slice(0, 4),
+        currency,
         guardrails: lines(rules).slice(0, 10),
         safety: medical ? "medical" : "",
         personas: personas
@@ -362,6 +368,17 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
           <label className="label" htmlFor="p-starters">Starter questions <span className="faint">(the widget&apos;s chips, one per line, up to 4)</span></label>
           <textarea id="p-starters" className="textarea" rows={4} value={starters} onChange={(e) => setStarters(e.target.value)}
             placeholder={"How much does it cost?\nIs there a free trial?"} />
+          <label className="label" htmlFor="p-starters-hi" style={{ marginTop: 10 }}>
+            Starter questions in Hindi <span className="faint">(chips for Hindi widgets)</span>
+          </label>
+          <textarea id="p-starters-hi" className="textarea" rows={3} value={startersHi}
+            onChange={(e) => setStartersHi(e.target.value)} placeholder={"इसकी कीमत क्या है?\nक्या फ़्री ट्रायल है?"} />
+          <label className="label" htmlFor="p-currency" style={{ marginTop: 10 }}>
+            Currency <span className="faint">(calculators and configurators)</span>
+          </label>
+          <select id="p-currency" className="select" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            {["INR", "USD", "EUR", "GBP", "AED", "SGD", "AUD"].map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div className="field">
           <label className="label" htmlFor="p-rules">Rules the agent always follows <span className="faint">(one per line)</span></label>

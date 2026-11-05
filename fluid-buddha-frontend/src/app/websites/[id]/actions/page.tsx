@@ -163,6 +163,17 @@ export default function ActionsPage() {
                     {r.error ? <span className="faint">{r.error}</span>
                       : r.result.url ? <a href={r.result.url} target="_blank" rel="noopener noreferrer">open link</a>
                       : r.result.message ?? "—"}
+                    {r.kind === "quote_request" && r.status === "done" && (
+                      <button className="btn btn-ghost btn-sm" style={{ marginLeft: 6 }}
+                        onClick={() => Api.quotePdf(id, r.id).then((b) => {
+                          const url = URL.createObjectURL(b);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `quote-${r.id.slice(0, 8)}.pdf`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }).catch(() => toast("Could not download the quote", "err"))}>PDF</button>
+                    )}
                   </td>
                 </tr>
               ))}

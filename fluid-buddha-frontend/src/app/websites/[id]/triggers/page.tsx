@@ -103,7 +103,9 @@ export default function TriggersPage() {
                 <tr key={r.id} style={{ opacity: r.enabled ? 1 : 0.55 }}>
                   <td>
                     <div>{r.name}{!r.enabled && <span className="faint"> (paused)</span>}</div>
-                    <div className="faint" style={{ fontSize: "0.8rem", maxWidth: 320 }}>“{r.message}”</div>
+                    <div className="faint" style={{ fontSize: "0.8rem", maxWidth: 320 }}>
+                      {r.compose ? "Written by the agent for each page" : `“${r.message}”`}
+                    </div>
                   </td>
                   <td style={{ fontSize: "0.86rem" }}>{when(r)}{r.action === "open" ? " · opens the agent" : ""}</td>
                   <td className="mono">{r.stats?.shown ?? 0}</td>
@@ -206,6 +208,15 @@ function TriggerForm({ initial, onSave, onCancel }: {
         <label className="label">Message</label>
         <textarea className="input" required maxLength={280} rows={2} value={r.message}
           onChange={(e) => set({ message: e.target.value })} />
+        <label className="row" style={{ gap: 8, marginTop: 8, fontSize: "0.86rem" }}>
+          <input type="checkbox" checked={!!r.compose} onChange={(e) => set({ compose: e.target.checked })} />
+          Let the agent write it for each page
+        </label>
+        <p className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+          {r.compose
+            ? "The agent writes one short opener per page (in the visitor's language), once; your message is the fallback."
+            : "Everyone sees the same message."}
+        </p>
       </div>
       <div className="grid grid-2" style={{ gap: 12 }}>
         <div className="field">

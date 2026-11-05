@@ -6,6 +6,7 @@ import { fmtDate, useToast } from "@/components/ui";
 import { AddSourceModal } from "@/components/AddSourceModal";
 import { TranscriptModal } from "@/components/TranscriptModal";
 import { DealSignals } from "@/components/DealSignals";
+import { EditOnly } from "@/components/Permission";
 
 const RANGES = [7, 30, 90];
 
@@ -85,7 +86,7 @@ export default function InsightsPage() {
                     <span style={{ minWidth: 0 }}>
                       {g.question} <span className="faint">· {g.count}×</span>
                     </span>
-                    <button className="btn btn-sm" onClick={() => setGap(g)}>Answer this</button>
+                    <EditOnly><button className="btn btn-sm" onClick={() => setGap(g)}>Answer this</button></EditOnly>
                   </div>
                 ))}
               </div>

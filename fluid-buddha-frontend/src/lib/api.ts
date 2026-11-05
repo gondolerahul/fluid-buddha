@@ -191,6 +191,9 @@ export type AgentProfile = {
   greeting_hi?: string;
   /** From a vertical template (M2-9), editable. */
   starter_questions?: string[];
+  starter_questions_hi?: string[];
+  /** Money in calculators and configurators (ISO 4217, default INR). */
+  currency?: string;
   guardrails?: string[];
   preferred_components?: string[];
   lead_fields?: string[];
@@ -590,7 +593,7 @@ export type IceServer = { urls: string | string[]; username?: string; credential
 export type TriggerKind = "time_on_page" | "scroll_depth" | "exit_intent" | "return_visit";
 export type TriggerRuleIn = { name: string; enabled: boolean; kind: TriggerKind; seconds?: number | null;
   percent?: number | null; visits?: number | null; within_days?: number | null; pages: string[];
-  message: string; action: "nudge" | "open"; max_per_day: number; priority: number };
+  message: string; compose?: boolean; action: "nudge" | "open"; max_per_day: number; priority: number };
 export type TriggerStats = { shown: number; clicked: number; dismissed: number; engaged: number;
   click_rate: number | null; engage_rate: number | null };
 export type TriggerRule = TriggerRuleIn & { id: string; updated_at: string; stats: TriggerStats | null };
@@ -743,6 +746,11 @@ export const Api = {
     if (q.action) p.set("action", q.action);
     if (q.actor) p.set("actor", q.actor);
     return api<AuditEvent[]>(`/tenant/audit?${p}`);
+  },
+  quotePdf: async (wid: string, runId: string): Promise<Blob> => {
+    const res = await backendFetch(`/tenant/websites/${wid}/action-runs/${runId}/quote.pdf`);
+    if (!res.ok) throw new ApiError(res.status, "Could not download the quote");
+    return res.blob();
   },
   auditCsv: async (): Promise<Blob> => {
     const res = await backendFetch("/tenant/audit.csv");
