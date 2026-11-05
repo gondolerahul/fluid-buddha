@@ -1,0 +1,24 @@
+# Scraping FluidBuddha (M3-6). Each backend replica serves /metrics; with
+# METRICS_TOKEN set, Prometheus sends it as a bearer token.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: fluidbuddha
+    scheme: https
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/fluidbuddha-metrics-token
+    static_configs:
+      # One target per replica (or use your platform's service discovery).
+      - targets: ["api.fluidbuddha.example.com"]
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]

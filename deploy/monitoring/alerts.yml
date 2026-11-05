@@ -1,0 +1,125 @@
+# Prometheus alert rules for FluidBuddha (M3-6). Load with
+#   rule_files: [alerts.yml]
+# and scrape /metrics (prometheus.yml next to this file). Every alert names
+# its runbook section in docs/operations/incident-runbook.md.
+#
+# Severity: page = wake someone (SLA at risk now); ticket = next working day.
+# The availability SLO is 99.9 % of requests answered without a 5xx over 30
+# days (an error budget of 0.1 %); the burn-rate alerts are the standard
+# multi-window pair (fast: 2 % of the month's budget in an hour; slow: 5 % in
+# six hours).
+groups:
+  - name: fluidbuddha-availability
+    rules:
+      - record: fb:http_error_ratio:rate5m
+        expr: sum(rate(fb_http_requests_total{status="5xx"}[5m])) / clamp_min(sum(rate(fb_http_requests_total[5m])), 1e-9)
+      - record: fb:http_error_ratio:rate1h
+        expr: sum(rate(fb_http_requests_total{status="5xx"}[1h])) / clamp_min(sum(rate(fb_http_requests_total[1h])), 1e-9)
+      - record: fb:http_error_ratio:rate30m
+        expr: sum(rate(fb_http_requests_total{status="5xx"}[30m])) / clamp_min(sum(rate(fb_http_requests_total[30m])), 1e-9)
+      - record: fb:http_error_ratio:rate6h
+        expr: sum(rate(fb_http_requests_total{status="5xx"}[6h])) / clamp_min(sum(rate(fb_http_requests_total[6h])), 1e-9)
+
+      - alert: FluidBuddhaDown
+        expr: up{job="fluidbuddha"} == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "A FluidBuddha replica isn't answering /metrics"
+          runbook: "docs/operations/incident-runbook.md#fluidbuddhadown"
+
+      - alert: FluidBuddhaNotReady
+        expr: min by (instance) (fb_ready{check=~"db|migrations|redis"}) == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $labels.instance }} can't serve: a critical dependency is failing"
+          runbook: "docs/operations/incident-runbook.md#fluidbuddhanotready"
+
+      - alert: FluidBuddhaErrorBudgetFastBurn
+        expr: fb:http_error_ratio:rate1h > (14.4 * 0.001) and fb:http_error_ratio:rate5m > (14.4 * 0.001)
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "5xx rate is burning the monthly error budget 14x too fast"
+          runbook: "docs/operations/incident-runbook.md#error-rate"
+
+      - alert: FluidBuddhaErrorBudgetSlowBurn
+        expr: fb:http_error_ratio:rate6h > (6 * 0.001) and fb:http_error_ratio:rate30m > (6 * 0.001)
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "5xx rate is burning the monthly error budget 6x too fast"
+          runbook: "docs/operations/incident-runbook.md#error-rate"
+
+      - alert: FluidBuddhaDraining
+        expr: max by (instance) (fb_draining) == 1
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $labels.instance }} has been shutting down for 10 minutes"
+          runbook: "docs/operations/incident-runbook.md#stuck-drain"
+
+  - name: fluidbuddha-voice
+    rules:
+      - alert: FluidBuddhaSlowFirstAudio
+        expr: histogram_quantile(0.95, sum by (le) (rate(fb_time_to_first_audio_seconds_bucket[10m]))) > 1.5
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "p95 time to first audio is {{ $value | humanizeDuration }} (target 1.5 s)"
+          runbook: "docs/operations/incident-runbook.md#slow-voice"
+
+      - alert: FluidBuddhaVerySlowFirstAudio
+        expr: histogram_quantile(0.95, sum by (le) (rate(fb_time_to_first_audio_seconds_bucket[5m]))) > 3
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "p95 time to first audio is {{ $value | humanizeDuration }}: voice feels broken"
+          runbook: "docs/operations/incident-runbook.md#slow-voice"
+
+      - alert: FluidBuddhaSlowTurns
+        expr: histogram_quantile(0.95, sum by (le) (rate(fb_turn_seconds_bucket[10m]))) > 8
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "p95 whole-turn time is {{ $value | humanizeDuration }}"
+          runbook: "docs/operations/incident-runbook.md#slow-voice"
+
+      - alert: FluidBuddhaModelErrors
+        expr: sum by (engine) (rate(fb_engine_errors_total[5m])) > 0.1
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $labels.engine }} calls are failing ({{ $value | humanize }}/s)"
+          runbook: "docs/operations/incident-runbook.md#model-errors"
+
+  - name: fluidbuddha-operations
+    rules:
+      - alert: FluidBuddhaJobFailing
+        expr: sum by (job) (increase(fb_job_runs_total{outcome="error"}[30m])) > 3
+        labels: {severity: ticket}
+        annotations:
+          summary: "Background job {{ $labels.job }} failed {{ $value }} times in 30 minutes"
+          runbook: "docs/operations/incident-runbook.md#job-failing"
+
+      - alert: FluidBuddhaCostCapReached
+        expr: sum(increase(fb_cost_alerts_total{level="cap_100"}[1h])) > 0
+        labels: {severity: ticket}
+        annotations:
+          summary: "A site hit its daily spend cap: its widget answers from the cache only"
+          runbook: "docs/operations/incident-runbook.md#cost-cap"
+
+      - alert: FluidBuddhaCostCapNear
+        expr: sum(increase(fb_cost_alerts_total{level="cap_80"}[1h])) > 0
+        labels: {severity: ticket}
+        annotations:
+          summary: "A site passed 80 % of its daily spend cap"
+          runbook: "docs/operations/incident-runbook.md#cost-cap"
+
+      - alert: FluidBuddhaCrawlsFailing
+        expr: sum(increase(fb_crawl_jobs_total{status="failed"}[1h])) > 5
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $value }} website crawls failed in an hour"
+          runbook: "docs/operations/incident-runbook.md#job-failing"

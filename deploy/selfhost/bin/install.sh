@@ -25,6 +25,7 @@ if [ ! -f .env ]; then
       -e "s|^JWT_SECRET=.*|JWT_SECRET=$(secret)|" \
       -e "s|^SECRETS_KEY=.*|SECRETS_KEY=$(fernet)|" \
       -e "s|^METRICS_TOKEN=.*|METRICS_TOKEN=$(secret)|" \
+      -e "s|^STATUS_TOKEN=.*|STATUS_TOKEN=$(secret)|" \
       .env.example > .env
   chmod 600 .env
   echo "wrote .env (secrets generated; keep a copy somewhere safe)"

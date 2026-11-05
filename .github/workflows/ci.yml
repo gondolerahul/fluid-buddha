@@ -150,3 +150,7 @@ jobs:
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - name: Scripts
         run: for f in bin/*.sh; do bash -n "$f"; done
+      - name: Alert rules (M3-6)
+        working-directory: deploy/monitoring
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD:/m:ro" prom/prometheus:v3.16.0 check rules /m/alerts.yml

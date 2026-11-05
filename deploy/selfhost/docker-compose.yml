@@ -82,6 +82,13 @@ services:
       ADMIN_CORS_ORIGINS: https://${CONSOLE_DOMAIN}
       SESSION_COOKIE_SECURE: "true"
       LOG_FORMAT: json
+      # Worker processes per backend container (voice sessions spread across them).
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      # Reliability (M3-6): voice sessions get this long to move on shutdown;
+      # the public status page's name and the token for posting incidents.
+      DRAIN_SECONDS: ${DRAIN_SECONDS:-25}
+      STATUS_TITLE: ${STATUS_TITLE:-FluidBuddha}
+      STATUS_TOKEN: ${STATUS_TOKEN:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       # AI: Vertex AI by default (mount the service account below), or set
       # MOCK_AI=true to try the install without any model; then bring your own

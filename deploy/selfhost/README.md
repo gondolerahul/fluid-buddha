@@ -160,8 +160,16 @@ private network, `CADDY_TLS=tls internal` (browsers will warn).
 
 ## Operations
 
-- **Health:** `https://api.…/healthz` (alive) and `/readyz` (database, Redis,
-  models); `docker compose ps` shows each service's health.
+- **Health:** `https://api.…/healthz` (alive) and `/readyz` (every dependency:
+  database, schema, Redis, jobs, models, email — 503 when a critical one fails
+  or the backend is shutting down); `docker compose ps` shows each service's health.
+- **Status page:** `https://api.…/status` — measured every minute, 90 days of
+  history; post incidents with `STATUS_TOKEN` (docs/operations/incident-runbook.md).
+- **Restarts and upgrades** are graceful: voice sessions finish the answer
+  they're speaking and the widget reconnects (`DRAIN_SECONDS`, 25 s).
+- **Capacity:** `WEB_CONCURRENCY` backend workers (about one per 2 vCPU); check
+  with the voice load test from the image:
+  `docker compose run --rm --no-deps --entrypoint python backend -m loadtest.voice --url ws://backend:8080/ws/voice --key fbk_… --sessions 50`.
 - **Logs:** `docker compose logs -f backend` — JSON lines, rotated (5 × 20 MB per
   service).
 - **Metrics:** `https://api.…/metrics` with `Authorization: Bearer $METRICS_TOKEN`
