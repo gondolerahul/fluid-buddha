@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     login_lockout_minutes: int = 15
     access_review_check_seconds: int = 6 * 3600   # quarterly review emails (0 = off)
     memory_build_seconds: int = 120           # returning-visitor memories (M3-3; 0 = off)
+    # Self-hosted installs (M3-5): enforce the licence; where it comes from when
+    # none is installed in the console (a key, or a file holding one).
+    self_hosted: bool = False
+    licence_key: str = ""
+    licence_file: str = ""
 
     # ---- Sync / UX ----
     ui_filler_delay_ms: int = 1500

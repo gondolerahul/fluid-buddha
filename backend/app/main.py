@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from app.audit import AuditMiddleware
 from app.config import get_settings
 from app.cors import ScopedCORSMiddleware
+from app.licence.guard import LicenceGuard
 from app.security.headers import SecurityHeadersMiddleware
 from app.db import dispose_engine, init_db
 from app.logging_config import configure_logging
@@ -43,6 +44,7 @@ from app.routes import (
     model_provider,
     agent_access,
     campaigns,
+    licence,
     memory,
     widget,
 )
@@ -76,6 +78,9 @@ app = FastAPI(title="A2UI Orchestrator", version="0.1.0", lifespan=lifespan)
 # The public widget and the admin API share this app but not a CORS policy:
 # CORS_ORIGINS covers the widget surface, ADMIN_CORS_ORIGINS the console-only
 # /auth + /tenant routes (docs/defects.md D-21).
+# Self-hosted installs: console changes need a usable licence (M3-5). Inside
+# CORS so its refusals carry CORS headers.
+app.add_middleware(LicenceGuard)
 app.add_middleware(
     ScopedCORSMiddleware,
     public_origins=settings.cors_origin_list,
@@ -131,3 +136,4 @@ app.include_router(agent_access.admin)
 app.include_router(memory.router)
 app.include_router(campaigns.public)
 app.include_router(campaigns.admin)
+app.include_router(licence.router)

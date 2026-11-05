@@ -74,6 +74,11 @@ async def create_invitation(body: InviteIn, m: team.Member = Depends(current_mem
     existing = await team.user_by_email(db, body.email)
     if existing and await team.role_of(db, m.tenant.id, existing["id"]):
         raise HTTPException(status.HTTP_409_CONFLICT, "They're already in this account.")
+    from app.licence.guard import check_limit
+    # Someone already in another account of this install takes no new seat.
+    if not existing or not (await db.execute(text("SELECT 1 FROM memberships WHERE user_id = :u LIMIT 1"),
+                                              {"u": existing["id"]})).first():
+        await check_limit(db, "seats")   # self-hosted installs (M3-5)
     iid, token = await team.invite(db, m.tenant.id, body.email, body.role, m.user_id)
     link = f"{get_settings().console_url.rstrip('/')}/invite?token={token}"
     emailed = True

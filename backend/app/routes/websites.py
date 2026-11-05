@@ -73,6 +73,8 @@ async def create_website(
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     _validate_levels(body.intelligence, body.design)
+    from app.licence.guard import check_limit
+    await check_limit(db, "sites")   # self-hosted installs (M3-5)
     pack = None
     if body.template:
         from app import templates

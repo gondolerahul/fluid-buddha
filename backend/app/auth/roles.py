@@ -48,6 +48,8 @@ _RULES: list[tuple[object, str, str]] = [
     # Account security (two-factor requirement): Admins look, the Owner decides.
     (READ, r"^/tenant/security", "admin"),
     ("*", r"^/tenant/security", "owner"),
+    # Installing a self-hosted licence (M3-5).
+    ({"PUT"}, r"^/tenant/licence$", "owner"),
     # The weekly digest: who gets the account's numbers.
     ("*", r"^/tenant/digest", "admin"),
     # Actions hold payment keys and signing secrets (M2-8): Admins change them
