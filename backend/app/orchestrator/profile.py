@@ -92,6 +92,9 @@ class SiteProfile:
     # asks for when the visitor wants follow-up, what the guided tour covers,
     # and a safety mode ("medical": no advice, urgent cases to emergency).
     starter_questions: list[str] = field(default_factory=list)
+    starter_questions_hi: list[str] = field(default_factory=list)   # for Hindi widgets
+    # Money shown in calculators and configurators (ISO 4217; India-first).
+    currency: str = "INR"
     guardrails: list[str] = field(default_factory=list)
     preferred_components: list[str] = field(default_factory=list)
     lead_fields: list[str] = field(default_factory=list)
@@ -147,6 +150,8 @@ class SiteProfile:
             widget_language=clean_ui(merged.get("widget_language")),
             greeting_hi=str(merged.get("greeting_hi") or "").strip()[:300],
             starter_questions=_clean_lines(merged.get("starter_questions"), 4, 80),
+            starter_questions_hi=_clean_lines(merged.get("starter_questions_hi"), 4, 80),
+            currency=_clean_currency(merged.get("currency")),
             guardrails=_clean_lines(merged.get("guardrails"), 10, 300),
             preferred_components=[c for c in _clean_lines(merged.get("preferred_components"), 8, 40)
                                   if c in _KNOWN_COMPONENTS],
@@ -155,6 +160,11 @@ class SiteProfile:
             safety="medical" if merged.get("safety") == "medical" else "",
             template=merged.get("template") if isinstance(merged.get("template"), dict) else {},
         )
+
+
+def _clean_currency(raw: Any) -> str:
+    code = str(raw or "").strip().upper()
+    return code if len(code) == 3 and code.isalpha() else "INR"
 
 
 def _clean_lines(raw: Any, limit: int, size: int) -> list[str]:

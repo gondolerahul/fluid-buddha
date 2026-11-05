@@ -119,7 +119,7 @@ export class Level2Shell {
     // "Awaken" invitation.
     this.playBtn = document.createElement('button');
     this.playBtn.className = 'l2-play';
-    this.playBtn.setAttribute('aria-label', t('awaken', { name: 'Pragya' }));
+    this.playBtn.setAttribute('aria-label', t('awaken'));
     this.playBtn.innerHTML = ICONS.play;
     this.playBtn.addEventListener('click', () => this.onPlay());
     root.appendChild(this.playBtn);
@@ -131,7 +131,7 @@ export class Level2Shell {
     const inputRow = this.div('l2-input');
     this.textarea = document.createElement('textarea');
     this.textarea.placeholder = t('placeholder');
-    this.textarea.setAttribute('aria-label', t('messageTo', { name: 'Pragya' }));
+    this.textarea.setAttribute('aria-label', t('messageTo'));
     this.textarea.rows = 1;
     this.textarea.addEventListener('input', () => this.onTyping());
     this.textarea.addEventListener('keydown', (e) => {
@@ -154,7 +154,7 @@ export class Level2Shell {
     // After close: a small orb that brings the presence back.
     this.reopenBtn = document.createElement('button');
     this.reopenBtn.className = 'l2-reopen l2-hidden';
-    this.reopenBtn.setAttribute('aria-label', t('openAgent', { name: 'Pragya' }));
+    this.reopenBtn.setAttribute('aria-label', t('openAgent'));
     this.reopenBtn.addEventListener('click', () => this.show());
     parent.appendChild(this.reopenBtn);
 

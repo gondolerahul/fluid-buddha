@@ -21,6 +21,8 @@ export interface SessionCallbacks {
   onStatus: (s: ConnectionStatus) => void;
   onUserTranscript: (text: string, interim: boolean) => void;
   onAgentMessage: (text: string, grounding?: Grounding) => void;
+  /** The visitor answered an action's card by voice. */
+  onActionAnswer?: (runId: string, confirm: boolean) => void;
   onComponent: (component: ComponentPayload) => void;
   onPatch: (targetSyncId: string, patch: Record<string, unknown>) => void;
   onSystem: (message: string) => void;
@@ -230,6 +232,12 @@ export class Session {
           this.bridge.setPersona(String(env.payload.persona || ''));
         } else if (env.type === 'action_proposal') {
           this.propose(env.payload as unknown as ActionCard);
+        } else if (env.type === 'action_answer') {
+          // "Yes, go ahead" / "no" said while the card is open (M2-8 follow-up).
+          this.cb.onActionAnswer?.(String(env.payload.run_id || ''), env.payload.confirm === true);
+        } else if (env.type === 'recap_request') {
+          // "Send me this" said out loud (M2-6 follow-up).
+          void this.recap((env.payload.email as string) || undefined);
         } else if (env.type === 'language') {
           this.setTalkLang(env.payload.lang);
         } else if (env.type === 'tour_plan') {

@@ -230,6 +230,8 @@ async def _email_owners(site_key: str, action: store.Action, run: dict[str, Any]
             pairs = [(line["label"], line["value"]) for line in run["summary"]]
             console = get_settings().console_url.rstrip("/")
             html = templates.layout(f"Quote request: {action.label}", templates.rows(pairs)
+                                    + templates.paragraph("A PDF of this request is in the console: "
+                                                          "your website → Actions → Recent runs.")
                                     + templates.button("Open leads", f"{console}/dashboard"))
             for to in await owners(db, tid):
                 await email_out.enqueue(db, email_out.Email(

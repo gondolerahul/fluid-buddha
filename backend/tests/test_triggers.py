@@ -54,7 +54,7 @@ def test_rules_reach_the_widget_and_events_are_counted():
         assert [r["id"] for r in seen] == [pricing["id"]]
         assert seen[0] == {"id": pricing["id"], "kind": "time_on_page", "seconds": 15,
                            "pages": ["/pricing"], "message": "Want help choosing a plan?",
-                           "action": "nudge", "max_per_day": 1, "priority": 80}
+                           "compose": False, "action": "nudge", "max_per_day": 1, "priority": 80}
         assert client.get("/widget/triggers", params={"key": "fbk_nope"}).status_code == 403
 
         # Events: distinct visitors per event; capped per day; bots and other rules ignored.

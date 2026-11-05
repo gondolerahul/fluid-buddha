@@ -152,7 +152,7 @@ async def view_recap(token: str, request: Request) -> HTMLResponse:
     html = page.render(recap, company=profile.company_name, agent_name=profile.agent_name,
                        design=design, site_url=site_url, cta_label=profile.cta_label,
                        cta_url=profile.cta_url, sdk_base=settings.widget_sdk_base)
-    resp = _html(html, csp=page.csp(settings.widget_sdk_base))
+    resp = _html(html, csp=page.csp(settings.widget_sdk_base, frames=page.embed_origins(recap)))
     if fresh:
         resp.set_cookie(VIEWER_COOKIE, viewer, max_age=2 * 365 * 86400, httponly=True,
                         samesite="lax", path="/r", secure=request.url.scheme == "https")

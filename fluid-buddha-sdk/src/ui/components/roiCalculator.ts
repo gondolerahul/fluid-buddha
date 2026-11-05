@@ -1,11 +1,16 @@
 // Interactive ROI calculator. Seeded from state (barge-in patches are merged by
 // the canvas, which rebuilds the card — Req 3.5.3/3.5.4).
 
+import { money } from './interactive';
+
 export function buildRoiCalculator(state: Record<string, unknown>): HTMLElement {
+  const cur = typeof state.currency === 'string' ? state.currency : undefined;
   const num = (v: unknown, d: number) => (typeof v === 'number' ? v : d);
   let seats = num(state.seats, 10);
   let monthlyCost = num(state.monthly_cost, 10000);
   let hoursSaved = num(state.hours_saved, 320);
+  // What an hour of the team's time is worth, in the component's currency.
+  const hourly = num(state.hourly_value, cur === 'INR' ? 500 : 45);
 
   const root = document.createElement('div');
   root.className = 'roi';
@@ -14,10 +19,10 @@ export function buildRoiCalculator(state: Record<string, unknown>): HTMLElement 
   const roiEl = document.createElement('span');
 
   const recompute = () => {
-    const laborValue = Math.round(hoursSaved * 45);
+    const laborValue = Math.round(hoursSaved * hourly);
     const net = laborValue - monthlyCost;
     const roi = monthlyCost > 0 ? Math.round((net / monthlyCost) * 100) : 0;
-    netEl.textContent = `$${net.toLocaleString()}`;
+    netEl.textContent = money(net, cur);
     netEl.className = net >= 0 ? 'roi-pos' : 'roi-neg';
     roiEl.textContent = `${roi}%`;
     roiEl.className = roi >= 0 ? 'roi-pos' : 'roi-neg';
@@ -50,7 +55,7 @@ export function buildRoiCalculator(state: Record<string, unknown>): HTMLElement 
 
   root.appendChild(row('Seats', 1, 200, 1, seats, (v) => String(v), (v) => (seats = v)));
   root.appendChild(row('Monthly cost', 0, 100000, 500, monthlyCost,
-    (v) => `$${v.toLocaleString()}`, (v) => (monthlyCost = v)));
+    (v) => money(v, cur), (v) => (monthlyCost = v)));
   root.appendChild(row('Hours saved/mo', 0, 2000, 10, hoursSaved,
     (v) => String(v), (v) => (hoursSaved = v)));
 

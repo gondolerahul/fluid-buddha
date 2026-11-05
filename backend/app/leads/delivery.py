@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from urllib.parse import quote
 import logging
 import time
 import uuid
@@ -82,7 +83,10 @@ def _slack_text(lead: dict[str, Any]) -> str:
             f"{(lead.get('summary') or '')[:400]}")
     if lead.get("source") == "conversation":   # they may still be on the site (M2-2)
         console = get_settings().console_url.rstrip("/")
-        text += f"\n<{console}/live|Join the conversation in the live inbox>"
+        # Straight to this visitor's conversation when we know it (M2-2 follow-up).
+        sid = lead.get("session_id")
+        link = f"{console}/live?session={quote(str(sid), safe='')}" if sid else f"{console}/live"
+        text += f"\n<{link}|Join the conversation in the live inbox>"
     return text
 
 

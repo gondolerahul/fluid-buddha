@@ -23,6 +23,11 @@ profile:
     - "What are your timings?"
     - "Do you accept my insurance?"
     - "Book an appointment"
+  starter_questions_hi:
+    - "अपॉइंटमेंट कैसे बुक करें?"
+    - "कौन से डॉक्टर उपलब्ध हैं?"
+    - "क्लिनिक का समय क्या है?"
+    - "क्या आप बीमा लेते हैं?"
   guardrails:
     - "You are not a doctor. Never give medical advice, a diagnosis, treatment suggestions or medicine doses — not even general ones."
     - "If someone describes symptoms, don't interpret them: suggest the right department or doctor from the site and offer to book an appointment."

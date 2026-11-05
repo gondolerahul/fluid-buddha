@@ -110,6 +110,16 @@ await tick();
 ok(rendered === 'ui_10', 'Canvas signals onRendered after paint');
 canvas.applyPatch('ui_10', { monthly_cost: 20000 });
 ok(container.querySelectorAll('.roi').length === 1, 'applyPatch rebuilds the card in place');
+// Money in the site's currency (M2-8 follow-up): rupees with Indian grouping.
+canvas.add({ sync_id: 'ui_money', component_type: 'configurator', initial_state: { currency: 'INR',
+  controls: [{ key: 'seats', label: 'Seats', type: 'slider', min: 1, max: 500, value: 100 }],
+  outputs: [{ label: 'Monthly', expr: 'seats * 1499', format: 'currency' },
+            { label: 'In dollars', expr: 'seats * 18', format: 'currency', unit: 'USD' }] } });
+const moneyCells = [...container.querySelectorAll('.cfg-out-val')].slice(-2).map((e) => e.textContent);
+ok(moneyCells[0] === '₹1,49,900' && moneyCells[1] === '$1,800', `a configurator shows the site's currency (${moneyCells.join(', ')})`);
+canvas.add({ sync_id: 'ui_roi_inr', component_type: 'roi_calculator', initial_state: { currency: 'INR', seats: 10, monthly_cost: 25000, hours_saved: 100 } });
+const roiNet = [...container.querySelectorAll('.roi')].pop().textContent;
+ok(roiNet.includes('₹25,000') && roiNet.includes('₹25,000') && !roiNet.includes('$'), 'the ROI calculator counts in rupees');
 
 // ---- 3b. New Advance component types render ----
 canvas.add({ sync_id: 'ui_wf', component_type: 'workflow', initial_state: { steps: [{ id: 's', label: 'Start', type: 'start' }, { id: 'p', label: 'Review', type: 'process' }] } });
@@ -522,6 +532,31 @@ offline.remove();
   await new Promise((r) => setTimeout(r, 150));
   ok(!w2.shadowRoot.querySelector('.fb-nudge'), 'a rule capped at once a day does not show again today');
   w2.remove();
+
+  // "Let the agent write it" (M2-3 follow-up): the page's opener from the server,
+  // or the rule's own words when it doesn't come.
+  window.sessionStorage.removeItem('fluidbuddha:trg:muted');
+  rules.splice(0, 1, { id: 'r2', kind: 'time_on_page', seconds: 0.05, pages: [], message: 'Fallback words',
+    compose: true, action: 'nudge', max_per_day: 5, priority: 50 });
+  let asked = null;
+  const base = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.includes('/widget/triggers/message?')) {
+      asked = new URL(u).searchParams;
+      return { ok: true, json: async () => ({ message: 'Comparing plans? Ask me which fits.' }) };
+    }
+    return base(url, init);
+  };
+  const w3 = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_trigger_site2', site: 'x' });
+  await settle();
+  await new Promise((r) => setTimeout(r, 200));
+  const n3 = w3.shadowRoot.querySelector('.fb-nudge');
+  ok(n3 && n3.textContent.includes('Comparing plans? Ask me which fits.'), "a composed trigger shows the agent's opener");
+  ok(asked && asked.get('rule_id') === 'r2' && asked.get('page') === window.location.pathname && asked.get('lang') === 'en',
+    'it asks for this page, rule and language');
+  w3.remove();
+  globalThis.fetch = base;
 }
 
 // ---- Variant tests (M2-4) ----
@@ -734,6 +769,21 @@ offline.remove();
   await settle();
   ok(posts.some((p) => p.u.endsWith('/actions/cancel') && p.body.run_id === 'run-2') && !aw.shadowRoot.querySelector('.fb-action'),
     'Cancel tells the server and closes');
+
+  // Answered out loud (M2-8 follow-up): the server says which, the card's own button is pressed.
+  aw.session.feed({ channel: 'EVENTS', type: 'action_proposal', payload: { id: 'run-3', kind: 'payment_link', label: 'Pay', summary: [] } });
+  aw.session.feed({ channel: 'EVENTS', type: 'action_answer', payload: { run_id: 'run-other', confirm: true } });
+  await settle();
+  ok(!posts.some((p) => p.body && p.body.run_id === 'run-3'), "an answer for another card doesn't touch this one");
+  aw.session.feed({ channel: 'EVENTS', type: 'action_answer', payload: { run_id: 'run-3', confirm: true } });
+  await settle();
+  ok(posts.some((p) => p.u.endsWith('/actions/confirm') && p.body.run_id === 'run-3'), 'a spoken yes confirms through the usual path');
+  aw.shadowRoot.querySelector('.fb-action .fb-consent-deny').click();
+  aw.session.feed({ channel: 'EVENTS', type: 'action_proposal', payload: { id: 'run-4', kind: 'trial', label: 'Trial', summary: [] } });
+  aw.session.feed({ channel: 'EVENTS', type: 'action_answer', payload: { run_id: 'run-4', confirm: false } });
+  await settle();
+  ok(posts.some((p) => p.u.endsWith('/actions/cancel') && p.body.run_id === 'run-4') && !aw.shadowRoot.querySelector('.fb-action'),
+    'a spoken no cancels');
   aw.remove();
 
   // A site's own component in a sandboxed iframe, and its message contract.
@@ -770,6 +820,72 @@ offline.remove();
   const chips = [...sw.shadowRoot.querySelectorAll('.chip')].map((c) => c.textContent);
   ok(chips.join('|') === 'Which courses do you offer?|What are the fees?', "the site's starter questions become the chips");
   sw.remove();
+
+  // The agent's name from the profile (M2-7 follow-up), and Hindi chips for a
+  // Hindi widget (M2-9 follow-up).
+  globalThis.fetch = async (url) => String(url).includes('/experiment/enroll')
+    ? { ok: true, json: async () => ({ defaults: { agent_name: 'Mira', languages: ['en', 'hi'],
+        starters: ['What are the fees?'], starters_hi: ['फ़ीस कितनी है?', 'कौन से कोर्स हैं?'] } }) }
+    : { ok: true, json: async () => ({}) };
+  const nw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_name_site', site: 'x', design: 'level1' });
+  await settle();
+  ok(nw.shadowRoot.querySelector('.profile .name').textContent === 'Mira'
+    && nw.shadowRoot.textContent.includes("Hi, I'm Mira.") && !nw.shadowRoot.textContent.includes('Pragya'),
+    "the widget uses the site's agent name");
+  ok(nw.shadowRoot.querySelector('.trigger').getAttribute('aria-label') === 'Talk to Mira', 'labels use the name too');
+  nw.remove();
+  const hw2 = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_name_site_hi', site: 'x',
+    design: 'level1', lang: 'hi' });
+  await settle();
+  await new Promise((r) => setTimeout(r, 100));
+  const hiChips = [...hw2.shadowRoot.querySelectorAll('.chip')].map((c) => c.textContent);
+  ok(hiChips.join('|') === 'फ़ीस कितनी है?|कौन से कोर्स हैं?', "a Hindi widget shows the site's Hindi starter questions");
+  ok(hw2.shadowRoot.textContent.includes('मैं Mira हूँ'), 'the Hindi greeting uses the name');
+  hw2.remove();
+}
+
+// ---- Recaps by voice and offered after a few answers (M2-6 follow-up) ----
+{
+  const posted = [];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.endsWith('/recap')) {
+      posted.push(JSON.parse(init.body));
+      return { ok: true, status: 200, json: async () => ({ url: 'https://agent.example.com/r/abc', emailed: false }) };
+    }
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'An answer.', session_id: 'sess-r',
+      grounding: { found: true, confidence: 0.9, sources: [] }, actions: [], components: [] }) };
+    return { ok: true, json: async () => ({ defaults: {} }) };
+  };
+  const rw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_recap_offer', site: 'x', design: 'level1' });
+  await settle();
+  const offer = () => [...rw.shadowRoot.querySelectorAll('.chip')].find((c) => c.textContent === 'Send me a recap');
+  rw.ask('First question?');
+  await settle();
+  rw.ask('Second question?');
+  await settle();
+  ok(!offer(), 'no recap offer after two answers');
+  rw.ask('Third question?');
+  await settle();
+  ok(!!offer(), 'after three answers the agent offers a recap');
+  offer().click();
+  await settle();
+  ok(posted.length === 1 && posted[0].session_id === 'sess-r' && !offer(), 'the offer makes the recap for this conversation');
+  ok(rw.shadowRoot.textContent.includes('https://agent.example.com/r/abc'), 'and shows the link');
+  rw.remove();
+
+  // A spoken "send me this" arrives as an event from the server.
+  const said = [];
+  const vs = new Session(
+    { backend: 'ws://x', api: 'http://x', key: 'fbk_voice_recap', site: 'x', intelligence: 'advance', design: 'level1',
+      position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
+    { setPersona() {}, navigate() {}, scrollTo() {} },
+    { onStatus() {}, onUserTranscript() {}, onAgentMessage: (t) => said.push(t), onComponent() {}, onPatch() {},
+      onSystem() {}, onPage() {} },
+  );
+  vs.feed({ channel: 'EVENTS', type: 'recap_request', payload: { email: null } });
+  await settle();
+  ok(posted.length === 2 && said.some((t) => t.includes('/r/abc')), 'a spoken request makes the recap too');
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

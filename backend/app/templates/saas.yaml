@@ -23,6 +23,11 @@ profile:
     - "Does it integrate with our tools?"
     - "Is there a free trial?"
     - "Show me how it works"
+  starter_questions_hi:
+    - "इसकी कीमत क्या है?"
+    - "यह हमारे टूल्स से कैसे जुड़ता है?"
+    - "क्या मुझे डेमो मिल सकता है?"
+    - "आपका डेटा कितना सुरक्षित है?"
   guardrails:
     - "Never promise features, discounts or delivery dates that the site's content doesn't state."
     - "For security or legal questions you can't ground, offer to connect the visitor with the team."

@@ -174,8 +174,10 @@ def parse_model_output(raw: str, *, question: str, competitors: Iterable[str] = 
 
 
 async def classify(question: str, *, competitors: Iterable[str] = (), found: bool = True,
-                   llm: Any = None, model: Optional[str] = None) -> Signals:
-    """The model's reading when there is one, else the keyword rules."""
+                   llm: Any = None, model: Optional[str] = None,
+                   tokens: Optional[list[int]] = None) -> Signals:
+    """The model's reading when there is one, else the keyword rules. A model
+    call adds its [input, output] tokens to ``tokens`` (for the usage record)."""
     competitors = list(competitors)
     if llm is None:
         return rules(question, competitors=competitors, found=found)
@@ -187,6 +189,11 @@ async def classify(question: str, *, competitors: Iterable[str] = (), found: boo
             messages=[ChatMessage(role="user", text=question[:1000])],
             model=model, temperature=0.0, max_output_tokens=160, thinking_budget=0,
         )
+        if tokens is not None:
+            from app.analytics.pricing import estimate_tokens
+
+            tokens[0] += resp.input_tokens or estimate_tokens(PROMPT) + estimate_tokens(question[:1000])
+            tokens[1] += resp.output_tokens or estimate_tokens(resp.text)
         parsed = parse_model_output(resp.text, question=question, competitors=competitors)
     except Exception as exc:
         logger.warning("turn classification failed, using rules: %s", exc)
@@ -214,13 +221,15 @@ async def classify_pending(db: Any, *, llm: Any = None, model: Optional[str] = N
         if r["site_key"] not in known:
             known[r["site_key"]] = (await load_profile(db, r["site_key"])).competitors
     gate = asyncio.Semaphore(CONCURRENCY)
+    spent: dict[str, list[int]] = {}   # site → [input, output] tokens
 
     async def one(r: Any) -> Signals:
         if r["intent"] == "greeting" or (r["question"] or "").startswith("("):
             return Signals()   # small talk, or a synthetic turn like the welcome
         async with gate:
             return await classify(r["question"], competitors=known[r["site_key"]],
-                                  found=bool(r["found"]), llm=llm, model=model)
+                                  found=bool(r["found"]), llm=llm, model=model,
+                                  tokens=spent.setdefault(r["site_key"], [0, 0]))
 
     results = await asyncio.gather(*(one(r) for r in rows))
     for r, sig in zip(rows, results):
@@ -230,6 +239,11 @@ async def classify_pending(db: Any, *, llm: Any = None, model: Optional[str] = N
             {"o": sig.objections, "c": sig.competitors, "f": sig.feature_request,
              "b": sig.buying_signal, "id": r["id"]})
     await db.commit()
+    # The labelling's model cost goes on each site's usage and cost (M2-5 follow-up).
+    from app.analytics.usage import record_background
+
+    for site_key, (tin, tout) in spent.items():
+        await record_background(db, site_key, input_tokens=tin, output_tokens=tout)
     return len(rows)
 
 

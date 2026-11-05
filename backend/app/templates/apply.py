@@ -23,11 +23,12 @@ from app.orchestrator.profile import DEFAULT_BRAND_VOICE, SiteProfile, load_prof
 from app.templates import TemplatePack
 from app.triggers import store as triggers
 
-FIELDS = ("brand_voice", "greeting", "greeting_hi", "starter_questions", "guardrails",
+FIELDS = ("brand_voice", "greeting", "greeting_hi", "starter_questions", "starter_questions_hi", "guardrails",
           "preferred_components", "lead_fields", "tour_outline", "safety")
 LABELS = {
     "brand_voice": "Voice", "greeting": "Greeting", "greeting_hi": "Greeting in Hindi",
-    "starter_questions": "Starter questions", "guardrails": "Rules the agent follows",
+    "starter_questions": "Starter questions", "starter_questions_hi": "Starter questions in Hindi",
+    "guardrails": "Rules the agent follows",
     "preferred_components": "Preferred components", "lead_fields": "Details to ask for",
     "tour_outline": "What the tour covers", "safety": "Medical safety",
 }

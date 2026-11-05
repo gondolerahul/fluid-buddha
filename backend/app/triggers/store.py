@@ -37,6 +37,9 @@ class RuleIn(BaseModel):
     within_days: Optional[int] = Field(None, ge=1, le=90)       # return_visit
     pages: list[str] = Field(default_factory=list, max_length=20)
     message: str = Field(..., min_length=1, max_length=280)
+    # Let the agent write the opener for the page the visitor is on; ``message``
+    # is the fallback (M2-3 follow-up).
+    compose: bool = False
     action: Literal["nudge", "open"] = "nudge"
     max_per_day: int = Field(1, ge=1, le=10)
     priority: int = Field(50, ge=0, le=100)
@@ -71,7 +74,7 @@ class RuleIn(BaseModel):
         return {k: getattr(self, k) for k in keys}
 
 
-_COLS = ("id, name, enabled, kind, params, pages, message, action, max_per_day, priority, "
+_COLS = ("id, name, enabled, kind, params, pages, message, compose, action, max_per_day, priority, "
          "created_at, updated_at")
 
 
@@ -79,7 +82,7 @@ def _row(r: Any) -> dict:
     params = r["params"] if isinstance(r["params"], dict) else json.loads(r["params"] or "{}")
     return {"id": str(r["id"]), "name": r["name"], "enabled": r["enabled"], "kind": r["kind"],
             **params, "pages": list(r["pages"] or []), "message": r["message"],
-            "action": r["action"], "max_per_day": r["max_per_day"], "priority": r["priority"],
+            "compose": bool(r["compose"]), "action": r["action"], "max_per_day": r["max_per_day"], "priority": r["priority"],
             "updated_at": r["updated_at"].isoformat()}
 
 
@@ -98,22 +101,25 @@ async def create(db: AsyncSession, site_key: str, rule: RuleIn) -> dict:
         raise ValueError(f"A site can have up to {MAX_RULES} triggers.")
     r = (await db.execute(text(
         "INSERT INTO trigger_rules (id, site_key, name, enabled, kind, params, pages, message, "
-        "action, max_per_day, priority) VALUES (:id, :s, :n, :e, :k, CAST(:p AS jsonb), :pg, "
-        f":m, :a, :mx, :pr) RETURNING {_COLS}"),
+        "compose, action, max_per_day, priority) VALUES (:id, :s, :n, :e, :k, CAST(:p AS jsonb), :pg, "
+        f":m, :c, :a, :mx, :pr) RETURNING {_COLS}"),
         {"id": uuid.uuid4(), "s": site_key, "n": rule.name, "e": rule.enabled, "k": rule.kind,
-         "p": json.dumps(rule.params()), "pg": rule.pages, "m": rule.message, "a": rule.action,
-         "mx": rule.max_per_day, "pr": rule.priority})).mappings().one()
+         "p": json.dumps(rule.params()), "pg": rule.pages, "m": rule.message, "c": rule.compose,
+         "a": rule.action, "mx": rule.max_per_day, "pr": rule.priority})).mappings().one()
     return _row(r)
 
 
 async def update(db: AsyncSession, site_key: str, rule_id: uuid.UUID, rule: RuleIn) -> Optional[dict]:
     r = (await db.execute(text(
         "UPDATE trigger_rules SET name = :n, enabled = :e, kind = :k, params = CAST(:p AS jsonb), "
-        "pages = :pg, message = :m, action = :a, max_per_day = :mx, priority = :pr, "
+        "pages = :pg, message = :m, compose = :c, action = :a, max_per_day = :mx, priority = :pr, "
         f"updated_at = now() WHERE id = :id AND site_key = :s RETURNING {_COLS}"),
         {"id": rule_id, "s": site_key, "n": rule.name, "e": rule.enabled, "k": rule.kind,
-         "p": json.dumps(rule.params()), "pg": rule.pages, "m": rule.message, "a": rule.action,
-         "mx": rule.max_per_day, "pr": rule.priority})).mappings().first()
+         "p": json.dumps(rule.params()), "pg": rule.pages, "m": rule.message, "c": rule.compose,
+         "a": rule.action, "mx": rule.max_per_day, "pr": rule.priority})).mappings().first()
+    if r:
+        # What the agent wrote for the old version of the rule is stale.
+        await db.execute(text("DELETE FROM trigger_messages WHERE rule_id = :id"), {"id": rule_id})
     return _row(r) if r else None
 
 
@@ -125,7 +131,7 @@ async def delete(db: AsyncSession, site_key: str, rule_id: uuid.UUID) -> bool:
 
 def public(rule: dict) -> dict:
     """What the widget needs (no names or timestamps)."""
-    return {k: rule[k] for k in ("id", "kind", "pages", "message", "action", "max_per_day",
+    return {k: rule[k] for k in ("id", "kind", "pages", "message", "compose", "action", "max_per_day",
                                  "priority", "seconds", "percent", "visits", "within_days")
             if k in rule}
 

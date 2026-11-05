@@ -23,6 +23,11 @@ profile:
     - "What are the fees?"
     - "How do admissions work?"
     - "Are there scholarships?"
+  starter_questions_hi:
+    - "आप कौन से कोर्स कराते हैं?"
+    - "फ़ीस कितनी है?"
+    - "एडमिशन कैसे होता है?"
+    - "क्या स्कॉलरशिप मिलती है?"
   guardrails:
     - "Never guarantee admission, results, marks or placements."
     - "Quote deadlines, fees and eligibility only from the site's content; if unsure, say so and offer to connect the visitor with admissions."

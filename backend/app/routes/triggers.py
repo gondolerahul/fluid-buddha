@@ -5,6 +5,9 @@ Public (the widget, from the customer's site; key and domain checked like
 every public call, bots ignored):
 
     GET  /widget/triggers?key=…          the site's enabled rules
+    GET  /widget/triggers/message?key=…&rule_id=…&page=…&title=…&lang=…
+                                         the agent's opener for this page (rules
+                                         with "let the agent write it"; cached)
     POST /widget/triggers/event          {key, visitor, rule_id, event, page?}
                                          event: shown | clicked | dismissed | engaged
                                          (JSON sent as text/plain is fine: sendBeacon)
@@ -48,6 +51,39 @@ async def site_triggers(request: Request,
     except PublicAccessError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, exc.reason)
     return {"rules": [triggers.public(r) for r in rules]}
+
+
+@public.get("/message")
+async def trigger_message(request: Request,
+                          key: str = Query(..., min_length=1, max_length=200),
+                          rule_id: uuid.UUID = Query(...),
+                          page: str = Query("/", max_length=500),
+                          title: str = Query("", max_length=300),
+                          lang: str = Query("en", max_length=5)) -> dict:
+    from app.config import get_settings
+    from app.orchestrator.profile import load_profile
+    from app.triggers.compose import message_for
+
+    settings = get_settings()
+    try:
+        async with session_scope() as db:
+            resolved = await resolve_public_site(db, key=key, site=None, intelligence=None,
+                                                 origin=request.headers.get("origin"))
+            rule = next((r for r in await triggers.rules(db, resolved.site_key, enabled_only=True)
+                         if r["id"] == str(rule_id)), None) if resolved.website is not None else None
+            if rule is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "No such trigger")
+            if is_bot(request.headers.get("user-agent"), None):
+                return {"message": rule["message"]}
+            rt = getattr(request.app.state, "runtime", None)
+            llm = None if settings.mock_ai or rt is None else rt.engines.llm
+            profile = await load_profile(db, resolved.site_key)
+            message = await message_for(db, site_key=resolved.site_key, rule=rule, page=page,
+                                        title=title, lang=lang, llm=llm, model=settings.fast_model,
+                                        company=profile.company_name)
+    except PublicAccessError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, exc.reason)
+    return {"message": message}
 
 
 @public.post("/event", status_code=status.HTTP_202_ACCEPTED)

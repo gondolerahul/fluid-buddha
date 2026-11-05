@@ -9,12 +9,15 @@
 // console can show each rule's performance.
 
 import { FluidBuddhaConfig } from './config';
+import { getLang } from '../i18n';
 
 export interface TriggerRule {
   id: string;
   kind: 'time_on_page' | 'scroll_depth' | 'exit_intent' | 'return_visit';
   pages: string[];
   message: string;
+  /** The agent writes the opener for the page; `message` is the fallback. */
+  compose?: boolean;
   action: 'nudge' | 'open';
   max_per_day: number;
   priority: number;
@@ -175,7 +178,24 @@ export class Triggers {
     this.disarm();
     this.local?.setItem(`fluidbuddha:trg:${rule.id}`, JSON.stringify({ d: today(), n: this.shownToday(rule) + 1 }));
     this.report(rule, 'shown');
-    this.fire(rule);
+    if (!rule.compose) {
+      this.fire(rule);
+      return;
+    }
+    // The page's own opener, written by the agent (cached server-side); the
+    // rule's message if it doesn't arrive quickly.
+    let done = false;
+    const show = (message?: string) => {
+      if (done) return;
+      done = true;
+      if (!this.busy()) this.fire(message ? { ...rule, message } : rule);
+    };
+    setTimeout(() => show(), 1500);
+    const q = new URLSearchParams({ key: this.config.key || '', rule_id: rule.id, page: window.location.pathname,
+      title: window.document.title.slice(0, 200), lang: getLang() });
+    fetch(`${this.base}/widget/triggers/message?${q}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { message?: string } | null) => show(d?.message || undefined), () => show());
   }
 
   private watch(rule: TriggerRule): void {
@@ -197,7 +217,9 @@ export class Triggers {
       this.cleanups.push(() => window.removeEventListener('scroll', onScroll));
     } else if (rule.kind === 'exit_intent') {
       // Desktop: the pointer leaves through the top of the window (towards the
-      // tabs or the address bar). Only after a few seconds on the page.
+      // tabs or the address bar). Touch screens: having read down the page, a
+      // fast flick back up towards the top (on the way to the address bar or
+      // back). Only after a few seconds on the page.
       let ready = false;
       later(5000, () => (ready = true));
       const onOut = (e: MouseEvent) => {
@@ -205,6 +227,21 @@ export class Triggers {
       };
       document.addEventListener('mouseout', onOut);
       this.cleanups.push(() => document.removeEventListener('mouseout', onOut));
+      if (window.matchMedia?.('(pointer: coarse)').matches) {
+        let deepest = 0;
+        let last = { y: window.scrollY, t: Date.now() };
+        const onScroll = () => {
+          const y = window.scrollY;
+          const now = Date.now();
+          deepest = Math.max(deepest, y);
+          const speed = (last.y - y) / Math.max(1, now - last.t);   // px/ms, up is positive
+          // Scrolled at least a screen down, then flung up fast into the top quarter.
+          if (ready && deepest > window.innerHeight && speed > 1.2 && y < deepest * 0.25) this.go(rule);
+          last = { y, t: now };
+        };
+        window.addEventListener('scroll', onScroll, { passive: true });
+        this.cleanups.push(() => window.removeEventListener('scroll', onScroll));
+      }
     }
   }
 

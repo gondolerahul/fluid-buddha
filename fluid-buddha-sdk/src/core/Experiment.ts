@@ -39,6 +39,9 @@ interface Defaults {
   greeting_hi?: string | null;
   /** Suggestion chips from the site's template (M2-9). */
   starters?: string[] | null;
+  starters_hi?: string[] | null;
+  /** The agent's name from the site's profile. */
+  agent_name?: string | null;
 }
 
 interface Enrolment {

@@ -37,6 +37,7 @@ class ProfilePack(BaseModel):
     greeting_hi: str = Field("", max_length=300)
     personas: list[PersonaPack] = Field(..., min_length=1, max_length=8)
     starter_questions: list[str] = Field(default_factory=list, max_length=4)
+    starter_questions_hi: list[str] = Field(default_factory=list, max_length=4)
     guardrails: list[str] = Field(default_factory=list, max_length=10)
     preferred_components: list[str] = Field(default_factory=list, max_length=8)
     lead_fields: list[str] = Field(default_factory=list, max_length=6)

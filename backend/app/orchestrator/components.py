@@ -19,6 +19,9 @@ KNOWN_COMPONENTS = {
 }
 
 
+MONEY_COMPONENTS = {"roi_calculator", "configurator", "scenario_simulator"}
+
+
 def normalize_component(component_type: Any, state: Any,
                         site_key: str | None = None) -> tuple[str, dict]:
     """Return a ``(component_type, initial_state)`` pair safe to ship.
@@ -35,11 +38,19 @@ def normalize_component(component_type: Any, state: Any,
             ctype, expanded = render(custom, state)
             if ctype == "embed":
                 return ctype, expanded
-            return normalize_component(ctype, expanded)
+            return _with_currency(site_key, *normalize_component(ctype, expanded))
     ctype = component_type if component_type in KNOWN_COMPONENTS else "table"
     if not isinstance(state, dict):
         return ctype, {}
     out: dict[str, Any] = {}
     for key, val in state.items():
         out[key] = val[:_MAX_ITEMS] if isinstance(val, list) else val
-    return ctype, out
+    return _with_currency(site_key, ctype, out) if site_key else (ctype, out)
+
+
+def _with_currency(site_key: str, ctype: str, state: dict) -> tuple[str, dict]:
+    """Money in the site's currency (M2-8 follow-up: ₹ for an Indian site)."""
+    if ctype in MONEY_COMPONENTS and not state.get("currency"):
+        from app.orchestrator.profile import profile_for
+        state = {**state, "currency": profile_for(site_key).currency}
+    return ctype, state

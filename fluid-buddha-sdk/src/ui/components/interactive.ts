@@ -175,11 +175,23 @@ export function evalExpr(expr: string, vars: Record<string, number>): number {
   }
 }
 
-/** Format a number for display per a coarse format hint. */
-export function formatValue(v: number, format?: string, unit?: string): string {
-  let s: string;
-  if (format === 'currency') s = `$${Math.round(v).toLocaleString()}`;
-  else if (format === 'percent') s = `${Math.round(v)}%`;
-  else s = Math.round(v).toLocaleString();
-  return unit && format !== 'currency' && format !== 'percent' ? `${s} ${unit}` : s;
+/** A whole amount of money in `currency` (ISO 4217; the server sets the
+ *  site's, M2-8 follow-up). Rupees use Indian grouping: ₹1,49,999. */
+export function money(v: number, currency?: string): string {
+  const n = Math.round(v);
+  const code = (currency || 'USD').toUpperCase();
+  if (code === 'INR') return `${n < 0 ? '−' : ''}₹${Math.abs(n).toLocaleString('en-IN')}`;
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency: code, maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `${code} ${n.toLocaleString()}`;
+  }
+}
+
+/** Format a number for display per a coarse format hint. A currency output
+ *  may name its own `unit` (a currency code); else the component's currency. */
+export function formatValue(v: number, format?: string, unit?: string, currency?: string): string {
+  if (format === 'currency') return money(v, unit && /^[A-Za-z]{3}$/.test(unit) ? unit : currency);
+  const s = format === 'percent' ? `${Math.round(v)}%` : Math.round(v).toLocaleString();
+  return unit && format !== 'percent' ? `${s} ${unit}` : s;
 }

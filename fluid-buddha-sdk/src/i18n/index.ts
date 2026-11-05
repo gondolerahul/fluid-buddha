@@ -11,7 +11,7 @@ import { loadHindi } from './load';
 
 const en = {
   greeting:
-    "Hi, I'm Pragya. Tap the mic and ask me anything — I can show you around, run the numbers, and answer with grounded facts.",
+    "Hi, I'm {name}. Tap the mic and ask me anything — I can show you around, run the numbers, and answer with grounded facts.",
   talkTo: 'Talk to {name}',
   messageTo: 'Message {name}',
   close: 'Close',
@@ -78,6 +78,7 @@ const en = {
   recapReady: "Here's your recap. Open it on any device or forward it to your team: {url}",
   recapEmailed: " I've also emailed it to {email}.",
   recapFailed: "I couldn't make a recap just now. Please try again in a moment.",
+  recapOffer: 'Send me a recap',
   thanks: 'Thanks — the team will be in touch soon.',
   sendFailed: "Couldn't send that just now. Please try again.",
   submit: 'Submit',
@@ -104,6 +105,16 @@ export type Lang = 'en' | 'hi';
 export const STRINGS: { en: Record<StringKey, string>; hi?: Record<StringKey, string> } = { en };
 
 let current: Lang = 'en';
+let agent = 'Pragya';
+
+/** The agent's name from the site's profile (M2-7 follow-up); default Pragya. */
+export function setAgentName(name: string | null | undefined): void {
+  const n = (name || '').trim().slice(0, 40);
+  if (n) agent = n;
+}
+export function agentName(): string {
+  return agent;
+}
 
 export function setLang(lang: Lang): void {
   current = lang === 'hi' && STRINGS.hi ? 'hi' : 'en';
@@ -133,7 +144,8 @@ export function getLang(): Lang {
 /** The current language's text for `key`, with {placeholders} filled in. */
 export function t(key: StringKey, vars?: Record<string, string | number>): string {
   const s = (current === 'hi' && STRINGS.hi?.[key]) || en[key];
-  return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
+  const all: Record<string, string | number> = { name: agent, ...vars };
+  return s.replace(/\{(\w+)\}/g, (m, k) => (k in all ? String(all[k]) : m));
 }
 
 /** The site's language settings, as the server sends them (M2-7). */

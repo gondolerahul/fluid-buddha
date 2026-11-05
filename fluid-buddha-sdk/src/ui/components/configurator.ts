@@ -51,7 +51,7 @@ export function buildConfigurator(state: Record<string, unknown>, ctx?: RenderCo
 
   const recompute = () => {
     for (const { o, v } of outEls) {
-      v.textContent = formatValue(evalExpr(o.expr ?? '0', vals), o.format, o.unit);
+      v.textContent = formatValue(evalExpr(o.expr ?? '0', vals), o.format, o.unit, state.currency as string | undefined);
     }
   };
 

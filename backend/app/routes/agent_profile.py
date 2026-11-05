@@ -67,6 +67,8 @@ class ProfileUpdate(BaseModel):
     widget_language: Optional[Literal["auto", "en", "hi"]] = None
     greeting_hi: Optional[str] = Field(None, max_length=300)
     starter_questions: Optional[list[str]] = Field(None, max_length=4)
+    starter_questions_hi: Optional[list[str]] = Field(None, max_length=4)
+    currency: Optional[str] = Field(None, pattern=r"^[A-Za-z]{3}$")
     guardrails: Optional[list[str]] = Field(None, max_length=10)
     preferred_components: Optional[list[str]] = Field(None, max_length=8)
     lead_fields: Optional[list[str]] = Field(None, max_length=6)

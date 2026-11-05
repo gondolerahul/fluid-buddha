@@ -273,6 +273,25 @@ async def list_runs(site: tenancy.Website = Depends(owned_website),
     return {"runs": await store.list_runs(db, site.site_key, limit=100)}
 
 
+@admin.get("/action-runs/{run_id}/quote.pdf")
+async def quote_pdf(run_id: str, site: tenancy.Website = Depends(owned_website),
+                    db: AsyncSession = Depends(get_session)) -> Response:
+    """A confirmed quote request as a one-page PDF (M2-8 follow-up)."""
+    from app.actions.pdf import quote_pdf as render
+    from app.orchestrator.profile import ensure_profile
+
+    run = await store.get_run(db, site.site_key, _uuid(run_id))
+    if run is None or run["kind"] != "quote_request" or run["status"] != "done":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such quote request")
+    profile = await ensure_profile(site.site_key)
+    action = next((a for a in await store.list_actions(db, site.site_key)
+                   if a.name == run["action_name"]), None)
+    pdf = render(company=profile.company_name, action_label=action.label if action else run["action_name"],
+                 run=run)
+    return Response(pdf, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="quote-{str(run["id"])[:8]}.pdf"'})
+
+
 # ---- console: components -----------------------------------------------------------
 
 class ComponentIn(BaseModel):

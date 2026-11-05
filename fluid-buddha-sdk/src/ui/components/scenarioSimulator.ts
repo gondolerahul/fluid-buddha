@@ -50,7 +50,7 @@ export function buildScenarioSimulator(state: Record<string, unknown>, ctx?: Ren
     const max = Math.max(1, ...computed.map((v) => Math.abs(v)));
     bars.forEach((b, i) => {
       b.fill.style.width = `${Math.max(0, Math.min(100, (computed[i] / max) * 100))}%`;
-      b.val.textContent = formatValue(computed[i], b.s.format, b.s.unit);
+      b.val.textContent = formatValue(computed[i], b.s.format, b.s.unit, state.currency as string | undefined);
     });
   };
 

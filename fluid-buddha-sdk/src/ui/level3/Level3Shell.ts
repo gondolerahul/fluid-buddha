@@ -107,8 +107,8 @@ export class Level3Shell {
     const inputWrap = this.div('l3-summon-input');
     this.summonInput = document.createElement('textarea');
     this.summonInput.rows = 1;
-    this.summonInput.placeholder = t('askAnything', { name: 'Pragya' });
-    this.summonInput.setAttribute('aria-label', t('ask', { name: 'Pragya' }));
+    this.summonInput.placeholder = t('askAnything');
+    this.summonInput.setAttribute('aria-label', t('ask'));
     this.summonInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.submit(); }
       else if (e.key === 'Escape') this.dismissSummon();
@@ -127,7 +127,7 @@ export class Level3Shell {
     // A persistent mote of light — the minimal, ambient invocation affordance.
     const seed = document.createElement('button');
     seed.className = 'l3-seed';
-    seed.setAttribute('aria-label', t('summon', { name: 'Pragya' }));
+    seed.setAttribute('aria-label', t('summon'));
     seed.addEventListener('click', () => this.summon());
     root.appendChild(seed);
 

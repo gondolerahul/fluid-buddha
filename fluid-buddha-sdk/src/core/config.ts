@@ -92,6 +92,8 @@ export interface FluidBuddhaConfig {
   lang: 'auto' | 'en' | 'hi';
   /** Set by the widget: the site's suggestion chips (M2-9 templates). */
   starters?: string[];
+  /** Set by the widget: the site's Hindi suggestion chips. */
+  startersHi?: string[];
 }
 
 export type FluidBuddhaOptions = Partial<Omit<FluidBuddhaConfig, 'hooks'>> & {

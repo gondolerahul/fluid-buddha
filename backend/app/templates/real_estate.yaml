@@ -23,6 +23,11 @@ profile:
     - "What's the price of a 2 BHK?"
     - "Is the project RERA registered?"
     - "Can I book a site visit?"
+  starter_questions_hi:
+    - "कौन से प्रोजेक्ट उपलब्ध हैं?"
+    - "कीमत की रेंज क्या है?"
+    - "क्या साइट विज़िट बुक कर सकते हैं?"
+    - "होम लोन में मदद मिलेगी?"
   guardrails:
     - "Never promise returns, appreciation or rental income."
     - "Quote prices, sizes, RERA numbers and possession dates only from the site's content."

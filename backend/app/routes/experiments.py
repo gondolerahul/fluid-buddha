@@ -122,7 +122,10 @@ async def enroll(request: Request) -> dict:
                 "languages": profile.languages, "widget_language": profile.widget_language,
                 "greeting_hi": profile.greeting_hi or None,
                 # Suggestion chips (M2-9 templates); empty = the widget's own.
-                "starters": profile.starter_questions}
+                "starters": profile.starter_questions,
+                "starters_hi": profile.starter_questions_hi,
+                # The agent's name for the widget's labels (M2-7 follow-up).
+                "agent_name": profile.agent_name}
     return {**(result or _NO_ARM), "defaults": defaults}
 
 

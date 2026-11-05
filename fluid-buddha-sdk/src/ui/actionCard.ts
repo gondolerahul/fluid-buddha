@@ -20,6 +20,12 @@ export interface ActionOutcome {
   error?: string | null;
 }
 
+/** The visitor answered `runId`'s card out loud (M2-8 follow-up): press its button. */
+export function answerCard(root: ShadowRoot, runId: string, confirm: boolean): void {
+  const card = [...root.querySelectorAll<HTMLElement>('.fb-action')].find((e) => e.dataset.run === runId);
+  card?.querySelector<HTMLButtonElement>(`button[data-answer="${confirm ? 'yes' : 'no'}"]:not(:disabled)`)?.click();
+}
+
 /** Show `card`; `answer(true)` confirms (resolving with the outcome),
  *  `answer(false)` cancels. */
 export function actionPrompt(
@@ -34,6 +40,7 @@ export function actionPrompt(
     return e;
   };
   const backdrop = el('div', 'fb-consent fb-action');
+  backdrop.dataset.run = card.id;
   const box = el('div', 'fb-consent-card');
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-modal', 'true');
@@ -44,6 +51,8 @@ export function actionPrompt(
   const buttons = el('div', 'fb-consent-actions');
   const cancel = el('button', 'fb-consent-deny', t('cancel')) as HTMLButtonElement;
   const ok = el('button', 'fb-consent-allow', t('confirm')) as HTMLButtonElement;
+  cancel.dataset.answer = 'no';
+  ok.dataset.answer = 'yes';
   cancel.type = ok.type = 'button';
   buttons.append(cancel, ok);
   box.append(el('h2', undefined, card.label), rows, note, buttons);

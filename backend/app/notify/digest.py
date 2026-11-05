@@ -166,9 +166,15 @@ async def build(db: AsyncSession, tenant_id: uuid.UUID, *, now: Optional[datetim
         "FROM conversation_turns WHERE site_key = ANY(:k) AND created_at >= :since AND created_at < :now "
         "AND coalesce(intent, '') <> 'greeting' AND question NOT LIKE '(%' "
         "GROUP BY q_norm ORDER BY count(*) DESC LIMIT 5")).mappings().all()
+    # A site with no knowledge yet can't answer anything, so its "gaps" are just
+    # every question: list it as needing content instead (M2-5 follow-up).
+    empty = [r[0] for r in (await one(
+        "SELECT w.site_key FROM tenant_websites w WHERE w.site_key = ANY(:k) "
+        "AND NOT EXISTS (SELECT 1 FROM tenant_sources s WHERE s.website_id = w.id)")).all()]
+    p["full"] = [k for k in keys if k not in empty]
     gaps = (await one(
         "SELECT (array_agg(question ORDER BY created_at DESC))[1] AS q, count(*) AS n "
-        "FROM conversation_turns t WHERE site_key = ANY(:k) AND created_at >= :since AND created_at < :now "
+        "FROM conversation_turns t WHERE site_key = ANY(:full) AND created_at >= :since AND created_at < :now "
         "AND NOT found AND coalesce(intent, '') <> 'greeting' AND question NOT LIKE '(%' "
         "AND NOT EXISTS (SELECT 1 FROM conversation_turns o WHERE o.site_key = t.site_key "
         "AND o.q_norm = t.q_norm AND o.created_at < :since) "
@@ -207,6 +213,7 @@ async def build(db: AsyncSession, tenant_id: uuid.UUID, *, now: Optional[datetim
         "leads": int(leads["now_"]), "leads_prev": int(leads["prev"]),
         "top_questions": [{"question": r["q"], "count": int(r["n"])} for r in top],
         "new_gaps": [{"question": r["q"], "count": int(r["n"])} for r in gaps],
+        "sites_without_content": [names[k] for k in empty],
         "objections": [{"type": r["k"], "label": OBJECTION_LABELS.get(r["k"], r["k"]),
                         "count": int(r["n"])} for r in objections],
         "competitors": [{"name": r["k"], "count": int(r["n"])} for r in competitors],
@@ -236,6 +243,8 @@ def render(data: dict, *, account: str, unsubscribe_url: Optional[str] = None) -
     sections: list[tuple[str, list[str]]] = [
         ("Top questions", [f"{q['question']} ({q['count']})" for q in data["top_questions"]]),
         ("New questions the agent couldn't answer", [f"{q['question']} ({q['count']})" for q in data["new_gaps"]]),
+        ("Websites with no content yet (add pages or documents so the agent can answer)",
+         list(data.get("sites_without_content") or [])),
         ("Objections", [f"{o['label']}: {o['count']}" for o in data["objections"]]),
         ("Competitors mentioned", [f"{c['name']}: {c['count']}" for c in data["competitors"]]),
         ("A/B tests", [f"{x['site']} · {x['name']}: {x['verdict']} ({x['visitors']} visitors)"

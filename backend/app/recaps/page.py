@@ -14,7 +14,7 @@ import json
 import re
 from html import escape
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 from app.design.system import DesignSystem
 
@@ -37,11 +37,30 @@ def sdk_origin(sdk_base: str) -> str:
     return f"{u.scheme}://{u.netloc}" if u.scheme in ("http", "https") and u.netloc else ""
 
 
-def csp(sdk_base: str) -> str:
+def embed_origins(recap: dict) -> list[str]:
+    """https origins of the site's own embedded components shown in this recap
+    (M2-8 follow-up): the only frames the page may load."""
+    out: list[str] = []
+    for turn in (recap.get("content") or {}).get("turns") or []:
+        for c in turn.get("components") or []:
+            if c.get("component_type") != "embed":
+                continue
+            src = str((c.get("initial_state") or {}).get("src") or "")
+            parts = urlsplit(src)
+            if parts.scheme == "https" and parts.netloc and re.fullmatch(r"[A-Za-z0-9.:-]+", parts.netloc):
+                origin = f"https://{parts.netloc}"
+                if origin not in out:
+                    out.append(origin)
+    return out[:8]
+
+
+def csp(sdk_base: str, frames: Optional[list[str]] = None) -> str:
     origin = sdk_origin(sdk_base)
+    frame_src = f"frame-src {' '.join(frames)}; " if frames else ""
     return ("default-src 'none'; "
             f"script-src {origin or chr(39) + 'none' + chr(39)}; "
             "style-src 'unsafe-inline'; img-src https: data:; font-src https: data:; "
+            + frame_src +
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 

@@ -25,9 +25,9 @@ import { AuraCanvas, AuraState } from './aura/AuraCanvas';
 import { stylesFor } from './styles';
 import { callBar, callPrompt } from './call';
 import { consentPrompt } from './consent';
-import { actionPrompt } from './actionCard';
+import { actionPrompt, answerCard } from './actionCard';
 import { showNudge } from './nudge';
-import { Lang, getLang, pickLang, prepareLang, setLang, t } from '../i18n';
+import { Lang, agentName, getLang, pickLang, prepareLang, setAgentName, setLang, t } from '../i18n';
 
 const ICONS = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
@@ -81,6 +81,9 @@ export class FluidBuddhaElement extends HTMLElement {
   /** The embed chose its design level (data-design / options). */
   private designSet = false;
   private accentSet = false;
+  private chipsEl: HTMLElement | null = null;
+  private answers = 0;
+  private recapOffered = false;
   /** The greeting is the site's fixed one, which the server also speaks on
    *  open: show it once (level 1 already shows it as the first message). */
   private greetEcho = false;
@@ -169,6 +172,8 @@ export class FluidBuddhaElement extends HTMLElement {
     // can't be); English shows at once.
     const site = this.experiment?.eligible ? this.experiment.defaults : null;
     if (site?.starters?.length) this.config.starters = site.starters.slice(0, 4);
+    if (site?.starters_hi?.length) this.config.startersHi = site.starters_hi.slice(0, 4);
+    if (site?.agent_name) setAgentName(site.agent_name);
     if (pickLang(this.config.lang, site) === 'hi') {
       void prepareLang('hi').then((lang) => this.reveal(lang, site?.greeting_hi));
     } else {
@@ -258,7 +263,7 @@ export class FluidBuddhaElement extends HTMLElement {
 
     const bar = document.createElement('div');
     bar.className = 'fbpage-bar';
-    bar.append(h('div', 'fbpage-brand', 'Pragya'));
+    bar.append(h('div', 'fbpage-brand', agentName()));
     const back = h('button', 'fbpage-back', t('close'));
     back.addEventListener('click', () => surface.classList.add('hidden'));
     bar.append(back);
@@ -325,6 +330,7 @@ export class FluidBuddhaElement extends HTMLElement {
       requestCall: (name) => callPrompt(root, name),
       onCall: callBar(root),
       onProposal: (c, answer) => actionPrompt(root, c, answer),
+      onActionAnswer: (runId, yes) => answerCard(root, runId, yes),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -360,6 +366,7 @@ export class FluidBuddhaElement extends HTMLElement {
       requestCall: (name) => callPrompt(root, name),
       onCall: callBar(root),
       onProposal: (c, answer) => actionPrompt(root, c, answer),
+      onActionAnswer: (runId, yes) => answerCard(root, runId, yes),
     });
     this.session.enableWelcome(() => this.pageContext());
   }
@@ -370,7 +377,7 @@ export class FluidBuddhaElement extends HTMLElement {
 
     // — Launcher: a living Aura, not a button with an icon —
     this.trigger = h('button', 'trigger');
-    this.trigger.setAttribute('aria-label', t('talkTo', { name: 'Pragya' }));
+    this.trigger.setAttribute('aria-label', t('talkTo'));
     const triggerCanvas = document.createElement('canvas');
     triggerCanvas.className = 'trigger-aura';
     this.trigger.append(triggerCanvas);
@@ -387,7 +394,7 @@ export class FluidBuddhaElement extends HTMLElement {
     const avatarCanvas = document.createElement('canvas');
     avatar.append(avatarCanvas);
     const info = h('div');
-    info.append(h('div', 'name', 'Pragya'));
+    info.append(h('div', 'name', agentName()));
     this.statusEl = h('span', 'status');
     this.statusEl.append(h('span', 'dot'), document.createTextNode(' ' + t('online')));
     info.append(this.statusEl);
@@ -407,9 +414,10 @@ export class FluidBuddhaElement extends HTMLElement {
 
     // — Suggestion seeds —
     const chips = h('div', 'chips');
-    // The site's own starter questions (English), else the built-in ones.
-    const starters = getLang() === 'en' && this.config.starters?.length ? this.config.starters
-      : [t('chipPricing'), t('chipIntegrate'), t('chipTour')];
+    this.chipsEl = chips;
+    // The site's own starter questions in the widget's language, else the built-in ones.
+    const own = getLang() === 'hi' ? this.config.startersHi : this.config.starters;
+    const starters = own?.length ? own : [t('chipPricing'), t('chipIntegrate'), t('chipTour')];
     starters.forEach((label) => {
       const c = h('button', 'chip', label);
       c.addEventListener('click', () => this.submitText(label));
@@ -421,7 +429,7 @@ export class FluidBuddhaElement extends HTMLElement {
     const inputRow = h('div', 'input');
     this.textarea = h('textarea');
     this.textarea.placeholder = t('placeholder');
-    this.textarea.setAttribute('aria-label', t('messageTo', { name: 'Pragya' }));
+    this.textarea.setAttribute('aria-label', t('messageTo'));
     this.textarea.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -482,6 +490,7 @@ export class FluidBuddhaElement extends HTMLElement {
       requestCall: (name) => callPrompt(root, name),
       onCall: callBar(root),
       onProposal: (c, answer) => actionPrompt(root, c, answer),
+      onActionAnswer: (runId, yes) => answerCard(root, runId, yes),
       onPage: (p) => { this.hideThinking(); this.renderPage(p); },
       onAgentAudio: () => this.markSpeaking(),
       onTourStatus: (text) => { this.connText = t(text ? 'guidedTour' : 'online'); if (this.auraState === 'dormant') this.updateStatusText(); },
@@ -563,7 +572,20 @@ export class FluidBuddhaElement extends HTMLElement {
   }
 
   // ---- UI helpers ----
+  /** Offer a shareable recap once the conversation has some substance (M2-6 follow-up). */
+  private offerRecap(): void {
+    if (this.recapOffered || !this.config.key || !this.chipsEl || ++this.answers < 3) return;
+    this.recapOffered = true;
+    const c = h('button', 'chip', t('recapOffer'));
+    c.addEventListener('click', () => {
+      c.remove();
+      void this.session?.recap();
+    });
+    this.chipsEl.prepend(c);
+  }
+
   private addMessage(sender: 'user' | 'pragya' | 'system', text: string, grounding?: Grounding): void {
+    if (sender === 'pragya' && grounding) this.offerRecap();
     const bubble = h('div', `bubble ${sender}`);
     const body = h('div');
     // Web links in the text become links (e.g. a recap, M2-6); the rest stays text.
@@ -588,7 +610,7 @@ export class FluidBuddhaElement extends HTMLElement {
     if (this.thinkingEl) return;
     const el = h('div', 'bubble pragya typing');
     el.append(h('span', 'dot'), h('span', 'dot'), h('span', 'dot'));
-    el.setAttribute('aria-label', t('isThinking', { name: 'Pragya' }));
+    el.setAttribute('aria-label', t('isThinking'));
     this.thinkingEl = el;
     this.messagesEl.insertBefore(el, this.canvasEl);
     this.scrollDown();

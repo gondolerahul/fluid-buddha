@@ -21,6 +21,7 @@ import uuid
 import zlib
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -125,6 +126,8 @@ class VoiceSession:
         # When the tier is server-resolved from a widget key, the client may not
         # change it mid-session via STATE/sync (docs/defects.md D-1).
         self._tier_locked = tier_locked
+        # An action card waiting for the visitor: (run id, when shown) — M2-8 follow-up.
+        self._pending_run: Optional[tuple[str, float]] = None
         self.state = ConversationState(
             site_key=site_key, intelligence=normalize_intelligence(intelligence)
         )
@@ -258,6 +261,7 @@ class VoiceSession:
             await self.send(Channel.EVENTS, "operator_left", {"name": name})
         elif kind == "action_outcome":
             # The visitor confirmed or cancelled an action (M2-8): the agent knows.
+            self._pending_run = None
             self.state.add_turn(f"(I confirmed: {ev.get('label', '')})",
                                 f"({ev.get('status', '')}: {ev.get('message', '')})")
         elif kind in ("call_offer", "call_ice", "call_hangup"):
@@ -641,6 +645,10 @@ class VoiceSession:
         # this conversation: answer it fresh and don't cache it (WS5).
         followup = depends_on_history(transcript, self.state.history)
         await self._set_language(transcript)
+        if await self._voice_answer(heard):
+            return
+        if await self._recap_request(heard):
+            return
         if await self._safety_reply(heard, transcript):
             return
 
@@ -656,6 +664,32 @@ class VoiceSession:
                 await self._respond_fresh(heard, transcript, personal, followup)
         finally:
             self._turn_t0 = None  # later speech (a reaction, the tour) isn't this turn
+
+    async def _voice_answer(self, heard: str) -> bool:
+        """A spoken yes/no while an action's card is open (M2-8 follow-up): the
+        widget presses the card's button, which confirms through the usual path."""
+        pending = self._pending_run
+        if not pending or time.monotonic() - pending[1] > 15 * 60:
+            return False
+        from app.actions.voice import answer
+        yes = answer(heard)
+        if yes is None:
+            return False
+        self._pending_run = None
+        await self.send(Channel.STATE, "transcript", {"text": heard})
+        await self.send(Channel.EVENTS, "action_answer", {"run_id": pending[0], "confirm": yes})
+        return True
+
+    async def _recap_request(self, heard: str) -> bool:
+        """"Send me this" said out loud (M2-6 follow-up): the widget makes the
+        recap (the same call as a typed request), so no agent turn. Only for a
+        registered website (key), where recaps exist."""
+        from app.recaps.intent import email_in, wants_recap
+        if not self._tier_locked or not wants_recap(heard):
+            return False
+        await self.send(Channel.STATE, "transcript", {"text": heard})
+        await self.send(Channel.EVENTS, "recap_request", {"email": email_in(heard)})
+        return True
 
     async def _safety_reply(self, heard: str, transcript: str) -> bool:
         """Medical safety (M2-9): advice and emergencies get a fixed answer,
@@ -757,6 +791,8 @@ class VoiceSession:
                 for card in await proposal_cards(self.state.site_key, self.session_id,
                                                  think.proposals):
                     await self.send(Channel.EVENTS, "action_proposal", card, _sid("evt"))
+                    # The visitor may answer it out loud (M2-8 follow-up).
+                    self._pending_run = (card["id"], time.monotonic())
 
             # 5. Stream the grounded answer as TTS, synced to its component
             self._answer_speaking = True  # now interruptible by a real barge-in

@@ -210,17 +210,34 @@ def _words(text_: str) -> frozenset[str]:
                      if w not in _STOP and len(w) > 1)
 
 
-def group_requests(items: list[dict[str, Any]], threshold: float = 0.5) -> list[dict[str, Any]]:
-    """Feature requests that say the same thing, grouped: greedy, by word
-    overlap (Jaccard) with each group's first request. ``items`` newest
-    first; each group keeps its newest wording and up to 3 examples."""
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+
+SIMILAR = 0.82   # cosine of two requests' embeddings that counts as "the same ask"
+
+
+def group_requests(items: list[dict[str, Any]], threshold: float = 0.5,
+                   vectors: Optional[list[list[float]]] = None) -> list[dict[str, Any]]:
+    """Feature requests that say the same thing, grouped greedily against each
+    group's first request: by meaning (embedding cosine ≥ ``SIMILAR``) when
+    ``vectors`` are given, and by word overlap (Jaccard ≥ ``threshold``)
+    either way. ``items`` newest first; each group keeps its newest wording
+    and up to 3 examples."""
     groups: list[dict[str, Any]] = []
-    for it in items:
+    for i, it in enumerate(items):
         words = _words(it["text"])
+        vec = vectors[i] if vectors else None
         best, best_score = None, 0.0
         for g in groups:
             union = words | g["_words"]
             score = len(words & g["_words"]) / len(union) if union else 0.0
+            if score < threshold and vec is not None and g["_vec"] is not None:
+                cos = _cosine(vec, g["_vec"])
+                score = max(score, threshold * cos / SIMILAR if cos >= SIMILAR else 0.0)
             if score > best_score:
                 best, best_score = g, score
         if best is not None and best_score >= threshold:
@@ -229,10 +246,37 @@ def group_requests(items: list[dict[str, Any]], threshold: float = 0.5) -> list[
                 best["examples"].append(it)
         else:
             groups.append({"text": it["text"], "count": 1, "last_at": it["at"],
-                           "examples": [it], "_words": words})
+                           "examples": [it], "_words": words, "_vec": vec})
     for g in groups:
         g.pop("_words")
+        g.pop("_vec")
     return sorted(groups, key=lambda g: -g["count"])   # stable: newest first among ties
+
+
+_VECTORS: dict[str, list[float]] = {}   # request text → embedding (in-process cache)
+
+
+async def request_vectors(texts: list[str]) -> Optional[list[list[float]]]:
+    """Embeddings for feature-request texts, or None (mock mode, where the
+    reference embeddings carry no meaning, or the embedder failed)."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    if settings.mock_ai or not texts:
+        return None
+    missing = [t for t in dict.fromkeys(texts) if t not in _VECTORS]
+    if missing:
+        try:
+            from app.cortex.providers import build_cortex_providers
+
+            result = await build_cortex_providers(settings).embedding.embed(missing)
+            if len(_VECTORS) > 5000:
+                _VECTORS.clear()
+            _VECTORS.update(zip(missing, result.vectors))
+        except Exception as exc:   # grouping by words is still useful
+            logger.warning("feature request embeddings failed, grouping by words: %s", exc)
+            return None
+    return [_VECTORS[t] for t in texts]
 
 
 async def signals(db: AsyncSession, site_key: str, days: int = 30) -> dict[str, Any]:
@@ -273,7 +317,8 @@ async def signals(db: AsyncSession, site_key: str, days: int = 30) -> dict[str, 
         "SELECT t.feature_request AS text, t.question, t.created_at, t.conversation_id "
         f"FROM conversation_turns t WHERE t.site_key = :s AND {cur} "
         "AND t.feature_request IS NOT NULL ORDER BY t.created_at DESC LIMIT 500"), p)).mappings().all()
-    requests = group_requests([{**_example(r), "text": r["text"]} for r in req_rows])
+    req_items = [{**_example(r), "text": r["text"]} for r in req_rows]
+    requests = group_requests(req_items, vectors=await request_vectors([i["text"] for i in req_items]))
 
     head = (await db.execute(text(
         "SELECT count(*) FILTER (WHERE classified_at IS NOT NULL) AS classified, "

@@ -114,15 +114,30 @@ _BUCKET_SQL = {
     "session": "coalesce(session_id, 'unknown')",
 }
 
+# Background work (channel 'background': labelling turns for Insights, M2-5)
+# adds to the costs but isn't a visitor turn.
+_TURN = "channel <> 'background'"
 _SUMS = (
     "sum(asr_cost) AS asr_cost, sum(tts_cost) AS tts_cost, "
     "sum(fast_cost) AS fast_llm_cost, sum(thinker_cost) AS thinker_llm_cost, "
     "sum(tool_cost) AS tool_cost, sum(total_cost) AS total_cost, "
-    "count(*) AS turns, "
-    "sum(CASE WHEN served_from_cache THEN 1 ELSE 0 END) AS cached_turns, "
-    "sum(CASE WHEN served_from_cache THEN 0 ELSE 1 END) AS generated_turns, "
-    "avg(latency_ms) AS avg_latency_ms"
+    f"count(*) FILTER (WHERE {_TURN}) AS turns, "
+    f"count(*) FILTER (WHERE {_TURN} AND served_from_cache) AS cached_turns, "
+    f"count(*) FILTER (WHERE {_TURN} AND NOT served_from_cache) AS generated_turns, "
+    f"avg(latency_ms) FILTER (WHERE {_TURN}) AS avg_latency_ms"
 )
+
+
+async def record_background(db: AsyncSession, site_key: str, *, input_tokens: int,
+                            output_tokens: int, intent: str = "insights",
+                            pricing: Optional[Pricing] = None) -> None:
+    """Model spend that isn't a visitor turn (no session, so it never counts as
+    a conversation for billing), e.g. labelling turns for Insights."""
+    if not (input_tokens or output_tokens):
+        return
+    m = TurnMetrics(site_key=site_key, channel="background", intent=intent)
+    m.add_llm(kind="fast", input_tokens=input_tokens, output_tokens=output_tokens)
+    await record_turn(db, m, pricing)
 
 
 def _round_row(d: dict) -> dict:
@@ -166,8 +181,8 @@ async def analytics(
     # Range totals + latency percentiles + cache split.
     tot_res = await db.execute(text(
         f"SELECT {_SUMS}, "
-        "percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50_latency_ms, "
-        "percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95_latency_ms, "
+        f"percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE {_TURN}) AS p50_latency_ms, "
+        f"percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE {_TURN}) AS p95_latency_ms, "
         "count(ttfa_ms) AS ttfa_turns, "
         "count(DISTINCT session_id) AS conversations, "
         "percentile_cont(0.5) WITHIN GROUP (ORDER BY ttfa_ms) AS p50_ttfa_ms, "

@@ -217,6 +217,10 @@ def test_weekly_digest_content_recipients_and_unsubscribe():
         h, owner = _tenant(client)
         site = client.post("/tenant/websites", json={"name": "Digest Co"}, headers=h).json()
         client.put(f"/tenant/websites/{site['id']}/profile", json={"competitors": ["Drift"]}, headers=h)
+        # A site with knowledge lists its new gaps; one without is "needs content".
+        assert client.post(f"/tenant/websites/{site['id']}/sources", headers=h, json={
+            "kind": "text", "name": "About", "content": "Digest Co sells digests."}).status_code in (200, 201)
+        bare = client.post("/tenant/websites", json={"name": "Empty Co"}, headers=h).json()
         cfg = client.get("/tenant/digest", headers=h).json()
         # Until someone chooses, the Owners get it, Mondays 9:00 India time.
         assert cfg["recipients"] == [{"email": owner, "unsubscribed": False}]
@@ -230,16 +234,19 @@ def test_weekly_digest_content_recipients_and_unsubscribe():
     _record(sk, "d1", "Too expensive compared to Drift")
     _record(sk, "d1", "Do you have a Shopify app?", found=False)
     _record(sk, "d2", "Too expensive compared to Drift")
+    _record(bare["site_key"], "e1", "What do you sell?", found=False)
     _classify_all()
 
     with TestClient(app) as client:
         pv = client.get("/tenant/digest/preview", headers=h).json()
         data = pv["data"]
-        assert data["conversations"] == 2 and data["leads"] == 0
+        assert data["conversations"] == 3 and data["leads"] == 0
         assert data["top_questions"][0] == {"question": "Too expensive compared to Drift", "count": 2}
-        assert data["new_gaps"][0]["question"] == "Do you have a Shopify app?"
+        assert [g["question"] for g in data["new_gaps"]] == ["Do you have a Shopify app?"]
+        assert data["sites_without_content"] == ["Empty Co"]
+        assert "Empty Co" in pv["text"]
         assert data["objections"][0]["type"] == "price" and data["competitors"] == [{"name": "Drift", "count": 2}]
-        assert "2 conversations" in pv["subject"] and "Drift: 2" in pv["text"]
+        assert "3 conversations" in pv["subject"] and "Drift: 2" in pv["text"]
         assert "<script" not in pv["html"]
         assert client.post("/tenant/digest/send-test", headers=h).json() == {"queued": 1, "to": owner}
 
