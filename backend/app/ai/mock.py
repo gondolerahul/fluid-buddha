@@ -66,6 +66,24 @@ def _infer_persona(text: str) -> Optional[str]:
     return None
 
 
+# A few Hindi words → English, so the mock router can give an English search
+# query for a Hindi question (M2-7). Real models translate.
+_GLOSSARY = {
+    "कीमत": "price", "क़ीमत": "price", "दाम": "price", "प्राइसिंग": "pricing",
+    "इंटीग्रेशन": "integration", "इंटीग्रेट": "integrate", "सुरक्षा": "security",
+    "डेमो": "demo", "ट्रायल": "trial", "टीम": "team", "भर्ती": "hiring",
+    "कैसे": "how", "क्या": "what", "काम": "work", "करता": "does", "करती": "does",
+    "kya": "what", "kaise": "how", "kitna": "how much", "kitne": "how much",
+    "daam": "price", "kimat": "price", "keemat": "price",
+}
+_HINDI_REPLY = "Answer in natural, conversational Hindi"
+
+
+def _to_english(text: str) -> str:
+    words = [_GLOSSARY.get(w.strip("?।,.!").lower(), w) for w in text.split()]
+    return " ".join(w for w in words if w.isascii()) or text
+
+
 class MockLLMClient(LLMClient):
     """Rule-based stand-in for Gemini that still exercises tool calling."""
 
@@ -91,7 +109,8 @@ class MockLLMClient(LLMClient):
         # --- Live component reaction (no tools, deterministic quip) ----------
         if not tools and "interacting with" in system.lower():
             return LLMResponse(
-                text="At those numbers, the return looks compelling.",
+                text=("इन आँकड़ों पर रिटर्न अच्छा दिखता है।" if "Say it in Hindi" in system
+                      else "At those numbers, the return looks compelling."),
                 model=used_model,
             )
 
@@ -120,6 +139,8 @@ class MockLLMClient(LLMClient):
                 "person company", "-person",
             ))
             confidence = 0.0 if not persona else (0.92 if explicit else 0.65)
+            if "ack: write it in Hindi" in system:
+                ack = "एक पल, मैं देखती हूँ।"
             payload = {
                 "intent": intent,
                 "persona": persona,
@@ -127,6 +148,8 @@ class MockLLMClient(LLMClient):
                 "persona_explicit": explicit and persona is not None,
                 "ack": ack,
             }
+            if "query_en" in system:
+                payload["query_en"] = _to_english(user_text)
             return LLMResponse(text=json.dumps(payload), model=used_model)
 
         has_cortex = any(m.role == "tool" and m.tool_name == "query_cortex" for m in messages)
@@ -147,7 +170,10 @@ class MockLLMClient(LLMClient):
                 return LLMResponse(tool_calls=calls, model=used_model)
 
         # --- Final spoken answer (grounded) ----------------------------------
-        return LLMResponse(text=self._compose_answer(user_text, messages), model=used_model)
+        answer = self._compose_answer(user_text, messages)
+        if _HINDI_REPLY in system:   # M2-7: a Hindi sentence, sources stay English
+            answer = "यह रहा जवाब: " + answer
+        return LLMResponse(text=answer, model=used_model)
 
     @staticmethod
     def _patch_on_screen(user_text: str, tool_names: set[str], system: str) -> list[ToolCall]:
@@ -258,7 +284,8 @@ class MockASR:
     """Placeholder ASR. Real transcripts come via the AUDIO `end` override in
     mock mode; this only fires if raw audio is streamed with no transcript."""
 
-    async def transcribe_stream(self, audio: AsyncIterator[bytes]) -> AsyncIterator[TranscriptEvent]:
+    async def transcribe_stream(self, audio: AsyncIterator[bytes],
+                                languages: Sequence[str] = ()) -> AsyncIterator[TranscriptEvent]:
         async for _ in audio:
             pass
         yield TranscriptEvent(text="", is_final=True, confidence=0.0)
@@ -271,7 +298,7 @@ class MockTTS:
     def __init__(self, sample_rate: int = 24000) -> None:
         self.sample_rate = sample_rate
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+    async def synthesize_stream(self, text: str, language: str = "") -> AsyncIterator[bytes]:
         words = max(1, len(text.split()))
         total_seconds = min(12.0, max(0.6, words * 0.32))
         chunk_seconds = 0.2

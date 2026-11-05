@@ -234,7 +234,7 @@ def _gemini(models) -> GeminiTTS:
     tts.sample_rate = 1000
     tts._model = "m"
     tts._voice = "v"
-    tts._config = lambda: None
+    tts._config = lambda language="": None
     tts._client = SimpleNamespace(aio=SimpleNamespace(models=models))
     return tts
 

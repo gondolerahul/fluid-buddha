@@ -21,7 +21,7 @@ from app.db import session_scope
 from app.experiments.apply import session_settings
 from app.design.system import ensure_design
 from app.live import visitor as live
-from app.orchestrator.profile import ensure_profile
+from app.orchestrator.profile import ensure_profile, profile_for
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.state import normalize_sections
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
@@ -52,7 +52,7 @@ async def _record_conversation(state, sid: str, question: str, answer: str, inte
                 question=question, answer=answer, intent=intent,
                 persona=state.persona, page=state.page,
                 grounding=grounding, served_from_cache=served_from_cache,
-                components=list(components),
+                components=list(components), lang=state.lang_seen,
             )
     except Exception as exc:
         logger.warning("conversation record failed: %s", exc)
@@ -77,6 +77,8 @@ class ChatRequest(BaseModel):
     # The visitor's test variant, {"id", "arm"} (M2-4): sets the persona a new
     # conversation starts in.
     exp: dict[str, Any] | None = None
+    # The widget's language, 'en' or 'hi' (M2-7).
+    lang: str | None = None
 
 
 @router.post("/chat")
@@ -151,6 +153,12 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     pii.enabled = privacy.redact_pii
     message = pii.mask(req.message)
     personal = message != req.message
+    # This turn's reply language (M2-7), from what the visitor wrote and the
+    # site's languages.
+    enabled = profile_for(state.site_key).languages
+    if req.lang in ("en", "hi"):
+        state.ui_lang = req.lang
+    state.pick_language(message, enabled)
     # A mid-conversation follow-up is answered fresh and never cached (WS5).
     followup = depends_on_history(message, state.history)
 
@@ -167,7 +175,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
                 cache = rt.episodic(cdb, state.site_key)
                 hits = await cache.query(
                     transcript=message, persona=state.persona,
-                    page=state.page, top_k=settings.episodic_top_k,
+                    page=state.page, top_k=settings.episodic_top_k, lang=state.lang,
                 )
                 # A pinned answer (WS8) replays before the "enough data" gate.
                 best = hits[0] if hits else None
@@ -203,7 +211,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
             "pages": [], "patches": [],
             # The original answer's sources (WS8); older rows predate storing them.
             "grounding": replay.grounding or {"confidence": 1.0, "found": True, "sources": []},
-            "session_id": sid,
+            "session_id": sid, "lang": state.lang,
         }
 
     async with session_scope() as db:
@@ -226,7 +234,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
                     components=[c.to_dict() for c in result.components],
                     actions=[a.to_dict() for a in result.actions],
                     persona=state.persona, page=state.page, channel="text",
-                    grounding=result.grounding.to_dict(),
+                    grounding=result.grounding.to_dict(), lang=state.lang,
                 )
         except Exception as exc:
             logger.warning("chat record failed: %s", exc)
@@ -257,6 +265,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     payload["text"] = PiiVault.spoken(payload["text"])
     payload["ack"] = PiiVault.spoken(payload["ack"])
     payload["session_id"] = sid
+    payload["lang"] = state.lang
     return payload
 
 

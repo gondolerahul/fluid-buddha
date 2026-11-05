@@ -39,5 +39,7 @@ async def widget_config(key: str = Query(..., min_length=1, max_length=200)) -> 
         "accent": website.accent if website else None,
         "agent_name": profile.agent_name,
         "company_name": profile.company_name,
+        "languages": profile.languages,
+        "widget_language": profile.widget_language,
         "privacy": privacy.public(),
     }

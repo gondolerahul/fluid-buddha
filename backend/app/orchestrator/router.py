@@ -15,6 +15,7 @@ from typing import Optional, Sequence
 
 from app.ai.base import ChatMessage, LLMClient
 from app.config import Settings
+from app.i18n.strings import say
 from app.orchestrator.personas import valid_personas
 from app.orchestrator.prompts import build_router_system
 
@@ -30,6 +31,8 @@ class RouterResult:
     persona_confidence: float = 0.0  # 0..1 — how strong the persona signal was
     persona_explicit: bool = False   # the visitor stated their segment outright
     ack: str = "Let me look that up for you."
+    # An English search query for a turn that wasn't in English (M2-7).
+    query_en: str = ""
 
 
 def _extract_json(text: str) -> dict:
@@ -53,17 +56,18 @@ class FastRouter:
 
     async def route(
         self, user_text: str, history: Sequence[ChatMessage] = (),
-        site_key: str = "hirebuddha",
+        site_key: str = "hirebuddha", *, lang: str = "en", seen: str = "en",
     ) -> RouterResult:
         messages = list(history) + [ChatMessage(role="user", text=user_text)]
         try:
             resp = await self._llm.generate(
-                system=build_router_system(site_key),
+                system=build_router_system(site_key, lang=lang, seen=seen),
                 messages=messages,
                 tools=None,
                 model=self._settings.fast_model,
                 temperature=0.2,
-                max_output_tokens=120,
+                # Devanagari and the English query need more tokens.
+                max_output_tokens=120 if seen == "en" and lang == "en" else 240,
             )
             data = _extract_json(resp.text)
         except Exception as exc:  # graceful degradation
@@ -83,5 +87,6 @@ class FastRouter:
             persona=persona,
             persona_confidence=confidence if persona else 0.0,
             persona_explicit=bool(data.get("persona_explicit", False)),
-            ack=data.get("ack") or "Let me look that up for you.",
+            ack=str(data.get("ack") or "") or say("ack", lang),
+            query_en=(str(data.get("query_en") or "").strip()[:300] if seen != "en" else ""),
         )

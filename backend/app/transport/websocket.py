@@ -33,7 +33,9 @@ from app.live.store import HEARTBEAT_S
 from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFIDENCE
 from app.orchestrator.result import ClientAction, Grounding
 from app.design.system import ensure_design
-from app.orchestrator.profile import ensure_profile
+from app.i18n.detect import detect, speech_code
+from app.i18n.strings import say
+from app.orchestrator.profile import ensure_profile, profile_for
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.tour_store import load_plan
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
@@ -64,12 +66,11 @@ _MAX_UTTERANCE_BYTES = 16000 * 2 * 60
 
 # Spoken before a replayed (cached) answer so a cache hit sounds like a fresh
 # turn: ack first, then the answer (D-8). Few, fixed phrases so their audio is
-# itself served from the audio cache after the first synthesis.
-_REPLAY_ACKS = ("Sure.", "Good question.", "Happy to explain.")
-
-
-def _replay_ack(transcript: str) -> str:
-    return _REPLAY_ACKS[zlib.crc32(transcript.encode("utf-8")) % len(_REPLAY_ACKS)]
+# itself served from the audio cache after the first synthesis. In the reply's
+# language (M2-7).
+def _replay_ack(transcript: str, lang: str = "en") -> str:
+    acks = say("replay_acks", lang)
+    return acks[zlib.crc32(transcript.encode("utf-8")) % len(acks)]
 
 
 def _sid(prefix: str) -> str:
@@ -87,7 +88,7 @@ def split_for_tts(text: str, min_chars: int = 24) -> list[str]:
     text = (text or "").strip()
     if not text:
         return []
-    parts = re.split(r"(?<=[.!?…])\s+", text)
+    parts = re.split(r"(?<=[.!?…।])\s+", text)   # । ends a Hindi sentence
     out: list[str] = []
     buf = ""
     for s in parts:
@@ -414,13 +415,33 @@ class VoiceSession:
 
         final = ""
         try:
-            async for ev in self.rt.engines.asr.transcribe_stream(chunks()):
+            langs = self._asr_languages()
+            asr = self.rt.engines.asr
+            stream = (asr.transcribe_stream(chunks(), langs) if len(langs) > 1
+                      else asr.transcribe_stream(chunks()))
+            async for ev in stream:
                 if ev.is_final and ev.text:
                     final = ev.text
         except Exception as exc:  # ASR failure shouldn't kill the socket
             prom.ENGINE_ERRORS.labels("asr").inc()
             logger.warning("ASR failed: %s", exc)
         return final
+
+    def _asr_languages(self) -> list[str]:
+        """What to listen for (M2-7): on a Hindi site, the conversation's
+        language first and the other as an alternative the recogniser may pick."""
+        if "hi" not in profile_for(self.state.site_key).languages:
+            return [self.rt.settings.asr_language]
+        first = speech_code(self.state.lang)
+        return [first, "en-IN" if first == "hi-IN" else "hi-IN"]
+
+    async def _set_language(self, transcript: str) -> None:
+        """This turn's reply language; tells the widget when it changes, so its
+        own speech recognition listens for the right language."""
+        before = self.state.lang
+        self.state.pick_language(transcript, profile_for(self.state.site_key).languages)
+        if self.state.lang != before:
+            await self.send(Channel.EVENTS, "language", {"lang": self.state.lang})
 
     # ---- turn handling --------------------------------------------------
     async def _budget_blocked(self) -> bool:
@@ -477,10 +498,18 @@ class VoiceSession:
         self._greeted = True
         await self._cancel_response()
 
+        # A Hindi widget on a site that answers in Hindi starts in Hindi (M2-7).
+        profile = profile_for(self.state.site_key)
+        self.state.start_language(payload.get("lang"), profile.languages)
+
         # The greeting, starting persona and tour switch: the visitor's test
-        # variant, else the site's defaults (M2-4).
+        # variant, else the site's defaults (M2-4). In Hindi: the site's Hindi
+        # greeting, else a welcome the model writes in Hindi.
         start = await session_settings(self.state.site_key, payload.get("exp"))
-        self._opener = start["greeting"]
+        if self.state.lang == "hi":
+            self._opener = profile.greeting_hi or None
+        else:
+            self._opener = start["greeting"]
         if start["persona"] and not payload.get("persona"):
             self.state.persona = start["persona"]
 
@@ -570,7 +599,7 @@ class VoiceSession:
             self._spawn(self._record_turn(
                 question="(visitor arrived on the page)",
                 answer_text=think.answer_text, components=think.components,
-                actions=think.actions, channel="welcome",
+                actions=think.actions, channel="welcome", lang=self.state.lang,
             ))
         except asyncio.CancelledError:
             await self.send(Channel.EVENTS, "interrupted", {})
@@ -589,7 +618,7 @@ class VoiceSession:
             self.state.add_turn("(visitor arrived on the page)", text)
             self._spawn(self._record_turn(
                 question="(visitor arrived on the page)", answer_text=text,
-                components=[], actions=[], channel="welcome",
+                components=[], actions=[], channel="welcome", lang=self.state.lang,
             ))
         except asyncio.CancelledError:
             await self.send(Channel.EVENTS, "interrupted", {})
@@ -607,6 +636,7 @@ class VoiceSession:
         # A mid-conversation follow-up ("how much is it?") only makes sense in
         # this conversation: answer it fresh and don't cache it (WS5).
         followup = depends_on_history(transcript, self.state.history)
+        await self._set_language(transcript)
 
         # Cache-first (Feature 2): if we've answered a near-identical question for
         # this persona before and have enough history, replay it verbatim
@@ -655,7 +685,7 @@ class VoiceSession:
             heavy = self.rt.loop.needs_heavy(transcript, route.intent, self.state)
             think_task = asyncio.create_task(
                 self._think(transcript, persona, heavy,
-                            related=self._related, probe=probe)
+                            related=self._related, probe=probe, search=route.query_en)
             )
 
             await self._speak(pii.spoken(route.ack), _sid("ack"))
@@ -710,7 +740,7 @@ class VoiceSession:
                 self._spawn(self._record_turn(
                     question=transcript, answer_text=think.answer_text,
                     components=think.components, actions=think.actions,
-                    channel="voice", grounding=think.grounding,
+                    channel="voice", grounding=think.grounding, lang=self.state.lang,
                 ))
             # Record cost/performance for this generated voice turn (req F/G).
             self._spawn(self._record_usage(
@@ -723,6 +753,7 @@ class VoiceSession:
                 intent=route.intent,
                 grounding=think.grounding.to_dict(), served_from_cache=False,
                 leads=think.leads, components=[c.to_dict() for c in think.components],
+                lang=self.state.lang_seen,
             ))
         except asyncio.CancelledError:
             logger.info("ws[%s]: turn CANCELLED before completion (barge-in or "
@@ -732,7 +763,7 @@ class VoiceSession:
         except Exception as exc:
             prom.ENGINE_ERRORS.labels("llm").inc()
             logger.exception("ws[%s]: response failed: %s", self.session_id[:8], exc)
-            await self.send(Channel.EVENTS, "error", {"message": "Something went wrong."})
+            await self.send(Channel.EVENTS, "error", {"message": say("error", self.state.lang)})
         finally:
             # Never leave the concurrently-started thinker running orphaned (e.g.
             # a barge-in cancelled us mid-ack).
@@ -744,7 +775,7 @@ class VoiceSession:
                     pass
 
     async def _think(self, transcript: str, persona, heavy: bool = True,
-                     related=None, probe: bool = False):
+                     related=None, probe: bool = False, search: str = ""):
         """Run the chosen reasoning path in its own DB session so it executes
         concurrently with the spoken ack. ``heavy`` selects the grounded tool
         loop; otherwise the lean single-shot path answers (Hybrid). ``related``
@@ -752,10 +783,10 @@ class VoiceSession:
         in a qualifying question."""
         with prom.timed("think_heavy" if heavy else "think_lean"):
             return await self._think_in_session(transcript, persona, heavy,
-                                                related=related, probe=probe)
+                                                related=related, probe=probe, search=search)
 
     async def _think_in_session(self, transcript: str, persona, heavy: bool,
-                                related=None, probe: bool = False):
+                                related=None, probe: bool = False, search: str = ""):
         async with session_scope() as db:
             bridge = self.rt.bridge(db, self.state.site_key)
             if heavy:
@@ -765,6 +796,7 @@ class VoiceSession:
                 )
             return await self.rt.loop.think_lean(
                 transcript, self.state, bridge, persona, related=related, probe=probe,
+                search=search,
             )
 
     async def _emit_action(self, action: ClientAction) -> None:
@@ -849,15 +881,20 @@ class VoiceSession:
         streams live TTS and persists it for next time (Feature 2 audio cache).
         A TTS failure ends the segment silently; the text is already shown."""
         use_cache = self.rt.settings.audio_cache_enabled
+        # Spoken in Hindi when written in Hindi (M2-7); English as before.
+        language = "hi-IN" if detect(seg_text) == "hi" else ""
         buf = bytearray()
         try:
             if use_cache:
-                cached = await self._audio_cache_get(seg_text)
+                cached = await self._audio_cache_get(seg_text, language)
                 if cached is not None:
                     for frame in self._frames(cached):
                         q.put_nowait(frame)
                     return
-            async for chunk in self.rt.engines.tts.synthesize_stream(seg_text):
+            tts = self.rt.engines.tts
+            stream = (tts.synthesize_stream(seg_text, language) if language
+                      else tts.synthesize_stream(seg_text))
+            async for chunk in stream:
                 if chunk:
                     buf.extend(chunk)
                     q.put_nowait(bytes(chunk))
@@ -871,7 +908,7 @@ class VoiceSession:
         finally:
             q.put_nowait(None)
         if use_cache and buf:
-            await self._audio_cache_put(seg_text, bytes(buf))
+            await self._audio_cache_put(seg_text, bytes(buf), language)
 
     def _frames(self, pcm: bytes) -> list[bytes]:
         """Re-chunk cached PCM into ~0.2s frames so playback ramps like live TTS."""
@@ -906,24 +943,24 @@ class VoiceSession:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
-    async def _audio_cache_get(self, seg_text: str):
+    async def _audio_cache_get(self, seg_text: str, language: str = ""):
         try:
             async with session_scope() as db:
                 cache = self.rt.audio_cache(db)
-                return await cache.get(cache.key(seg_text))
+                return await cache.get(cache.key(seg_text, language))
         except Exception:
             return None
 
-    async def _audio_cache_put(self, seg_text: str, pcm: bytes) -> None:
+    async def _audio_cache_put(self, seg_text: str, pcm: bytes, language: str = "") -> None:
         try:
             async with session_scope() as db:
                 cache = self.rt.audio_cache(db)
-                await cache.put(cache.key(seg_text), self.state.site_key, pcm)
+                await cache.put(cache.key(seg_text, language), self.state.site_key, pcm)
         except Exception:
             pass
 
     async def _record_turn(self, *, question, answer_text, components, actions,
-                           channel, grounding=None) -> None:
+                           channel, grounding=None, lang: str = "en") -> None:
         if not self.rt.settings.conversation_cache_enabled or not answer_text:
             return
         try:
@@ -935,12 +972,14 @@ class VoiceSession:
                     actions=[a.to_dict() for a in actions],
                     persona=self.state.persona, page=self.state.page, channel=channel,
                     grounding=grounding.to_dict() if grounding is not None else None,
+                    lang=lang,
                 )
         except Exception as exc:
             logger.warning("ws[%s]: record_turn failed: %s", self.session_id[:8], exc)
 
     async def _record_conversation(self, *, question, answer, intent, grounding,
-                                   served_from_cache, leads=(), components=()) -> None:
+                                   served_from_cache, leads=(), components=(),
+                                   lang: str = "en") -> None:
         """Append the turn to this session's transcript (Insights, WS10), then
         save any lead the agent captured in it (WS7)."""
         from app.insights.store import record_turn as record_conversation_turn
@@ -952,6 +991,7 @@ class VoiceSession:
                     persona=self.state.persona, page=self.state.page,
                     grounding=grounding, served_from_cache=served_from_cache,
                     consent_at=self._consent_at, components=list(components),
+                    lang=lang,
                 )
         except Exception as exc:
             logger.warning("ws[%s]: conversation record failed: %s",
@@ -1019,7 +1059,7 @@ class VoiceSession:
                 cache = self.rt.episodic(db, self.state.site_key)
                 hits = await cache.query(
                     transcript=transcript, persona=self.state.persona,
-                    page=self.state.page, top_k=st.episodic_top_k,
+                    page=self.state.page, top_k=st.episodic_top_k, lang=self.state.lang,
                 )
                 total = await cache.count(persona=self.state.persona)
         except Exception as exc:
@@ -1046,7 +1086,7 @@ class VoiceSession:
         logger.info("ws[%s]: REPLAY (score=%.3f, %d components) for %r",
                     self.session_id[:8], best.score, len(best.components),
                     transcript[:80])
-        ack = _replay_ack(transcript)
+        ack = _replay_ack(transcript, self.state.lang)
         try:
             await self.send(Channel.STATE, "transcript", {"text": transcript})
             await self._speak(ack, _sid("ack"))
@@ -1088,6 +1128,7 @@ class VoiceSession:
             question=transcript, answer=best.answer_text, intent="cached",
             grounding=best.grounding, served_from_cache=True,
             components=list(getattr(best, "components", None) or []),
+            lang=self.state.lang_seen,
         ))
 
     async def _emit_cached_action(self, action: dict) -> None:
@@ -1134,7 +1175,8 @@ class VoiceSession:
         if not entry:
             return
         try:
-            text = await self.rt.loop.react(entry, self.state.persona, self.state.site_key)
+            text = await self.rt.loop.react(entry, self.state.persona, self.state.site_key,
+                                            self.state.lang)
         except Exception as exc:
             logger.warning("ws[%s]: react failed: %s", self.session_id[:8], exc)
             return

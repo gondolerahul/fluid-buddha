@@ -29,6 +29,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.i18n.detect import clean_languages, clean_ui
 from app.orchestrator.personas import PERSONAS as _HIREBUDDHA_PERSONAS
 from app.orchestrator.sitemap import (
     HIREBUDDHA_DYNAMIC_PREFIXES,
@@ -79,6 +80,12 @@ class SiteProfile:
     # The next step a recap page offers (M2-6), e.g. "Book a demo" → URL.
     cta_label: str = ""
     cta_url: str = ""
+    # Languages the agent answers in (M2-7): always English, plus "hi" when the
+    # site switches Hindi on; the widget's labels ("auto" follows the visitor's
+    # browser); and the greeting spoken to a visitor whose widget is in Hindi.
+    languages: list[str] = field(default_factory=lambda: ["en"])
+    widget_language: str = "auto"
+    greeting_hi: str = ""
 
     @property
     def persona_slugs(self) -> list[str]:
@@ -122,6 +129,9 @@ class SiteProfile:
             competitors=_clean_names(merged.get("competitors") or []),
             cta_label=str(merged.get("cta_label") or "").strip()[:60],
             cta_url=_clean_cta(str(merged.get("cta_url") or "")),
+            languages=clean_languages(merged.get("languages")),
+            widget_language=clean_ui(merged.get("widget_language")),
+            greeting_hi=str(merged.get("greeting_hi") or "").strip()[:300],
         )
 
 

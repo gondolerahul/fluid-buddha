@@ -122,12 +122,15 @@ class HeavyThinker:
         probe: bool = False,
         on_screen: Optional[dict[str, dict]] = None,
         pii: Optional[PiiVault] = None,
+        lang: str = "en",
+        seen: str = "en",
     ) -> ThinkResult:
         extreme_brief = build_extreme_brief(site_key) if intelligence == "extreme" else None
         system = build_thinker_system(
             persona, site_key, intelligence=intelligence,
             page=page, section=section, sections=sections,
             extreme_brief=extreme_brief, related=related, probe=probe,
+            lang=lang, seen=seen,
         )
         gated_tools = tools_for(intelligence, site_key)
         on_screen = dict(on_screen or {})
@@ -368,12 +371,12 @@ class HeavyThinker:
 
     async def react(
         self, *, component_type: str, state: dict,
-        persona: Optional[str] = None, site_key: str = "hirebuddha",
+        persona: Optional[str] = None, site_key: str = "hirebuddha", lang: str = "en",
     ) -> str:
         """A short, live spoken reaction to the visitor interacting with a
         component. Ungrounded by design (it comments on the numbers they're
         exploring), so it uses the fast model and no tools."""
-        system = build_reaction_system(persona, site_key, component_type, state)
+        system = build_reaction_system(persona, site_key, component_type, state, lang)
         try:
             resp = await self._llm.generate(
                 system=system,
@@ -401,6 +404,7 @@ class HeavyThinker:
         page: Optional[str] = None,
         section: Optional[str] = None,
         sections: Optional[list[dict]] = None,
+        lang: str = "en",
     ) -> ThinkResult:
         """Agent-initiated greeting that introduces the current page (Req 3.x,
         voice-first onboarding). Grounded via the same query_cortex loop."""
@@ -423,4 +427,6 @@ class HeavyThinker:
             page=page,
             section=section,
             sections=sections,
+            lang=lang,
+            seen=lang,
         )

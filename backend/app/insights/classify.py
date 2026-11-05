@@ -72,6 +72,17 @@ _BUYING = re.compile(
     r"contract|invoice|quote|procurement|pricing for \d+|for \d+ (seats|users|people|agents)|"
     r"onboard (our|my) team|annual (plan|billing)|upgrade)\b", _I)
 
+# Hindi and Hinglish wording of the same signals (M2-7), for the keyword rules
+# (mock mode and the model's fallback). Devanagari words get no \b boundaries.
+_HINDI_RULES = {
+    "price": re.compile(r"(महंगा|महँगा|महंगी|बजट|डिस्काउंट|छूट|सस्ता|\b(mehenga|mehnga|mahanga|sasta)\b)", _I),
+    "security": re.compile(r"(सुरक्षा|सुरक्षित|डेटा कहाँ)", _I),
+    "integration": re.compile(r"(इंटीग्रेशन|इंटीग्रेट|कनेक्ट)", _I),
+    "timing": re.compile(r"(अभी नहीं|बाद में|अगले (महीने|साल)|\b(abhi nahi|baad mein)\b)", _I),
+}
+_HINDI_BUYING = re.compile(r"(डेमो|ट्रायल|खरीद|कोटेशन|साइन अप|\b(demo chahiye|trial chahiye|kharid\w*)\b)", _I)
+
+
 
 @dataclass
 class Signals:
@@ -112,10 +123,11 @@ def rules(question: str, *, competitors: Iterable[str] = (), found: bool = True)
     if _WISH.search(q) or (not found and _ASKS_FOR_FEATURE.search(q)):
         feature = q.strip()[:MAX_REQUEST_CHARS]
     return Signals(
-        objections=[t for t in OBJECTION_TYPES if _OBJECTION_RULES[t].search(q)],
+        objections=[t for t in OBJECTION_TYPES if _OBJECTION_RULES[t].search(q)
+                    or (t in _HINDI_RULES and _HINDI_RULES[t].search(q))],
         competitors=find_competitors(q, competitors),
         feature_request=feature,
-        buying_signal=bool(_BUYING.search(q)),
+        buying_signal=bool(_BUYING.search(q) or _HINDI_BUYING.search(q)),
     )
 
 

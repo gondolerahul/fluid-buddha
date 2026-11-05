@@ -156,7 +156,8 @@ def test_three_greeting_test_finds_a_winner_and_promotes_it():
         # No test yet: no arm, and no site greeting either.
         off = _beacon(client, "/experiment/enroll", {"key": key, "visitor": "visitor-zzzz"}).json()
         assert off["arm"] is None and off["overrides"] == {}
-        assert off["defaults"] == {"greeting": None, "design": "level1"}
+        assert off["defaults"] == {"greeting": None, "design": "level1", "languages": ["en"],
+                                   "widget_language": "auto", "greeting_hi": None}
 
         plan = client.get(f"{base}/plan", params={"variants": 3, "baseline": 0.05, "mde": 0.5},
                           headers=h).json()

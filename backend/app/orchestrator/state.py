@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.ai.base import ChatMessage
+from app.i18n.detect import choose
 from app.trust.pii import PiiVault
 
 
@@ -62,6 +63,25 @@ class ConversationState:
     # Live takeover (M2-2): the last person-to-visitor message already folded
     # into ``history``, so the agent knows what was said when it takes over again.
     live_seen: int = 0
+    # ---- language (M2-7) ----
+    lang: str = "en"                    # this turn's reply language: en | hi
+    lang_seen: str = "en"               # what the visitor wrote: en | hi | hinglish
+    lang_pref: Optional[str] = None     # asked for ("reply in Hindi"), kept
+    ui_lang: Optional[str] = None       # the widget's language (hello / chat)
+    used_hindi: bool = False            # wrote in Devanagari at some point
+
+    def pick_language(self, text: str, enabled) -> str:
+        """Decide this turn's reply language from what the visitor wrote."""
+        choice, self.lang_pref = choose(text, enabled=enabled, pref=self.lang_pref,
+                                        ui=self.ui_lang, used_hindi=self.used_hindi)
+        self.lang, self.lang_seen = choice.reply, choice.seen
+        self.used_hindi = self.used_hindi or choice.seen == "hi"
+        return self.lang
+
+    def start_language(self, ui: Optional[str], enabled) -> None:
+        """Before anything is said: a Hindi widget on a Hindi site starts in Hindi."""
+        self.ui_lang = ui if ui in ("en", "hi") else None
+        self.lang = "hi" if self.ui_lang == "hi" and "hi" in enabled else "en"
 
     def to_dict(self) -> dict:
         """JSON-able form for a shared session store (F-3)."""
@@ -77,6 +97,8 @@ class ConversationState:
             "components": self.components,
             "pii": self.pii.to_dict(),
             "live_seen": self.live_seen,
+            "lang": self.lang, "lang_seen": self.lang_seen, "lang_pref": self.lang_pref,
+            "ui_lang": self.ui_lang, "used_hindi": self.used_hindi,
         }
 
     @classmethod
@@ -95,6 +117,11 @@ class ConversationState:
         state.components = dict(data.get("components") or {})
         state.pii = PiiVault.from_dict(data.get("pii") or {})
         state.live_seen = int(data.get("live_seen") or 0)
+        state.lang = "hi" if data.get("lang") == "hi" else "en"
+        state.lang_seen = str(data.get("lang_seen") or "en")
+        state.lang_pref = data.get("lang_pref") if data.get("lang_pref") in ("en", "hi") else None
+        state.ui_lang = data.get("ui_lang") if data.get("ui_lang") in ("en", "hi") else None
+        state.used_hindi = bool(data.get("used_hindi"))
         return state
 
     def add_turn(self, user_text: str, model_text: str) -> None:

@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     # fallback engine); ``tts_gemini_voice`` is a Gemini prebuilt voice name.
     tts_model: str = "gemini-3.1-flash-tts-preview"
     tts_voice: str = "en-US-Neural2-F"
+    tts_voice_hi: str = "hi-IN-Neural2-A"   # legacy Cloud TTS voice for Hindi (M2-7)
     tts_gemini_voice: str = "Aoede"
     tts_sample_rate: int = 24000
 

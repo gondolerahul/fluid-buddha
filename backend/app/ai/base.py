@@ -99,6 +99,7 @@ class TranscriptEvent:
     text: str
     is_final: bool
     confidence: float = 1.0
+    language: str = ""      # the recogniser's language for this result, if it says
 
 
 @runtime_checkable
@@ -106,7 +107,7 @@ class ASREngine(Protocol):
     """Streaming speech-to-text. Consumes PCM16 mono audio chunks."""
 
     async def transcribe_stream(
-        self, audio: AsyncIterator[bytes]
+        self, audio: AsyncIterator[bytes], languages: Sequence[str] = ()
     ) -> AsyncIterator[TranscriptEvent]: ...
 
 
@@ -116,4 +117,4 @@ class TTSEngine(Protocol):
 
     sample_rate: int
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]: ...
+    async def synthesize_stream(self, text: str, language: str = "") -> AsyncIterator[bytes]: ...

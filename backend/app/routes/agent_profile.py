@@ -11,7 +11,7 @@ replicas within the profile cache TTL (app/orchestrator/profile.py).
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
@@ -63,6 +63,9 @@ class ProfileUpdate(BaseModel):
     competitors: Optional[list[str]] = Field(None, max_length=30)
     cta_label: Optional[str] = Field(None, max_length=60)
     cta_url: Optional[str] = Field(None, max_length=500)
+    languages: Optional[list[Literal["en", "hi"]]] = Field(None, max_length=2)
+    widget_language: Optional[Literal["auto", "en", "hi"]] = None
+    greeting_hi: Optional[str] = Field(None, max_length=300)
 
     @field_validator("cta_url")
     @classmethod

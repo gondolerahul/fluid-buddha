@@ -120,19 +120,21 @@ class EpisodicCache:
         channel: str = "voice",
         kind: str = "turn",
         grounding: Optional[dict] = None,
+        lang: str = "en",
     ) -> None:
         if not (question and answer_text):
             return
-        if kind == "turn" and await self._curated(question):
+        lang = "hi" if lang == "hi" else "en"
+        if kind == "turn" and await self._curated(question, lang):
             return   # a pinned answer stands; a blocked question stays uncached
         try:
             vec = await self._embed(question)
             sql = (
                 "INSERT INTO conversation_cache "
                 "(id, site_key, persona, page, kind, q_norm, question, answer_text, "
-                " components, actions, channel, grounding, embedding) VALUES "
+                " components, actions, channel, grounding, lang, embedding) VALUES "
                 "(:id, :s, :p, :pg, :k, :qn, :q, :a, CAST(:c AS jsonb), "
-                "CAST(:ac AS jsonb), :ch, CAST(:g AS jsonb), "
+                "CAST(:ac AS jsonb), :ch, CAST(:g AS jsonb), :lang, "
                 + ("CAST(:emb AS vector)" if vec is not None else "NULL") + ")"
             )
             await self.db.execute(text(sql), {
@@ -148,6 +150,7 @@ class EpisodicCache:
                 "ac": json.dumps(actions or []),
                 "ch": channel,
                 "g": json.dumps(grounding) if grounding else None,
+                "lang": lang,
                 "emb": json.dumps(vec) if vec is not None else None,
             })
             await self.db.commit()
@@ -162,12 +165,12 @@ class EpisodicCache:
         if self.settings.episodic_memory_enabled and kind == "turn":
             await self._write_episode(question, answer_text, persona, page, channel)
 
-    async def _curated(self, question: str) -> bool:
+    async def _curated(self, question: str, lang: str = "en") -> bool:
         try:
             res = await self.db.execute(text(
                 "SELECT 1 FROM conversation_cache WHERE site_key=:s AND kind='turn' "
-                "AND q_norm=:qn AND status <> 'auto' LIMIT 1"
-            ), {"s": self.site_key, "qn": normalize_question(question)})
+                "AND q_norm=:qn AND lang=:lang AND status <> 'auto' LIMIT 1"
+            ), {"s": self.site_key, "qn": normalize_question(question), "lang": lang})
             return res.first() is not None
         except Exception:
             return False
@@ -227,10 +230,12 @@ class EpisodicCache:
 
     async def query(
         self, *, transcript: str, persona: Optional[str] = None,
-        page: Optional[str] = None, top_k: int = 3,
+        page: Optional[str] = None, top_k: int = 3, lang: str = "en",
     ) -> list[CachedAnswer]:
         """Ranked replay candidates: exact-question match first (score 1.0), then
-        persona-compatible cosine neighbours."""
+        persona-compatible cosine neighbours. Only answers given in ``lang``
+        (M2-7): a Hindi question never replays an English answer."""
+        lang = "hi" if lang == "hi" else "en"
         out: list[CachedAnswer] = []
         seen: set = set()
 
@@ -240,11 +245,13 @@ class EpisodicCache:
                 "SELECT id, question, answer_text, components, actions, persona, page, "
                 "grounding, status FROM conversation_cache "
                 "WHERE site_key=:s AND kind='turn' AND q_norm=:qn AND status <> 'blocked' "
+                "AND lang=:lang "
                 "AND (persona IS NULL OR CAST(:p AS text) IS NULL OR persona=CAST(:p AS text)) "
                 "ORDER BY (status = 'pinned') DESC, "
                 "(persona IS NOT DISTINCT FROM CAST(:p AS text)) DESC, "
                 "created_at DESC LIMIT 1"
-            ), {"s": self.site_key, "qn": normalize_question(transcript), "p": persona})
+            ), {"s": self.site_key, "qn": normalize_question(transcript), "p": persona,
+                "lang": lang})
             row = res.first()
             if row is not None:
                 out.append(self._row_to_answer(row, 1.0, "exact", row[7], row[8]))
@@ -261,10 +268,11 @@ class EpisodicCache:
                     "page, 1 - (embedding <=> CAST(:vec AS vector)) AS score, grounding, "
                     "status FROM conversation_cache "
                     "WHERE site_key=:s AND kind='turn' AND embedding IS NOT NULL "
-                    "AND status <> 'blocked' "
+                    "AND status <> 'blocked' AND lang=:lang "
                     "AND (persona IS NULL OR CAST(:p AS text) IS NULL OR persona=CAST(:p AS text)) "
                     "ORDER BY embedding <=> CAST(:vec AS vector) LIMIT :k"
-                ), {"s": self.site_key, "vec": json.dumps(vec), "p": persona, "k": top_k})
+                ), {"s": self.site_key, "vec": json.dumps(vec), "p": persona, "k": top_k,
+                    "lang": lang})
                 for r in res.fetchall():
                     if r[0] in seen:
                         continue
@@ -315,6 +323,7 @@ class EpisodicCache:
             "channel": r["channel"],
             "hit_count": r["hit_count"],
             "status": r["status"],
+            "lang": r.get("lang", "en"),
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         }
 
@@ -336,7 +345,7 @@ class EpisodicCache:
         )).scalar() or 0
         res = await self.db.execute(
             text("SELECT id, question, answer_text, components, actions, persona, page, "
-                 f"channel, hit_count, status, created_at FROM conversation_cache "
+                 f"channel, hit_count, status, lang, created_at FROM conversation_cache "
                  f"WHERE {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"),
             {**params, "lim": limit, "off": offset},
         )
@@ -345,7 +354,7 @@ class EpisodicCache:
     async def get_entry(self, entry_id: uuid.UUID) -> Optional[dict]:
         res = await self.db.execute(
             text("SELECT id, question, answer_text, components, actions, persona, page, "
-                 "channel, hit_count, status, created_at FROM conversation_cache "
+                 "channel, hit_count, status, lang, created_at FROM conversation_cache "
                  "WHERE id=:id AND site_key=:s"),
             {"id": entry_id, "s": self.site_key},
         )

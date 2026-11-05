@@ -115,7 +115,10 @@ async def enroll(request: Request) -> dict:
         bot = is_bot(request.headers.get("user-agent"), data.get("automated"))
         result = await exp_store.enroll(db, resolved.site_key, visitor, bot=bot)
     profile = await ensure_profile(resolved.site_key)
-    defaults = {"greeting": profile.greeting or None, "design": resolved.website.design}
+    defaults = {"greeting": profile.greeting or None, "design": resolved.website.design,
+                # Languages (M2-7): the widget picks its labels from these.
+                "languages": profile.languages, "widget_language": profile.widget_language,
+                "greeting_hi": profile.greeting_hi or None}
     return {**(result or _NO_ARM), "defaults": defaults}
 
 

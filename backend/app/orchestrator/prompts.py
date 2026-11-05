@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 
+from app.i18n.strings import language_fragment
 from app.orchestrator.personas import persona_fragment
 from app.orchestrator.profile import profile_for
 from app.orchestrator.sitemap import sitemap_prompt
@@ -31,7 +32,19 @@ Given the visitor's latest utterance, respond with ONLY a compact JSON object:
 Output JSON only. No markdown, no prose."""
 
 
-def build_router_system(site_key: str = "hirebuddha") -> str:
+# Added to the router's JSON for a turn that isn't plain English (M2-7): the
+# knowledge base is English, so retrieval searches with this instead. Same
+# model call as the ack, so it costs no extra round trip.
+_ROUTER_QUERY_RULE = """
+- query_en: the visitor's question as a short, self-contained ENGLISH search
+  query for an English knowledge base (translate it; resolve "it"/"this" from
+  the conversation). Keep product and company names as written."""
+_ROUTER_HINDI_ACK = """
+- ack: write it in Hindi (Devanagari)."""
+
+
+def build_router_system(site_key: str = "hirebuddha", *, lang: str = "en",
+                        seen: str = "en") -> str:
     profile = profile_for(site_key)
     slugs = profile.persona_slugs
     if slugs:
@@ -41,12 +54,19 @@ def build_router_system(site_key: str = "hirebuddha") -> str:
         )
     else:
         persona_rule = "- persona: always null (this site defines no visitor segments)."
-    return (
+    if seen != "en":
+        persona_rule += _ROUTER_QUERY_RULE
+    if lang == "hi":
+        persona_rule += _ROUTER_HINDI_ACK
+    out = (
         _ROUTER_TEMPLATE
         .replace("{agent}", profile.agent_name)
         .replace("{company}", profile.company_name)
         .replace("{persona_rule}", persona_rule)
     )
+    if seen != "en":
+        out = out.replace('"ack": "..."}', '"ack": "...", "query_en": "..."}')
+    return out
 
 
 def _fill(template: str, site_key: str) -> str:
@@ -217,6 +237,8 @@ def build_lean_system(
     section: str | None = None,
     related: list | None = None,
     probe: bool = False,
+    lang: str = "en",
+    seen: str = "en",
 ) -> str:
     """Single-shot, tool-free grounded prompt for the lean conversational path
     (Hybrid architecture). Retrieval is done once up front and the snippets are
@@ -233,12 +255,14 @@ def build_lean_system(
         _related_fragment(related),
         _PROBE_DIRECTIVE if probe else "",
         "CONTEXT SNIPPETS (your only source of truth):\n" + ctx,
+        language_fragment(lang, seen),
     ]
     return "\n".join(p for p in parts if p)
 
 
 def build_reaction_system(
     persona: str | None, site_key: str, component_type: str, state: dict | None,
+    lang: str = "en",
 ) -> str:
     """Tiny prompt for a LIVE reaction when the visitor plays with an interactive
     component (slider/toggle/tab). One short spoken sentence, or empty if there's
@@ -254,6 +278,7 @@ def build_reaction_system(
         "numbers back, don't greet, don't ask a question, don't mention tools. If "
         "there's nothing genuinely useful to add, reply with an empty string. "
         + persona_fragment(persona, site_key)
+        + (" Say it in Hindi (Devanagari)." if lang == "hi" else "")
     )
 
 
@@ -268,6 +293,8 @@ def build_thinker_system(
     extreme_brief: str | None = None,
     related: list | None = None,
     probe: bool = False,
+    lang: str = "en",
+    seen: str = "en",
 ) -> str:
     parts = [
         _fill(_THINKER_TEMPLATE, site_key),
@@ -281,4 +308,8 @@ def build_thinker_system(
     if extreme_brief:
         parts.append(extreme_brief)
     parts.append(sitemap_prompt(site_key))
+    note = language_fragment(lang, seen)
+    if note:
+        parts.append(note + " The knowledge base is in English: always write "
+                     "`query_cortex` queries in English.")
     return "\n".join(p for p in parts if p)

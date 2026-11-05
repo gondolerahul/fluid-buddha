@@ -35,6 +35,7 @@ async def record_turn(
     persona: Optional[str] = None, page: Optional[str] = None,
     grounding: Optional[dict] = None, served_from_cache: bool = False,
     consent_at: Optional[datetime] = None, components: Optional[list] = None,
+    lang: str = "en",
 ) -> None:
     """Append one turn to the session's conversation (created on first turn).
     ``consent_at`` is when the visitor allowed the microphone (WS8). The caller
@@ -62,9 +63,9 @@ async def record_turn(
     await db.execute(text(
         "INSERT INTO conversation_turns "
         "(id, conversation_id, site_key, question, q_norm, answer, intent, persona, "
-        " page, found, confidence, sources, served_from_cache, components) VALUES "
+        " page, found, confidence, sources, served_from_cache, components, lang) VALUES "
         "(:id, :c, :s, :q, :qn, :a, :i, :p, :pg, :f, :conf, CAST(:src AS jsonb), :cached, "
-        " CAST(:comp AS jsonb))"
+        " CAST(:comp AS jsonb), :lang)"
     ), {
         "id": uuid.uuid4(), "c": conv_id, "s": site_key, "q": question[:2000],
         "qn": normalize_question(question), "a": answer or "", "i": intent,
@@ -73,6 +74,8 @@ async def record_turn(
         "src": json.dumps(g.get("sources") or []), "cached": served_from_cache,
         # The components shown (their specs), so a recap can draw them again (M2-6).
         "comp": json.dumps(list(components or [])[:6], default=str),
+        # What the visitor wrote in: en, hi or hinglish (M2-7).
+        "lang": lang if lang in ("en", "hi", "hinglish") else "en",
     })
 
 
@@ -278,7 +281,12 @@ async def signals(db: AsyncSession, site_key: str, days: int = 30) -> dict[str, 
         "count(*) FILTER (WHERE buying_signal) AS buying, "
         "count(DISTINCT conversation_id) FILTER (WHERE buying_signal) AS buying_conversations "
         f"FROM conversation_turns t WHERE t.site_key = :s AND {cur}"), p)).mappings().one()
+    # Questions by the language visitors wrote in (M2-7).
+    langs = {r["lang"]: int(r["n"]) for r in (await db.execute(text(
+        "SELECT t.lang, count(*) AS n FROM conversation_turns t "
+        f"WHERE t.site_key = :s AND {cur} GROUP BY t.lang"), p)).mappings().all()}
     return {
+        "languages": [{"lang": k, "turns": langs[k]} for k in ("en", "hi", "hinglish") if langs.get(k)],
         "days": days,
         "classified": int(head["classified"]), "pending": int(head["pending"]),
         "objections": [

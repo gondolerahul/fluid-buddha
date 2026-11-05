@@ -27,9 +27,11 @@ from app.config import Settings
 logger = logging.getLogger(__name__)
 
 
-def audio_key(seg_text: str, *, voice: str, sample_rate: int) -> str:
-    """Stable cache key for one TTS segment under a given voice + sample rate."""
+def audio_key(seg_text: str, *, voice: str, sample_rate: int, language: str = "") -> str:
+    """Stable cache key for one TTS segment under a given voice + sample rate,
+    and the spoken language when one was pinned (M2-7; English keys unchanged)."""
     norm = " ".join((seg_text or "").split())
+    voice = f"{voice}@{language}" if language else voice
     raw = f"{voice}|{sample_rate}|{norm}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
@@ -41,8 +43,9 @@ class AnswerAudioCache:
         self.sample_rate = settings.tts_sample_rate
         self.voice = settings.tts_gemini_voice
 
-    def key(self, seg_text: str) -> str:
-        return audio_key(seg_text, voice=self.voice, sample_rate=self.sample_rate)
+    def key(self, seg_text: str, language: str = "") -> str:
+        return audio_key(seg_text, voice=self.voice, sample_rate=self.sample_rate,
+                         language=language)
 
     async def get(self, text_hash: str) -> Optional[bytes]:
         try:
