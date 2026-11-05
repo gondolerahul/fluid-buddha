@@ -13,6 +13,7 @@ RUN pip install -r requirements.txt -r requirements-observability.txt
 COPY app ./app
 COPY ingestion ./ingestion
 COPY scripts ./scripts
+COPY loadtest ./loadtest
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 COPY docker-entrypoint.sh ./docker-entrypoint.sh

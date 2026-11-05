@@ -66,6 +66,14 @@ JOB_RUNS = Counter(
     "fb_job_runs_total", "Background job runs by outcome (ok, error, skipped = another replica).",
     ["job", "outcome"], registry=REGISTRY,
 )
+READY = Gauge(
+    "fb_ready", "Readiness of each dependency (1 ok, 0 failing), from the last check (M3-6).",
+    ["check"], registry=REGISTRY,
+)
+DRAINING = Gauge(
+    "fb_draining", "1 while this replica is shutting down and moving its voice sessions (M3-6).",
+    registry=REGISTRY,
+)
 COST_ALERTS = Counter(
     "fb_cost_alerts_total", "Per-site daily cost alerts raised (threshold, cap_80, cap_100).",
     ["level"], registry=REGISTRY,

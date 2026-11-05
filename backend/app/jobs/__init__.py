@@ -89,6 +89,14 @@ def build_scheduler(settings: Settings) -> Scheduler:
         async with session_scope() as db:
             return await memory.build_due(db) or None
 
+    async def status_probe() -> object:
+        """M3-6: one measurement for the status page (and the fb_ready gauge)."""
+        from app.status import store as status
+
+        async with session_scope() as db:
+            states = await status.probe(db)
+        return sum(1 for st, _ in states.values() if st != "up") or None
+
     s = Scheduler()
     s.add(Job("retention_sweep", settings.retention_sweep_minutes * 60, retention))
     s.add(Job("email_outbox", settings.email_outbox_interval_seconds, outbox, run_at_start=True))
@@ -102,4 +110,5 @@ def build_scheduler(settings: Settings) -> Scheduler:
     s.add(Job("access_review", settings.access_review_check_seconds, access_review))
     s.add(Job("session_cleanup", 24 * 3600, session_cleanup))
     s.add(Job("visitor_memory", settings.memory_build_seconds, visitor_memory))
+    s.add(Job("status_probe", settings.status_probe_seconds, status_probe))
     return s

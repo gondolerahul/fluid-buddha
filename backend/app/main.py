@@ -45,6 +45,7 @@ from app.routes import (
     agent_access,
     campaigns,
     licence,
+    status as status_page,
     memory,
     widget,
 )
@@ -68,7 +69,15 @@ async def lifespan(app: FastAPI):
     # Periodic jobs (M2-0): retention sweep (WS8), email outbox, …
     scheduler = build_scheduler(settings)
     scheduler.start()
+    app.state.scheduler = scheduler
+    from app.observability import health
+    health.current_app = app
+    # On SIGTERM, voice sessions move to another replica first (M3-6).
+    from app.transport import drain
+    drain.reset()
+    drain.install_signal_hook(settings.drain_seconds)
     yield
+    await drain.drain(settings.drain_seconds)
     await scheduler.stop()
     await dispose_engine()
 
@@ -137,3 +146,4 @@ app.include_router(memory.router)
 app.include_router(campaigns.public)
 app.include_router(campaigns.admin)
 app.include_router(licence.router)
+app.include_router(status_page.router)

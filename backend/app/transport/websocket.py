@@ -180,6 +180,13 @@ class VoiceSession:
     # ---- lifecycle ------------------------------------------------------
     async def run(self) -> None:
         await self.ws.accept()
+        from app.transport import drain
+        if drain.draining():
+            # This replica is shutting down (M3-6): the widget tries another.
+            await self.send(Channel.EVENTS, "reconnect", {"reason": "server_restart"})
+            await self.ws.close(code=drain.TRY_AGAIN_LATER)
+            return
+        drain.register(self)
         log_session_id.set(self.session_id[:8])  # on every log line of this socket
         # The site's own model provider, if its account brought one (M3-4).
         from app.ai.providers import current_site
@@ -221,7 +228,10 @@ class VoiceSession:
                     await self._dispatch(env)
         except WebSocketDisconnect:
             logger.info("ws disconnect session=%s", self.session_id)
+        except RuntimeError as exc:   # closed by a drain mid-receive
+            logger.info("ws closed session=%s: %s", self.session_id, exc)
         finally:
+            drain.unregister(self)
             await self._cancel_response()
             for t in self._live_tasks:
                 t.cancel()
@@ -234,6 +244,21 @@ class VoiceSession:
                 await asyncio.shield(leave)
             except asyncio.CancelledError:
                 pass
+
+    async def drain(self, timeout: float) -> bool:
+        """Shutting down (M3-6): finish the answer being spoken, then move the
+        visitor to another replica. True if the answer had to be cut short."""
+        from app.transport import drain
+        try:
+            await self.send(Channel.EVENTS, "reconnect", {"reason": "server_restart"})
+        except Exception:
+            pass
+        cut = await drain.wait_for_turn(self._response_task, timeout)
+        try:
+            await self.ws.close(code=drain.SERVICE_RESTART)
+        except Exception:
+            pass
+        return cut
 
     # ---- live takeover (M2-2) ---------------------------------------------
     async def _heartbeat(self) -> None:

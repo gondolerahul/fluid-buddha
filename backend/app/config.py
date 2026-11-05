@@ -104,6 +104,14 @@ class Settings(BaseSettings):
     # Self-hosted installs (M3-5): enforce the licence; where it comes from when
     # none is installed in the console (a key, or a file holding one).
     self_hosted: bool = False
+    # Graceful shutdown (M3-6): how long voice sessions get to finish their
+    # answer and move before the replica closes them.
+    drain_seconds: float = 25.0
+    # The public status page (M3-6): its name, how often it measures, and the
+    # token operators post incidents with (unset = no posting).
+    status_title: str = "FluidBuddha"
+    status_probe_seconds: int = 60
+    status_token: str = ""
     licence_key: str = ""
     licence_file: str = ""
 
