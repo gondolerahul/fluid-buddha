@@ -19,7 +19,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: window.localStorage, 
 globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 // Deterministic WebSocket stub (never actually connects).
 globalThis.WebSocket = class {
-  constructor(url) { this.readyState = 0; globalThis.__lastWsUrl = url; }
+  constructor(url) { this.readyState = 0; globalThis.__lastWsUrl = url; (globalThis.__wsAll ||= []).push(this); }
   close() {} send() {}
 };
 
@@ -972,6 +972,28 @@ offline.remove();
   back.session.feed({ channel: 'EVENTS', type: 'memory_forgotten', payload: {} });
   ok(!back.shadowRoot.querySelector('.fb-forget'), 'a spoken "forget me" removes it too');
   back.remove();
+}
+
+// ---- A server restart moves the visitor quietly (M3-6) ----
+{
+  const statuses = [];
+  const moved = new Session(
+    { backend: 'ws://x', api: 'http://x', site: 'hirebuddha', key: 'fbk_drain', intelligence: 'advance', design: 'level1', position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
+    new HostBridge({}),
+    { onStatus(st) { statuses.push(st); }, onUserTranscript() {}, onAgentMessage() {}, onComponent() {}, onPatch() {}, onSystem() {}, onPage() {} },
+  );
+  moved.connect();
+  for (let n = 0; n < 6; n++) {
+    const before = globalThis.__wsAll.length;
+    globalThis.__wsAll[before - 1].onclose({ code: n % 2 ? 1013 : 1012 });
+    await new Promise((r) => setTimeout(r, 2100));
+    if (globalThis.__wsAll.length !== before + 1) { ok(false, `reconnects after close ${n}`); break; }
+  }
+  ok(globalThis.__wsAll.length >= 7 && !statuses.includes('failed'),
+    'closes for a server restart (1012/1013) reconnect every time, never "failed"');
+  const last = globalThis.__wsAll[globalThis.__wsAll.length - 1];
+  ok(new URL(last.url || globalThis.__lastWsUrl).searchParams.get('key') === 'fbk_drain', 'to the same site');
+  moved.destroy?.();
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
