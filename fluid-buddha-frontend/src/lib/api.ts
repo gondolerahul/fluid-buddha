@@ -148,6 +148,11 @@ export type AgentProfile = {
   /** The next step a recap page offers (M2-6). */
   cta_label?: string;
   cta_url?: string;
+  /** Languages (M2-7): "en" always, plus "hi" when the agent may answer in
+   *  Hindi; the widget's labels; the greeting for a visitor in Hindi. */
+  languages?: ("en" | "hi")[];
+  widget_language?: "auto" | "en" | "hi";
+  greeting_hi?: string;
 };
 
 export type WidgetConfig = {
@@ -313,6 +318,8 @@ export type Signals = {
   days: number; classified: number; pending: number;
   objections: ObjectionStat[]; competitors: CompetitorStat[]; requests: FeatureRequest[];
   buying_signals: { turns: number; conversations: number };
+  /** Questions by the language visitors wrote in (M2-7). */
+  languages?: { lang: "en" | "hi" | "hinglish"; turns: number }[];
 };
 export type DigestSettings = {
   enabled: boolean; timezone: string; chosen: boolean; next_send: string; you: string;
@@ -363,6 +370,8 @@ export type CacheEntry = {
   channel: string | null;
   hit_count: number;
   status: CacheStatus;
+  /** The language the answer was given in (M2-7). */
+  lang?: "en" | "hi";
   created_at: string;
 };
 /** auto: replayed by similarity; pinned: always replayed; blocked: never replayed. */

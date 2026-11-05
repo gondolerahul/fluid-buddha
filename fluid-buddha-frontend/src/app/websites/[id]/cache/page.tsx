@@ -80,6 +80,7 @@ export default function CachePage() {
                     <div className="row" style={{ gap: 6, marginTop: 5 }}>
                       {e.persona && <span className="badge">{e.persona}</span>}
                       {e.channel && <span className="badge">{e.channel}</span>}
+                      {e.lang === "hi" && <span className="badge">Hindi</span>}
                       {e.status === "pinned" && <span className="badge accent">pinned</span>}
                       {e.status === "blocked" && <span className="badge err">blocked</span>}
                     </div>

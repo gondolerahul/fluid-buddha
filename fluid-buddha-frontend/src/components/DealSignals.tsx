@@ -13,6 +13,10 @@ function trend(now: number, prev: number): string {
   return d === 0 ? "same as before" : `${d > 0 ? "↑" : "↓"} ${Math.abs(d)}% vs previous`;
 }
 
+const LANG_LABELS: Record<string, string> = {
+  en: "English", hi: "Hindi", hinglish: "Hinglish (Hindi in English letters)",
+};
+
 export function DealSignals({ id, days, onOpen }: { id: string; days: number; onOpen: (cid: string) => void }) {
   const { can } = useAuth();
   const editor = can("editor");
@@ -122,6 +126,12 @@ export function DealSignals({ id, days, onOpen }: { id: string; days: number; on
               <div className="faint" style={{ fontSize: "0.82rem" }}>
                 conversations ({data.buying_signals.turns} questions) in the last {days} days
               </div>
+              {(data.languages ?? []).some((l) => l.lang !== "en") && (
+                <div className="faint" style={{ fontSize: "0.82rem", marginTop: 14 }}>
+                  Asked in: {(data.languages ?? []).map((l) =>
+                    `${LANG_LABELS[l.lang] ?? l.lang} ${l.turns}`).join(" · ")}
+                </div>
+              )}
               {data.pending > 0 && <p className="faint" style={{ fontSize: "0.78rem", marginTop: 12 }}>
                 {data.pending} recent questions are still being read; they show within a minute.</p>}
             </>

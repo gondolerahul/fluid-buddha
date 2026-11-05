@@ -146,6 +146,9 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
   const [tourOn, setTourOn] = useState(initial.tour_enabled ?? true);
   const [ctaLabel, setCtaLabel] = useState(initial.cta_label ?? "");
   const [ctaUrl, setCtaUrl] = useState(initial.cta_url ?? "");
+  const [hindi, setHindi] = useState((initial.languages ?? []).includes("hi"));
+  const [widgetLang, setWidgetLang] = useState(initial.widget_language ?? "auto");
+  const [greetingHi, setGreetingHi] = useState(initial.greeting_hi ?? "");
   const [personas, setPersonas] = useState<Persona[]>(initial.personas);
   const [routes, setRoutes] = useState(initial.routes.join("\n"));
   const [prefixes, setPrefixes] = useState(initial.dynamic_prefixes.join("\n"));
@@ -172,6 +175,9 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
         tour_enabled: tourOn,
         cta_label: ctaLabel.trim(),
         cta_url: ctaUrl.trim(),
+        languages: hindi ? ["en", "hi"] : ["en"],
+        widget_language: widgetLang,
+        greeting_hi: greetingHi.trim(),
         personas: personas
           .filter((p) => p.slug.trim() || p.label.trim())
           .map((p) => ({
@@ -241,6 +247,36 @@ function ProfileForm({ id, initial }: { id: string; initial: AgentProfile }) {
           Offer the guided tour when the agent is opened
         </label>
       </div>
+      <div className="field">
+        <span className="label">Languages</span>
+        <label className="row" style={{ gap: 8, fontSize: "0.88rem" }}>
+          <input type="checkbox" checked={hindi} onChange={(e) => setHindi(e.target.checked)} />
+          Answer in Hindi when a visitor asks in Hindi
+        </label>
+        <p className="faint" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+          English is always on. Hindi questions are answered in Hindi, by voice too; product names, prices and
+          sources stay as written. Hindi typed in English letters (&ldquo;pricing kya hai?&rdquo;) gets a simple
+          English answer unless the visitor prefers Hindi.
+        </p>
+      </div>
+      {hindi && (
+        <div className="grid grid-2" style={{ gap: 14 }}>
+          <div className="field">
+            <label className="label" htmlFor="p-widget-lang">Widget buttons and labels</label>
+            <select id="p-widget-lang" className="select" value={widgetLang}
+              onChange={(e) => setWidgetLang(e.target.value as "auto" | "en" | "hi")}>
+              <option value="auto">Match the visitor&apos;s browser</option>
+              <option value="en">Always English</option>
+              <option value="hi">Always Hindi</option>
+            </select>
+          </div>
+          <div className="field">
+            <label className="label" htmlFor="p-greeting-hi">Greeting in Hindi <span className="faint">(optional)</span></label>
+            <input id="p-greeting-hi" className="input" lang="hi" value={greetingHi} maxLength={300}
+              placeholder="नमस्ते! पूछिए, मैं मदद करती हूँ।" onChange={(e) => setGreetingHi(e.target.value)} />
+          </div>
+        </div>
+      )}
       <div className="grid grid-2" style={{ gap: 14 }}>
         <div className="field">
           <label className="label" htmlFor="p-cta-label">Next step button <span className="faint">(on recap pages)</span></label>
