@@ -110,6 +110,8 @@ class DesignSystem:
         }
         if self.tunables:
             d["tunables"] = self.tunables
+        if isinstance(self.raw.get("schemes"), dict) and self.raw["schemes"]:
+            d["schemes"] = self.raw["schemes"]  # palettes for the scheme tunable (Phase 3)
         return d
 
     def to_prompt(self) -> str:

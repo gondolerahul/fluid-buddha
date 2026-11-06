@@ -3,6 +3,7 @@
 // and player; drives DOM commands through the HostBridge; surfaces UI updates
 // through callbacks.
 
+import { setTaste, TasteRaw } from './taste';
 import { AudioCapture } from '../audio/AudioCapture';
 import { AudioPlayer } from '../audio/AudioPlayer';
 import { JitterBuffer } from '../audio/JitterBuffer';
@@ -214,6 +215,8 @@ export class Session {
     switch (env.channel) {
       case 'EVENTS':
         if (this.live.handle(env.type, env.payload)) break;
+        // What the visitor said changed their taste ("keep it short", Phase 3).
+        if (env.type === 'taste') { setTaste(env.payload.taste as TasteRaw, String(env.payload.compact ?? '')); break; }
         if (env.type === 'ready') {
           if (typeof env.payload.session_id === 'string') this.wsSessionId = env.payload.session_id;
           if (env.payload.privacy) this.privacy = env.payload.privacy as Privacy;

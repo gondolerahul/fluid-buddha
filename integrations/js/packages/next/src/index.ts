@@ -100,6 +100,13 @@ export async function fetchComposedPage(
   if (ua) url.searchParams.set('ua', ua.slice(0, 300)); // crawlers get the canonical page
   const ref = header('referer');
   if (ref) url.searchParams.set('referrer', ref.slice(0, 500));
+  // The visitor's taste (Phase 3): the widget keeps a compact copy in the `fbtaste`
+  // cookie on your domain, so the page can be composed for it on the server.
+  const cookie = header('cookie') || '';
+  const m = /(?:^|;\s*)fbtaste=([^;]*)/.exec(cookie);
+  if (m) {
+    try { url.searchParams.set('taste', decodeURIComponent(m[1]).slice(0, 200)); } catch { /* malformed */ }
+  }
 
   const doFetch = opts.fetch ?? fetch;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;

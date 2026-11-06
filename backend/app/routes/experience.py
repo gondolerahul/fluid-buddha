@@ -66,6 +66,22 @@ class DesignSystemIn(BaseModel):
     radius: str = Field("", max_length=20)
     brand_voice: str = Field("", max_length=600)
     tunables: dict[str, Tunable] = Field(default_factory=dict)
+    # Optional palettes for the scheme tunable (Phase 3): {"dark": {"background": "#000", …}}.
+    schemes: dict[str, dict[str, str]] = Field(default_factory=dict)
+
+    @field_validator("schemes")
+    @classmethod
+    def _schemes(cls, v: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        bad = [k for k in v if k not in ("light", "dark")]
+        if bad:
+            raise ValueError("schemes may only be light and dark")
+        for name, colors in v.items():
+            if len(colors) > 24:
+                raise ValueError("at most 24 colours per scheme")
+            for k, c in colors.items():
+                if not re.fullmatch(r"[a-z][a-z0-9_-]{0,30}", k) or not _HEX_RE.match(str(c)):
+                    raise ValueError(f"{name} colour {k!r} must be a hex value such as #1a2b3c")
+        return v
 
     @field_validator("logo_url")
     @classmethod

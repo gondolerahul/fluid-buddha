@@ -129,6 +129,7 @@ class HeavyThinker:
         lang: str = "en",
         seen: str = "en",
         on_screen_plan: Optional[dict] = None,
+        taste_brief: str = "",
     ) -> ThinkResult:
         extreme_brief = build_extreme_brief(site_key) if intelligence == "extreme" else None
         system = build_thinker_system(
@@ -137,6 +138,9 @@ class HeavyThinker:
             extreme_brief=extreme_brief, related=related, probe=probe,
             lang=lang, seen=seen,
         )
+        if taste_brief:  # the visitor's taste (Phase 3): shape, never facts
+            system += ("\nVISITOR TASTE: " + taste_brief + " Shape the answer's length and "
+                       "format to it; never change facts or prices for it.")
         gated_tools = tools_for(intelligence, site_key)
         on_screen = dict(on_screen or {})
         if on_screen and any(t.name == "patch_component" for t in gated_tools):

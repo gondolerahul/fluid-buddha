@@ -12,8 +12,11 @@
 import type { PageSection } from './protocol';
 import { PageRenderer } from './ui/page/PageRenderer';
 import { applyPatch, PlanPatch } from './core/patch/patcher';
+import { rememberPlan } from './core/taste';
+import { trackEngagement, whyControl } from './core/why';
 
 interface PageData {
+  why?: string[];
   plan_id?: string;
   api?: string;
   key?: string;
@@ -91,6 +94,15 @@ export function hydrate(doc: Document = document): number {
     };
     if (customElements.get(tag)) set();
     else customElements.whenDefined(tag).then(set).catch(() => {});
+  }
+  // "Why this?" and engagement rewards (Phase 3).
+  const main = doc.querySelector('main[data-fb-plan]');
+  const inner = main?.querySelector('.fbpage-inner');
+  const why = whyControl(doc, data.why);
+  if (why && inner) inner.prepend(why);
+  if (main && data.api) {
+    trackEngagement(main, { api: data.api, key: data.key || '' }, data.plan_id);
+    rememberPlan(data.plan_id);
   }
   window.addEventListener('fluidbuddha:plan_patch', (e) => {
     applyPatch((e as CustomEvent<PlanPatch>).detail, [doc], send);

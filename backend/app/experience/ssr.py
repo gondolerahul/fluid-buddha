@@ -168,19 +168,22 @@ def render_section(s: dict[str, Any], form_action: str = "") -> str:
     return f'<section class="fbpage-section fbpage-{_t(t)}" {attrs}{hydrate}>{inner}</section>'
 
 
-def stylesheet(design: DesignSystem) -> str:
-    tokens = ";".join(f"{k}:{v}" for k, v in design.to_tokens().items()
-                      if re.fullmatch(r"[#\w\s.,%()'\"-]{1,200}", str(v)))
+def stylesheet(design: DesignSystem, overrides: Optional[dict[str, str]] = None) -> str:
+    """The page stylesheet in the brand's tokens, with the visitor's tunables
+    (density, motion, scheme — only where the brand allows them, P3-3)."""
+    merged = {**design.to_tokens(), **(overrides or {})}
+    tokens = ";".join(f"{k}:{v}" for k, v in merged.items()
+                      if re.fullmatch(r"--[a-z0-9-]{1,40}", k) and re.fullmatch(r"[#\w\s.,%()'\"-]{1,200}", str(v)))
     return f""":root{{{tokens}}}
 .fbpage-root{{background:var(--ds-color-background,#0c0b09);color:var(--ds-color-text,#f3f5f7);font-family:var(--ds-font,ui-sans-serif,system-ui,sans-serif);font-size:var(--ds-base-size,16px);line-height:1.6}}
-.fbpage-inner{{max-width:1000px;margin:0 auto;padding:8px 5vw 96px;display:flex;flex-direction:column;gap:34px}}
+.fbpage-inner{{max-width:1000px;margin:0 auto;padding:8px 5vw 96px;display:flex;flex-direction:column;gap:var(--ds-gap,34px)}}
 .fbpage-h2{{font-size:1.6rem;font-family:var(--ds-font-heading,inherit);margin:0 0 12px}}
 .fbpage-body{{opacity:.92;max-width:70ch}}
 .fbpage-hero{{text-align:center;padding:56px 0 28px}}
 .fbpage-hero-title{{font-size:clamp(2rem,5vw,3.4rem);margin:0 0 16px;font-family:var(--ds-font-heading,inherit);color:var(--ds-color-primary,#c9a24a)}}
 .fbpage-hero-sub{{font-size:1.15rem;opacity:.85;max-width:60ch;margin:0 auto 24px}}
-.fbpage-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}}
-.fbpage-card{{background:var(--ds-color-surface,#14161c);border-radius:var(--ds-radius,14px);padding:20px;margin:0}}
+.fbpage-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:calc(var(--ds-gap,34px) / 2)}}
+.fbpage-card{{background:var(--ds-color-surface,#14161c);border-radius:var(--ds-radius,14px);padding:var(--ds-pad,20px);margin:0}}
 .fbpage-card-title{{margin:0 0 8px;font-size:1.1rem}}
 .fbpage-price{{font-size:1.7rem;font-weight:700;color:var(--ds-color-primary,#c9a24a);margin:6px 0 10px}}
 .fbpage-btn{{display:inline-block;background:var(--ds-color-primary,#c9a24a);color:var(--ds-color-background,#0c0b09);border:0;border-radius:var(--ds-radius,14px);padding:12px 22px;font-weight:600;text-decoration:none;cursor:pointer}}
@@ -190,7 +193,8 @@ def stylesheet(design: DesignSystem) -> str:
 .fbpage-media{{max-width:100%;border-radius:var(--ds-radius,14px)}} .fbpage-steps{{display:grid;gap:8px}}
 .fbpage-form{{display:grid;gap:12px;max-width:520px}} .fbpage-form label{{display:grid;gap:4px}}
 .fbpage-form input,.fbpage-form textarea{{font:inherit;padding:10px;border-radius:8px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit}}
-.fb-patched{{animation:fb-patch .9s ease}} @keyframes fb-patch{{from{{opacity:.2;transform:translateY(6px)}}to{{opacity:1;transform:none}}}}"""
+.fb-why{{font-size:.8rem;opacity:.7;margin:0 0 6px}} .fb-why span{{margin-left:6px}} .fb-why button{{font:inherit;background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0}}
+.fb-patched{{animation:fb-patch var(--ds-anim,.9s) ease}} @keyframes fb-patch{{from{{opacity:.2;transform:translateY(6px)}}to{{opacity:1;transform:none}}}}"""
 
 
 def page_data_json(data: dict[str, Any]) -> str:

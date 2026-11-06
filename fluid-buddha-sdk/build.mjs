@@ -49,7 +49,7 @@ const shared = {
 const scriptTagLoader = {
   name: 'script-tag-loaders',
   setup(b) {
-    b.onResolve({ filter: /\/(particles|components|regions|patch)\/load$|^\.\/load$/ }, (args) => ({
+    b.onResolve({ filter: /\/(particles|components|regions|patch|taste)\/load$|^\.\/load$/ }, (args) => ({
       path: path.join(args.resolveDir, args.path.replace(/load$/, 'load.global.ts')),
     }));
   },
@@ -80,6 +80,9 @@ await Promise.all([
   build({ ...shared, entryPoints: ['src/core/patch/global.ts'], format: 'iife',
           globalName: 'FluidBuddhaPatcher', minify: true,
           outfile: 'dist/fluid-buddha-patcher.global.js' }),
+  // The visitor's preferences panel (Phase 3), fetched when opened.
+  build({ ...shared, entryPoints: ['src/core/taste/global.ts'], format: 'iife',
+          globalName: 'FluidBuddhaPrefs', minify: true, outfile: 'dist/fluid-buddha-prefs.global.js' }),
   // Server-rendered composed pages (Phase 2): hydration + patches.
   build({ ...shared, entryPoints: ['src/composed.ts'], format: 'iife', globalName: 'FluidBuddhaComposed',
           minify: true, outfile: 'dist/fluid-buddha-composed.global.js' }),

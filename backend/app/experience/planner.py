@@ -95,10 +95,19 @@ async def gather(db: AsyncSession, bridge: Any, site_key: str, intent: Intent, s
     return m
 
 
-def allowed_entries(slot: RegionSlot, manifest: ComponentManifest) -> list[ManifestEntry]:
-    if slot.components:
-        return [e for c in slot.components if (e := manifest.get(c)) is not None]
-    return manifest.entries()
+# Renderers that suit each format preference (Phase 3): preferred first.
+FORMAT_RENDERERS = {"tables": ("comparison", "pricing_table"), "charts": ("chart", "roi_calculator"),
+                    "visuals": ("media", "chart", "logos"), "bullets": ("feature_grid", "faq"),
+                    "prose": ("text", "hero")}
+
+
+def allowed_entries(slot: RegionSlot, manifest: ComponentManifest, prefer: Optional[str] = None) -> list[ManifestEntry]:
+    entries = ([e for c in slot.components if (e := manifest.get(c)) is not None]
+               if slot.components else manifest.entries())
+    good = FORMAT_RENDERERS.get(prefer or "", ())
+    if good:  # stable: the owner's order otherwise
+        entries = sorted(entries, key=lambda e: 0 if e.renderer in good else 1)
+    return entries
 
 
 # ---- rules composer ----------------------------------------------------------
@@ -169,15 +178,24 @@ def _rules_region(slot: RegionSlot, entry: ManifestEntry, intent: Intent, m: Mat
 
 
 def compose_rules(slots: list[RegionSlot], manifest: ComponentManifest, intent: Intent,
-                  sig: Signals, m: Material) -> list[dict[str, Any]]:
+                  sig: Signals, m: Material, *, variant: int = 0, prefer: Optional[str] = None,
+                  short: bool = False) -> list[dict[str, Any]]:
+    """``variant`` > 0 picks the next fitting component per slot (a bandit arm);
+    ``prefer`` orders components by format preference; ``short`` keeps text brief."""
     pick = _Picker(m, _words(f"{intent.label} {intent.stage} {sig.text()}"))
     out: list[dict[str, Any]] = []
     for slot in slots:
-        for entry in allowed_entries(slot, manifest):
-            region = _rules_region(slot, entry, intent, m, pick)
+        fits = []
+        for entry in allowed_entries(slot, manifest, prefer):
+            region = _rules_region(slot, entry, intent, m, pick) if len(fits) <= variant else None
             if region:
-                out.append(region)
-                break
+                fits.append(region)
+        if fits:
+            region = fits[min(variant, len(fits) - 1)]
+            if short and isinstance(region["props"].get("body"), str):
+                region["props"]["body"] = _sentences(region["props"]["body"])[0] if _sentences(region["props"]["body"]) \
+                    else region["props"]["body"]
+            out.append(region)
     return out
 
 
@@ -198,9 +216,11 @@ def _tool_spec() -> Any:
 
 
 def _prompt(slots: list[RegionSlot], manifest: ComponentManifest, intent: Intent, sig: Signals,
-            m: Material, *, bindable: str, brand_voice: str) -> str:
+            m: Material, *, bindable: str, brand_voice: str, taste_brief: str = "", avoid: str = "") -> str:
     lines = [f"INTENT: {intent.label} (stage: {intent.stage or 'unknown'})",
-             f"PAGE: {sig.page}", f"BRAND VOICE: {brand_voice}" if brand_voice else ""]
+             f"PAGE: {sig.page}", f"BRAND VOICE: {brand_voice}" if brand_voice else "",
+             f"VISITOR TASTE: {taste_brief}" if taste_brief else "",
+             f"VARIANT: take a clearly different angle from this version: {avoid}" if avoid else ""]
     if sig.utm_campaign or sig.query:
         lines.append(f"ARRIVED VIA: campaign={sig.utm_campaign or '-'} search={sig.query or '-'}")
     lines.append("SLOTS:")
@@ -219,14 +239,16 @@ def _prompt(slots: list[RegionSlot], manifest: ComponentManifest, intent: Intent
 
 async def compose_llm(llm: Any, model: Optional[str], slots: list[RegionSlot], manifest: ComponentManifest,
                       intent: Intent, sig: Signals, m: Material, *, bindable: str,
-                      brand_voice: str) -> Optional[tuple[list[dict[str, Any]], int, int]]:
+                      brand_voice: str, taste_brief: str = "", avoid: str = ""
+                      ) -> Optional[tuple[list[dict[str, Any]], int, int]]:
     from app.ai.base import ChatMessage
 
     try:
         resp = await llm.generate(
             system=PLANNER_PROMPT,
             messages=[ChatMessage(role="user", text=_prompt(slots, manifest, intent, sig, m,
-                                                            bindable=bindable, brand_voice=brand_voice))],
+                                                            bindable=bindable, brand_voice=brand_voice,
+                                                            taste_brief=taste_brief, avoid=avoid))],
             tools=[_tool_spec()], model=model, temperature=0.3, max_output_tokens=2500)
     except Exception as exc:
         logger.warning("region planning failed, using the rules: %s", exc)
@@ -292,12 +314,15 @@ def enforce(raw: list[dict[str, Any]], slots: list[RegionSlot], manifest: Compon
 async def build_plan(
     db: AsyncSession, rt: Any, site_key: str, slots: list[RegionSlot], intent: Intent, sig: Signals, *,
     manifest: ComponentManifest, registry: Any, llm: Any = None, model: Optional[str] = None,
-    bindable: str = "", brand_voice: str = "",
+    bindable: str = "", brand_voice: str = "", taste: Any = None, variant: int = 0, avoid: str = "",
 ) -> dict[str, Any]:
     """``{plan, composer, build_ms, tokens, dropped, problems}``."""
     t0 = time.monotonic()
     bridge = rt.bridge(db, site_key=site_key)
     m = await gather(db, bridge, site_key, intent, sig, threshold=rt.settings.cortex_confidence_threshold)
+    taste_brief = taste.brief() if taste is not None else ""
+    prefer = taste.value("format") if taste is not None else None
+    short = taste is not None and taste.value("detail") == "summary"
 
     def finish(regions: list[dict[str, Any]]) -> Any:
         return validate_plan({"title": intent.label, "regions": regions,
@@ -310,7 +335,8 @@ async def build_plan(
     report = None
     if llm is not None:
         got = await compose_llm(llm, model, slots, manifest, intent, sig, m,
-                                bindable=bindable, brand_voice=brand_voice)
+                                bindable=bindable, brand_voice=brand_voice, taste_brief=taste_brief,
+                                avoid=avoid)
         if got is not None:
             regions, dropped = enforce(got[0], slots, manifest, m)
             report = finish(regions)
@@ -320,7 +346,8 @@ async def build_plan(
             else:
                 report = None
     if report is None:
-        regions, more = enforce(compose_rules(slots, manifest, intent, sig, m), slots, manifest, m)
+        regions, more = enforce(compose_rules(slots, manifest, intent, sig, m, variant=variant, prefer=prefer,
+                                              short=short), slots, manifest, m)
         dropped += more
         report = finish(regions)
     report.plan.provenance["composer"] = composer

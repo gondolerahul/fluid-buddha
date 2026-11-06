@@ -28,6 +28,7 @@ type Form = {
   name: string; logo_url: string; colors: Record<string, string>; font_family: string;
   heading_family: string; base_size: string; scale: string; radius: string; brand_voice: string;
   tunables: Record<string, Tunable>;
+  dark: Record<string, string>;
 };
 
 function toForm(v: DesignSystemView): Form {
@@ -39,6 +40,9 @@ function toForm(v: DesignSystemView): Form {
     base_size: String(e.typography?.base_size ?? "16px"), scale: String(e.typography?.scale ?? "1.25"),
     radius: e.radius || "", brand_voice: e.brand_voice || "",
     tunables: v.current?.data.tunables || e.tunables || {},
+    dark: Object.fromEntries(COLOR_KEYS.map((k) => [k, (v.current?.data.schemes?.dark || e.schemes?.dark || {})[k]
+      || ({ background: "#0c0b09", surface: "#14161c", text: "#f3f5f7", muted: "#9aa3b2" } as Record<string, string>)[k]
+      || e.colors?.[k] || "#000000"])),
   };
 }
 
@@ -48,6 +52,8 @@ function toInput(f: Form): DesignSystemInput {
     typography: { font_family: f.font_family, heading_family: f.heading_family, base_size: f.base_size,
       scale: Number(f.scale) || 1.25 },
     tunables: Object.fromEntries(Object.entries(f.tunables).filter(([, t]) => t.allowed.length > 0)),
+    // A dark palette only matters when visitors may get the dark scheme (Phase 3).
+    schemes: f.tunables.scheme?.allowed.includes("dark") ? { dark: f.dark } : {},
   };
 }
 
@@ -163,8 +169,8 @@ export default function DesignPage() {
 
             <h3 style={{ margin: "18px 0 6px" }}>Tunables</h3>
             <p className="muted" style={{ fontSize: "0.84rem", marginBottom: 10 }}>
-              Tick the values personalisation may use. The first ticked value is the default. Stored now; visitors get
-              them when personal experience ships.
+              Tick the values personalisation may use; the first ticked value is the default. Visitors get the one that
+              suits them (from their choices and how they browse), never anything outside these.
             </p>
             {AXES.map((a) => (
               <div key={a.key} className="row wrap" style={{ gap: 12, marginBottom: 8 }}>
@@ -177,6 +183,24 @@ export default function DesignPage() {
                 ))}
               </div>
             ))}
+
+            {form.tunables.scheme?.allowed.includes("dark") && (
+              <>
+                <h3 style={{ margin: "18px 0 6px" }}>Dark scheme colours</h3>
+                <p className="muted" style={{ fontSize: "0.84rem", marginBottom: 10 }}>
+                  Used for visitors who prefer a dark scheme. Your brand colours above stay the default.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+                  {COLOR_KEYS.map((k) => (
+                    <label key={k} className="row" style={{ gap: 8 }}>
+                      <input type="color" aria-label={`dark ${k}`} value={form.dark[k]}
+                        onChange={(e) => set({ dark: { ...form.dark, [k]: e.target.value } })} />
+                      <span style={{ fontSize: "0.85rem" }}>{k}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
 
             <EditOnly>
               <div className="row" style={{ gap: 8, marginTop: 16 }}>

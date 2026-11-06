@@ -433,6 +433,12 @@ class VoiceSession:
     def _update_state(self, payload: dict) -> None:
         if "page" in payload:
             self.state.page = payload["page"]
+        # The visitor's taste (Phase 3), kept by the widget for the session.
+        if isinstance(payload.get("taste"), dict):
+            from app.experience.taste import clean as clean_taste
+
+            t = clean_taste(payload["taste"])
+            self.state.taste = {"dims": t.dims, "interests": t.interests}
         # A served composed page reports its plan (P2-4); loaded before the next turn.
         pid = payload.get("plan_id")
         if isinstance(pid, str) and pid.startswith("pl_") and len(pid) <= 20 and pid != self.state.page_plan_id:
@@ -951,6 +957,24 @@ class VoiceSession:
                 except (asyncio.CancelledError, Exception):
                     pass
 
+    async def _taste_from_words(self, said: str) -> None:
+        """Explicit preferences in what the visitor said ("keep it short", "as a
+        table") update their taste; the widget is told, and a remembered
+        visitor's profile is saved (Phase 3)."""
+        from app.experience import taste as taste_mod
+
+        t = taste_mod.clean(self.state.taste or {})
+        if not taste_mod.from_text(t, said or ""):
+            return
+        self.state.taste = {"dims": t.dims, "interests": t.interests}
+        await self.send(Channel.EVENTS, "taste", {"taste": self.state.taste, "compact": taste_mod.compact(t)})
+        if self.state.visitor_id:
+            try:
+                async with session_scope() as db:
+                    await taste_mod.save(db, self.state.site_key, self.state.visitor_id, t)
+            except Exception as exc:  # never break a turn over a preference
+                logger.debug("taste save failed: %s", exc)
+
     async def _load_page_plan(self) -> None:
         """Fetch the served page's plan the widget reported, once."""
         if self.state.page_plan or not self.state.page_plan_id:
@@ -974,6 +998,7 @@ class VoiceSession:
         injects cached near-matches as context; ``probe`` asks the model to weave
         in a qualifying question."""
         await self._load_page_plan()
+        await self._taste_from_words(transcript)
         with prom.timed("think_heavy" if heavy else "think_lean"):
             return await self._think_in_session(transcript, persona, heavy,
                                                 related=related, probe=probe, search=search)

@@ -15,6 +15,7 @@ const en = {
   talkTo: 'Talk to {name}',
   messageTo: 'Message {name}',
   close: 'Close',
+  prefs: 'Your preferences',
   send: 'Send',
   toggleVoice: 'Toggle voice',
   voiceTitle: 'Hold a conversation by voice',

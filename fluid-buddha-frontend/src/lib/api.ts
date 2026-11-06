@@ -1029,9 +1029,9 @@ export const Api = {
   draftManifestFromSite: (id: string, body: { url?: string; max_pages?: number }) =>
     api<ManifestVersion>(`/tenant/websites/${id}/manifest/drafts/site`, { method: "POST", body }),
   // Adaptive regions (Phase 1): slots, intent families, plans.
-  getRegionSettings: (id: string) => api<{ regions_enabled: boolean }>(`/tenant/websites/${id}/regions/settings`),
-  setRegionSettings: (id: string, regions_enabled: boolean) =>
-    api<{ regions_enabled: boolean }>(`/tenant/websites/${id}/regions/settings`, { method: "PUT", body: { regions_enabled } }),
+  getRegionSettings: (id: string) => api<RegionSettings>(`/tenant/websites/${id}/regions/settings`),
+  setRegionSettings: (id: string, regions_enabled: boolean, bandit?: Partial<Omit<RegionSettings, "regions_enabled">>) =>
+    api<RegionSettings>(`/tenant/websites/${id}/regions/settings`, { method: "PUT", body: { regions_enabled, ...bandit } }),
   listRegions: (id: string) => api<{ regions: RegionSlot[]; components: { id: string; renderer: string; purpose: string }[] }>(
     `/tenant/websites/${id}/regions`),
   saveRegion: (id: string, name: string, body: Omit<RegionSlot, "id" | "name">) =>
@@ -1108,7 +1108,10 @@ export type PlanStatus = "auto" | "pinned" | "blocked";
 export type PlanRow = { id: string; site_key: string; cache_key: string; family: string; persona: string; lang: string;
   page: string; regions: string[]; content_version: string; manifest_version: number | null;
   composer: "model" | "repaired" | "fallback" | "rules";
-  status: PlanStatus; hit_count: number; build_ms: number; created_at: string; last_hit_at: string | null };
+  status: PlanStatus; hit_count: number; build_ms: number; created_at: string; last_hit_at: string | null;
+  taste?: string; arm?: number; base_key?: string; rewards?: number; reward_rate?: number | null };
+/** Generated regions switch and region-level bandit settings (Phase 3). */
+export type RegionSettings = { regions_enabled: boolean; bandit_enabled: boolean; max_arms: number; explore_pct: number };
 export type PlanView = PlanRow & { plan: Record<string, unknown>; rendered: Record<string, unknown>;
   preview_html: string; intent?: ResolvedIntent; dropped?: string[]; problems?: string[] };
 
@@ -1118,9 +1121,11 @@ export type DesignSystemInput = {
   name?: string; logo_url?: string; colors?: Record<string, string>;
   typography?: { font_family?: string; heading_family?: string; base_size?: string; scale?: number };
   radius?: string; brand_voice?: string; tunables?: Record<string, Tunable>;
+  /** Palettes for the scheme tunable (Phase 3). */
+  schemes?: Partial<Record<"light" | "dark", Record<string, string>>>;
 };
-export type DesignSystemDoc = Required<Omit<DesignSystemInput, "tunables">> & {
-  tokens: Record<string, string>; tunables?: Record<string, Tunable>;
+export type DesignSystemDoc = Required<Omit<DesignSystemInput, "tunables" | "schemes">> & {
+  tokens: Record<string, string>; tunables?: Record<string, Tunable>; schemes?: DesignSystemInput["schemes"];
 };
 export type DesignSystemView = {
   current: { data: DesignSystemInput; updated_at: string; updated_by: string | null } | null;

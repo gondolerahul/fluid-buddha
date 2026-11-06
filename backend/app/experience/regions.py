@@ -101,7 +101,8 @@ async def _content_version(db: AsyncSession, site_key: str) -> str:
 
 async def build_and_store(
     db: AsyncSession, rt: Any, site_key: str, slots: list[rs.RegionSlot], intent: Intent, sig: Signals,
-    *, key: str, content: str, use_model: bool = True,
+    *, key: str, content: str, use_model: bool = True, taste: Any = None, arm: int = 0,
+    base_key: Optional[str] = None, avoid: str = "",
 ) -> dict[str, Any]:
     from app.apis.registry import get_site_apis
     from app.design.system import ensure_design, load_design_system
@@ -115,31 +116,28 @@ async def build_and_store(
     built = await build_plan(
         db, rt, site_key, slots, intent, sig, manifest=manifest, registry=get_site_apis(site_key),
         llm=llm, model=get_settings().heavy_model, bindable=bindable_prompt(site_key),
-        brand_voice=load_design_system(site_key).brand_voice)
+        brand_voice=load_design_system(site_key).brand_voice, taste=taste, variant=arm, avoid=avoid)
     row = await rs.store_plan(
         db, site_key, key=key, family=intent.family, persona=sig.persona, lang=sig.lang, page=sig.page,
         regions=[s.name for s in slots], content_version=content, manifest_version=manifest.version,
-        plan=built["plan"], composer=built["composer"], build_ms=built["build_ms"])
+        plan=built["plan"], composer=built["composer"], build_ms=built["build_ms"],
+        taste=taste.bucket() if taste is not None else "", arm=arm, base_key=base_key or key)
     row["dropped"] = built["dropped"]
     row["problems"] = built["problems"]
     return row
 
 
-def _schedule_build(rt: Any, site_key: str, slots: list[rs.RegionSlot], intent: Intent, sig: Signals,
-                    *, key: str, content: str) -> None:
-    token = f"{site_key}:{key}"
+def _schedule(token: str, coro_factory) -> None:
+    """Run a build in the background, once per token at a time."""
     if token in _building:
         return
     _building.add(token)
 
     async def run() -> None:
-        from app.db import session_scope
-
         try:
-            async with session_scope() as db:
-                await build_and_store(db, rt, site_key, slots, intent, sig, key=key, content=content)
+            await coro_factory()
         except Exception as exc:
-            logger.warning("background region build failed for %s: %s", site_key, exc)
+            logger.warning("background build failed (%s): %s", token, exc)
         finally:
             _building.discard(token)
 
@@ -148,24 +146,57 @@ def _schedule_build(rt: Any, site_key: str, slots: list[rs.RegionSlot], intent: 
     task.add_done_callback(_tasks.discard)
 
 
-async def render_plan(site_key: str, plan: dict[str, Any], ctx: dict[str, Any]) -> tuple[dict[str, dict], Any]:
+def _schedule_build(rt: Any, site_key: str, slots: list[rs.RegionSlot], intent: Intent, sig: Signals,
+                    *, key: str, content: str, taste: Any = None, arm: int = 0, base_key: Optional[str] = None,
+                    avoid: str = "") -> None:
+    async def build() -> None:
+        from app.db import session_scope
+
+        async with session_scope() as db:
+            await build_and_store(db, rt, site_key, slots, intent, sig, key=key, content=content, taste=taste,
+                                  arm=arm, base_key=base_key, avoid=avoid)
+
+    _schedule(f"{site_key}:{key}", build)
+
+
+async def pick_arm(db: AsyncSession, site_key: str, key: str, *, on_new_arm) -> Optional[dict[str, Any]]:
+    """The plan for a cache key: arm 0 without the bandit, else Thompson sampling
+    over the key's arms (P3-6); asks for a new arm when they've all been served enough."""
+    from app.experience import bandit
+
+    arms = await rs.plan_arms(db, site_key, key)
+    if not arms:
+        return await rs.cached_plan(db, site_key, key)
+    settings = await rs.bandit_settings(db, site_key)
+    if not settings["bandit_enabled"]:
+        return arms[0]
+    if bandit.wants_new_arm(arms, settings["max_arms"]):
+        on_new_arm(len(arms), " > ".join(bandit.outline(arms[0]["plan"])))
+    return bandit.choose_arm(arms, explore_pct=settings["explore_pct"])
+
+
+async def render_plan(site_key: str, plan: dict[str, Any], ctx: dict[str, Any], *, db: Any = None,
+                      rt: Any = None) -> tuple[dict[str, dict], Any]:
     """Re-validate a stored plan against today's manifest and bind live data.
     Returns ``({region name: section}, manifest)``."""
     from app.apis.registry import get_site_apis
+    from app.experience.resolvers import make_resolver
 
     manifest = load_manifest(site_key)
     registry = get_site_apis(site_key)
     report = validate_plan(plan, manifest=manifest, catalogue=registry, site_key=site_key)
     report.plan.plan_id = plan.get("plan_id") or report.plan.plan_id
-    bound = await bind_plan(report.plan, manifest=manifest, registry=registry, ctx=ctx)
+    bound = await bind_plan(report.plan, manifest=manifest, registry=registry, ctx=ctx,
+                            resolve=make_resolver(db, rt, site_key) if db is not None else None)
     return {b.id: b.to_section() for b in bound if b.state == "ready"}, manifest
 
 
 async def serve_regions(
     db: AsyncSession, rt: Any, site_key: str, *, names: list[str], sig: Signals,
-    wait: bool = False,
+    wait: bool = False, taste: Any = None,
 ) -> dict[str, Any]:
     from app.design.system import ensure_design, load_design_system
+    from app.experience.personal import apply_tunables, explain
     from app.orchestrator.profile import profile_for
 
     out: dict[str, Any] = {"regions": {}, "pending": False}
@@ -182,19 +213,23 @@ async def serve_regions(
     manifest = load_manifest(site_key)
     names_sorted = sorted(s.name for s in slots)
     content = await _content_version(db, site_key)
+    bucket = taste.bucket() if taste is not None else ""
     key = rs.plan_cache_key(family=intent.family, persona=sig.persona, lang=sig.lang, page=sig.page,
-                            regions=names_sorted, content_version=content, manifest_version=manifest.version)
+                            regions=names_sorted, content_version=content, manifest_version=manifest.version,
+                            taste=bucket)
 
     row = await rs.pinned_plan(db, site_key, family=intent.family, page=sig.page, regions=names_sorted)
     out["cache"] = "pinned" if row else "hit"
     if row is None:
-        row = await rs.cached_plan(db, site_key, key)
+        row = await pick_arm(db, site_key, key, on_new_arm=lambda n, avoid: _schedule_build(
+            rt, site_key, slots, intent, sig, key=f"{key}#arm{n}", content=content, taste=taste, arm=n,
+            base_key=key, avoid=avoid))
     if row is None:
         if wait:
-            row = await build_and_store(db, rt, site_key, slots, intent, sig, key=key, content=content)
+            row = await build_and_store(db, rt, site_key, slots, intent, sig, key=key, content=content, taste=taste)
             out["cache"] = "built"
         else:
-            _schedule_build(rt, site_key, slots, intent, sig, key=key, content=content)
+            _schedule_build(rt, site_key, slots, intent, sig, key=key, content=content, taste=taste)
             out.update(cache="miss", pending=True, retry_after_ms=RETRY_AFTER_MS)
             return out
     else:
@@ -203,10 +238,14 @@ async def serve_regions(
     await ensure_design(site_key)
     ctx = {"site_key": site_key, "currency": profile_for(site_key).currency, "lang": sig.lang,
            "persona": sig.persona, "page": sig.page}
-    regions, manifest = await render_plan(site_key, row["plan"], ctx)
+    regions, manifest = await render_plan(site_key, row["plan"], ctx, db=db, rt=rt)
+    design = load_design_system(site_key)
+    overrides, applied = apply_tunables(design, taste)
     out["regions"] = regions
     out["plan_id"] = row["plan"].get("plan_id")
-    out["tokens"] = load_design_system(site_key).to_tokens()
+    out["arm"] = row.get("arm", 0)
+    out["tokens"] = {**design.to_tokens(), **overrides}
+    out["why"] = explain(intent, sig, taste, served=out["cache"], applied=applied)
     if manifest.bundle and any(is_wc_renderer(s["type"]) for s in regions.values()):
         out["bundle"] = manifest.bundle
     return out

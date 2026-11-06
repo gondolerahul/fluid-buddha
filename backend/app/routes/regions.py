@@ -118,27 +118,104 @@ async def regions_for_page(request: Request) -> dict:
                                 page=str(data.get("page") or "/"),
                                 lang="hi" if data.get("lang") == "hi" else "en",
                                 persona=str(data.get("persona") or "")[:40])
-        out = await serve_regions(db, request.app.state.runtime, site_key, names=names, sig=sig)
+        from app.experience import taste as taste_mod
+
+        taste = await taste_mod.resolve(db, site_key, visitor, data.get("taste"))
+        out = await serve_regions(db, request.app.state.runtime, site_key, names=names, sig=sig, taste=taste)
         return {**out, **arm}
+
+
+# ---- public: taste and feedback (Phase 3) ------------------------------------------
+
+@public.post("/taste")
+async def update_taste(request: Request) -> dict:
+    """Apply the widget's taste events; returns the merged profile. Stored only for
+    a visitor who chose "Remember me" (otherwise it lives in their browser)."""
+    from app.experience import taste as taste_mod
+    from app.transport import guard
+
+    data = await _body(request)
+    visitor = str(data.get("visitor") or "")
+    visitor = visitor if exp_store.VISITOR_RE.match(visitor) else None
+    async with session_scope() as db:
+        try:
+            resolved = await resolve_public_site(db, key=data.get("key"), site=data.get("site"),
+                                                 intelligence=None, origin=request.headers.get("origin"))
+        except PublicAccessError as exc:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, exc.reason)
+        if resolved.website is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not_available")
+        if not guard._limiter.allow(f"taste:{resolved.site_key}:{visitor or 'anon'}", 30):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, guard.RATE_LIMITED)
+        t = await taste_mod.resolve(db, resolved.site_key, visitor, data.get("taste"))
+        taste_mod.apply_events(t, data.get("events"))
+        stored = await taste_mod.save(db, resolved.site_key, visitor, t) if visitor else False
+    return {**t.public(), "raw": {"dims": t.dims, "interests": t.interests},
+            "compact": taste_mod.compact(t), "stored": stored}
+
+
+@public.post("/feedback")
+async def plan_feedback(request: Request) -> dict:
+    """A reward for the plan that served this visitor (P3-6): engage or convert."""
+    from app.transport import guard
+
+    data = await _body(request)
+    visitor = str(data.get("visitor") or "")
+    event = data.get("event")
+    pids = data.get("plan_ids") if isinstance(data.get("plan_ids"), list) else [data.get("plan_id")]
+    pids = [p for p in pids if isinstance(p, str) and p.startswith("pl_") and len(p) <= 20][:10]
+    if not exp_store.VISITOR_RE.match(visitor) or event not in ("engage", "convert") or not pids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "visitor, event and plan_id are required")
+    async with session_scope() as db:
+        try:
+            resolved = await resolve_public_site(db, key=data.get("key"), site=data.get("site"),
+                                                 intelligence=None, origin=request.headers.get("origin"))
+        except PublicAccessError as exc:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, exc.reason)
+        if resolved.website is None:
+            return {"counted": 0}
+        if not guard._limiter.allow(f"feedback:{resolved.site_key}", 600):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, guard.RATE_LIMITED)
+        if is_bot(request.headers.get("user-agent"), data.get("automated")):
+            return {"counted": 0}
+        n = 0
+        for pid in pids:
+            n += int(await rs.record_feedback(db, resolved.site_key, pid, visitor, event))
+    return {"counted": n}
 
 
 # ---- console: settings and slots ----------------------------------------------
 
 class SettingsIn(BaseModel):
     regions_enabled: bool
+    # Bandits (Phase 3, P3-6); optional so older clients keep working.
+    bandit_enabled: Optional[bool] = None
+    max_arms: Optional[int] = Field(None, ge=1, le=3)
+    explore_pct: Optional[int] = Field(None, ge=0, le=50)
+
+
+async def _settings_view(db: AsyncSession, site_key: str) -> dict:
+    return {"regions_enabled": await rs.regions_enabled(db, site_key), **await rs.bandit_settings(db, site_key)}
 
 
 @admin.get("/regions/settings")
 async def get_settings_(site: store.Website = Depends(owned_website),
                         db: AsyncSession = Depends(get_session)) -> dict:
-    return {"regions_enabled": await rs.regions_enabled(db, site.site_key)}
+    return await _settings_view(db, site.site_key)
 
 
 @admin.put("/regions/settings")
 async def put_settings(body: SettingsIn, site: store.Website = Depends(owned_website),
                        db: AsyncSession = Depends(get_session)) -> dict:
     await rs.set_regions_enabled(db, site.site_key, body.regions_enabled)
-    return {"regions_enabled": body.regions_enabled}
+    if body.bandit_enabled is not None or body.max_arms is not None or body.explore_pct is not None:
+        cur = await rs.bandit_settings(db, site.site_key)
+        await rs.set_bandit_settings(
+            db, site.site_key,
+            bandit_enabled=cur["bandit_enabled"] if body.bandit_enabled is None else body.bandit_enabled,
+            max_arms=cur["max_arms"] if body.max_arms is None else body.max_arms,
+            explore_pct=cur["explore_pct"] if body.explore_pct is None else body.explore_pct)
+    return await _settings_view(db, site.site_key)
 
 
 def _globs(v: list[str]) -> list[str]:
@@ -269,10 +346,13 @@ async def try_resolve(body: ResolveIn, request: Request, site: store.Website = D
 async def list_plans(family: Optional[str] = None, persona: Optional[str] = None, page: Optional[str] = None,
                      status_filter: Optional[str] = None, site: store.Website = Depends(owned_website),
                      db: AsyncSession = Depends(get_session)) -> dict:
+    from app.experience.bandit import reward_rate
+
     rows = await rs.list_plans(db, site.site_key, family=family, persona=persona, page=page,
                                status=status_filter)
     for r in rows:
         r.pop("plan", None)
+        r["reward_rate"] = reward_rate(r)
     return {"plans": rows}
 
 
@@ -285,7 +365,7 @@ async def _plan_view(site_key: str, row: dict[str, Any]) -> dict[str, Any]:
     await ensure_design(site_key)
     ctx = {"site_key": site_key, "currency": profile_for(site_key).currency, "lang": row["lang"],
            "persona": row["persona"], "page": row["page"]}
-    regions, _ = await render_plan(site_key, row["plan"], ctx)
+    regions, _ = await render_plan(site_key, row["plan"], ctx, db=None)
     return {**row, "rendered": regions,
             "preview_html": render_preview(regions, load_design_system(site_key), title=row["family"])}
 

@@ -117,7 +117,7 @@ export default function PagesPage() {
             </div>
             {r.plans.length > 0 && (
               <table className="table" style={{ marginTop: 8 }}>
-                <thead><tr><th>Goal</th><th>Made by</th><th>Served</th><th>Made</th><th></th></tr></thead>
+                <thead><tr><th>Goal</th><th>Made by</th><th>Served</th><th>Results</th><th>Made</th><th></th></tr></thead>
                 <tbody>
                   {r.plans.map((p) => (
                     <tr key={p.id}>
@@ -126,6 +126,8 @@ export default function PagesPage() {
                         {p.status !== "auto" && r.canonical_plan !== p.id && <span className="badge" style={{ marginLeft: 6 }}>{p.status}</span>}</td>
                       <td className="muted">{p.composer === "rules" ? "site content rules" : p.composer === "fallback" ? "reused page" : "the agent"}</td>
                       <td>{p.hit_count}×</td>
+                      <td className="muted" style={{ fontSize: "0.8rem" }}>{p.reward_rate == null ? "—"
+                        : `${(p.reward_rate * 100).toFixed(1)}%`}{p.arm ? ` · v${p.arm + 1}` : ""}{p.taste ? ` · ${p.taste}` : ""}</td>
                       <td className="muted" style={{ fontSize: "0.8rem" }}>{fmtDate(p.created_at)}</td>
                       <td><EditOnly>
                         {r.canonical_plan === p.id ? (

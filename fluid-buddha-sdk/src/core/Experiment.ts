@@ -15,6 +15,7 @@
 // ('a'..'d') or 'holdout', and comes with the variant's `overrides`. The answer
 // also carries the site's `defaults` (its greeting and design level).
 
+import { planFeedback } from './taste';
 import { DesignLevel, FluidBuddhaConfig } from './config';
 
 /** 'agent' | 'holdout' for a holdout run; 'a'..'d' | 'holdout' for a test. */
@@ -109,6 +110,8 @@ let active: Experiment | null = null;
 /** Record a site goal for the current visitor (no-op outside an experiment). */
 export function conversion(name = 'goal', value?: number): void {
   active?.convert(name, value);
+  // Rewards the generated regions and pages this visitor saw (Phase 3 bandits).
+  if (active) planFeedback(active.tasteConfig(), 'convert');
 }
 
 export class Experiment {
@@ -132,6 +135,10 @@ export class Experiment {
 
   get id(): string | null {
     return this.enrolment?.experiment_id ?? null;
+  }
+
+  tasteConfig(): { api: string; key: string; site: string } {
+    return { api: this.config.api, key: this.config.key, site: this.config.site };
   }
 
   get overrides(): Overrides {

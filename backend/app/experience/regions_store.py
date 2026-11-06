@@ -178,14 +178,18 @@ def normalize_page(page: Any) -> str:
 
 
 def plan_cache_key(*, family: str, persona: str, lang: str, page: str, regions: list[str],
-                   content_version: str, manifest_version: Optional[int]) -> str:
-    raw = json.dumps([family, persona or "", lang or "en", normalize_page(page), sorted(regions),
-                      content_version, manifest_version])
+                   content_version: str, manifest_version: Optional[int], taste: str = "") -> str:
+    parts: list[Any] = [family, persona or "", lang or "en", normalize_page(page), sorted(regions),
+                        content_version, manifest_version]
+    if taste:  # the taste bucket (Phase 3); empty keeps pre-Phase-3 keys unchanged
+        parts.append(taste)
+    raw = json.dumps(parts)
     return hashlib.sha256(raw.encode()).hexdigest()[:40]
 
 
 _PLAN_COLS = ("id, site_key, cache_key, family, persona, lang, page, regions, content_version, "
-              "manifest_version, plan, composer, status, hit_count, build_ms, created_at, last_hit_at")
+              "manifest_version, plan, composer, status, hit_count, build_ms, created_at, last_hit_at, "
+              "taste, arm, base_key, rewards")
 
 
 def _plan_row(r: Any) -> dict[str, Any]:
@@ -222,18 +226,19 @@ async def record_hit(db: AsyncSession, plan_row_id: str) -> None:
 async def store_plan(db: AsyncSession, site_key: str, *, key: str, family: str, persona: str,
                      lang: str, page: str, regions: list[str], content_version: str,
                      manifest_version: Optional[int], plan: dict[str, Any], composer: str,
-                     build_ms: int) -> dict[str, Any]:
+                     build_ms: int, taste: str = "", arm: int = 0, base_key: Optional[str] = None) -> dict[str, Any]:
     await db.execute(text("""
         INSERT INTO plan_cache (id, site_key, cache_key, family, persona, lang, page, regions,
-            content_version, manifest_version, plan, composer, build_ms)
-        VALUES (:id, :sk, :k, :f, :persona, :lang, :page, :regions, :cv, :mv, CAST(:plan AS jsonb), :composer, :ms)
+            content_version, manifest_version, plan, composer, build_ms, taste, arm, base_key)
+        VALUES (:id, :sk, :k, :f, :persona, :lang, :page, :regions, :cv, :mv, CAST(:plan AS jsonb), :composer, :ms,
+            :taste, :arm, :bk)
         ON CONFLICT (site_key, cache_key) DO UPDATE SET plan = EXCLUDED.plan, composer = EXCLUDED.composer,
             build_ms = EXCLUDED.build_ms, created_at = now()
           WHERE plan_cache.status = 'auto'
     """), {"id": uuid.uuid4(), "sk": site_key, "k": key, "f": family, "persona": persona or "",
            "lang": lang or "en", "page": normalize_page(page), "regions": ",".join(sorted(regions)),
            "cv": content_version, "mv": manifest_version, "plan": json.dumps(plan),
-           "composer": composer, "ms": build_ms})
+           "composer": composer, "ms": build_ms, "taste": taste or "", "arm": arm, "bk": base_key or key})
     await db.commit()
     got = await cached_plan(db, site_key, key)
     assert got is not None
@@ -298,3 +303,49 @@ async def delete_plan(db: AsyncSession, site_key: str, plan_row_id: str) -> bool
                            {"sk": site_key, "id": pid})
     await db.commit()
     return (res.rowcount or 0) > 0
+
+
+# ---- bandit arms and feedback (Phase 3, P3-6) ------------------------------------
+
+async def bandit_settings(db: AsyncSession, site_key: str) -> dict[str, Any]:
+    r = (await db.execute(text(
+        "SELECT bandit_enabled, max_arms, explore_pct FROM site_experience WHERE site_key = :sk"),
+        {"sk": site_key})).first()
+    if r is None:
+        return {"bandit_enabled": False, "max_arms": 2, "explore_pct": 10}
+    return {"bandit_enabled": bool(r.bandit_enabled), "max_arms": int(r.max_arms), "explore_pct": int(r.explore_pct)}
+
+
+async def set_bandit_settings(db: AsyncSession, site_key: str, *, bandit_enabled: bool, max_arms: int,
+                              explore_pct: int) -> dict[str, Any]:
+    await db.execute(text("""
+        INSERT INTO site_experience (site_key, bandit_enabled, max_arms, explore_pct)
+        VALUES (:sk, :b, :m, :e)
+        ON CONFLICT (site_key) DO UPDATE SET bandit_enabled = EXCLUDED.bandit_enabled,
+            max_arms = EXCLUDED.max_arms, explore_pct = EXCLUDED.explore_pct, updated_at = now()
+    """), {"sk": site_key, "b": bandit_enabled, "m": max(1, min(3, max_arms)), "e": max(0, min(50, explore_pct))})
+    await db.commit()
+    return await bandit_settings(db, site_key)
+
+
+async def plan_arms(db: AsyncSession, site_key: str, base_key: str) -> list[dict[str, Any]]:
+    rows = (await db.execute(text(
+        f"SELECT {_PLAN_COLS} FROM plan_cache WHERE site_key = :sk AND base_key = :bk AND status = 'auto' "
+        "ORDER BY arm"), {"sk": site_key, "bk": base_key})).all()
+    return [_plan_row(r) for r in rows]
+
+
+async def record_feedback(db: AsyncSession, site_key: str, plan_id: str, visitor: str, event: str) -> bool:
+    """One reward per visitor, plan and event; counted on the plan row that served it."""
+    row = (await db.execute(text(
+        "SELECT id FROM plan_cache WHERE site_key = :sk AND plan->>'plan_id' = :pid LIMIT 1"),
+        {"sk": site_key, "pid": plan_id})).first()
+    if row is None:
+        return False
+    ins = await db.execute(text(
+        "INSERT INTO plan_feedback (site_key, plan_row, visitor, event) VALUES (:sk, :p, :v, :e) "
+        "ON CONFLICT DO NOTHING"), {"sk": site_key, "p": row.id, "v": visitor, "e": event})
+    if (ins.rowcount or 0) > 0:
+        await db.execute(text("UPDATE plan_cache SET rewards = rewards + 1 WHERE id = :id"), {"id": row.id})
+    await db.commit()
+    return (ins.rowcount or 0) > 0

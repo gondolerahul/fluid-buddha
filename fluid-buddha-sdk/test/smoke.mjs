@@ -327,9 +327,13 @@ await tick();
   form.querySelector('input[name="email"]').value = 'v@example.com';
   form.dispatchEvent(new cdom.window.Event('submit', { cancelable: true, bubbles: true }));
   await new Promise((r) => setTimeout(r, 30));
-  ok(posted2.length === 1 && posted2[0].url === 'https://api.example/leads' && posted2[0].body.key === 'fbk_composed'
-    && posted2[0].body.values.email === 'v@example.com' && !('_operation' in posted2[0].body.values),
+  const leadsPosts = posted2.filter((p) => p.url === 'https://api.example/leads');
+  ok(leadsPosts.length === 1 && leadsPosts[0].body.key === 'fbk_composed'
+    && leadsPosts[0].body.values.email === 'v@example.com' && !('_operation' in leadsPosts[0].body.values),
     'composed: the enquiry form is sent with fetch (hidden fields left out)');
+  const fb = posted2.filter((p) => p.url === 'https://api.example/experience/feedback');
+  ok(fb.length === 1 && fb[0].body.event === 'engage' && fb[0].body.plan_ids[0] === 'pl_00000000bb',
+    'composed: a form submit rewards the plan that served the page (once)');
   ok(!!cdoc.querySelector('[data-fb-region="ask"] p.fbpage-body'), 'composed: the form is replaced by a thank-you note');
   cdom.window.dispatchEvent(new cdom.window.CustomEvent('fluidbuddha:plan_patch', { detail: { plan_id: 'pl_00000000bb', ops: [
     { op: 'add', region: 'next', section: { type: 'cta', id: 'next', component: 'fb.cta', state: 'ready', props: { title: 'Talk to us', cta_label: 'Book' } } },
@@ -1153,6 +1157,68 @@ offline.remove();
   globalThis.fetch = base;
   host.remove();
   window.history.replaceState({}, '', '/');
+}
+
+// ---- Personal experience (Phase 3): taste, why, preferences, rewards ----
+{
+  // What the visitor said changed their taste: the widget keeps it and sets the cookie.
+  ext.session.feed({ channel: 'EVENTS', type: 'taste', payload: {
+    taste: { dims: { detail: { value: 'summary', confidence: 1, source: 'explicit', at: Date.now() / 1000 } }, interests: {} },
+    compact: 'detail:summary' } });
+  const kept = JSON.parse(window.sessionStorage.getItem('fluidbuddha:taste') || '{}');
+  ok(kept.dims?.detail?.value === 'summary', 'taste: a server taste update is kept for the session');
+  ok(document.cookie.includes('fbtaste=detail%3Asummary'), 'taste: the compact form goes in the fbtaste cookie');
+
+  const calls3 = [];
+  const base3 = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    calls3.push({ url: u, body: init && init.body ? JSON.parse(init.body) : null });
+    if (u.endsWith('/experience/regions')) {
+      return { ok: true, json: async () => ({ plan_id: 'pl_00000000cc', why: ['You arrived from the "spring" campaign'],
+        regions: { hero3: { type: 'hero', id: 'hero3', component: 'fb.hero', state: 'ready', props: { title: 'Hi', cta_label: 'Go' } } } }) };
+    }
+    if (u.endsWith('/experience/taste')) {
+      return { ok: true, json: async () => ({ raw: { dims: { format: { value: 'tables', confidence: 1, source: 'explicit', at: 1 } }, interests: {} },
+        compact: 'format:tables' }) };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+  const host3 = document.createElement('div');
+  host3.innerHTML = '<fb-region name="hero3"><p>own</p></fb-region>';
+  document.body.appendChild(host3);
+  await new Promise((r) => setTimeout(r, 150));
+  const reg = host3.querySelector('fb-region');
+  const regCall = calls3.find((c) => c.url.endsWith('/experience/regions'));
+  ok(regCall && regCall.body.taste?.dims?.detail?.value === 'summary', 'taste: region requests carry the session taste');
+  const whyBtn = reg.shadowRoot.querySelector('.fb-why button');
+  ok(!!whyBtn && reg.shadowRoot.querySelector('.fb-why span').hidden, 'why: a filled region offers "Why this?" (collapsed)');
+  whyBtn.click();
+  ok(!reg.shadowRoot.querySelector('.fb-why span').hidden
+    && reg.shadowRoot.querySelector('.fb-why span').textContent.includes('spring'), 'why: it reveals the reasons');
+  reg.shadowRoot.querySelector('.fbpage-btn').click();
+  await new Promise((r) => setTimeout(r, 10));
+  const fbCall = calls3.find((c) => c.url.endsWith('/experience/feedback'));
+  ok(fbCall && fbCall.body.event === 'engage' && fbCall.body.plan_ids[0] === 'pl_00000000cc', 'rewards: a CTA click rewards the plan');
+  // "Change your preferences" opens the panel (loaded on demand) and choices are sent.
+  reg.shadowRoot.querySelectorAll('.fb-why button')[1].click();
+  await new Promise((r) => setTimeout(r, 150));
+  const panel = document.querySelector('fb-preferences');
+  ok(!!panel && panel.shadowRoot.querySelector('#p-h')?.textContent === 'Your preferences', 'preferences: the panel opens');
+  const detailSel = panel.shadowRoot.querySelector('select[data-dim="detail"]');
+  ok(detailSel.value === 'summary', 'preferences: it shows the current taste');
+  const fmt = panel.shadowRoot.querySelector('select[data-dim="format"]');
+  fmt.value = 'tables';
+  fmt.dispatchEvent(new window.Event('change'));
+  await new Promise((r) => setTimeout(r, 30));
+  const setCall = calls3.filter((c) => c.url.endsWith('/experience/taste')).pop();
+  ok(setCall && setCall.body.events[0].type === 'set' && setCall.body.events[0].value === 'tables',
+    'preferences: a change is sent as an explicit choice');
+  ok(document.cookie.includes('fbtaste=format%3Atables'), 'preferences: the cookie follows the merged taste');
+  document.querySelector('fb-preferences').shadowRoot.querySelector('[data-act="close"]').click();
+  ok(!document.querySelector('fb-preferences'), 'preferences: Done closes it');
+  globalThis.fetch = base3;
+  host3.remove();
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

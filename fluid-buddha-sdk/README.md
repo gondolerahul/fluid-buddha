@@ -117,6 +117,21 @@ is needed; standalone, give the element `data-api` and `data-key`. React and Vue
 can write `<FbRegion name="hero">…</FbRegion>` (`@fluidbuddha/react`, `@fluidbuddha/vue`).
 Each fill fires a `fluidbuddha:region` event.
 
+## Personal experience
+
+The widget learns how each visitor likes things presented — layout density, format
+(tables, charts, prose), level of detail, tone — from their own settings
+(`prefers-reduced-motion`, dark mode), how they use the agent, what they open and what
+they say ("keep it short", "show me a table"). Anonymous visitors' preferences stay in
+their browser for the visit (`sessionStorage`, plus a compact `fbtaste` session cookie
+your server-rendered pages can read); a visitor who chose "Remember me" has them saved.
+
+Generated regions and pages adapt within the limits your design system allows, each with
+a small **Why this?** that explains what shaped it and links to the visitor's
+**preferences panel** (also in the widget header). Clicks, form submits and
+`FluidBuddha.conversion()` reward the version that was shown, so the console's
+"Learn what works" setting can favour the better one.
+
 ## Navigation on single-page apps
 
 When the agent takes the visitor to another page, the widget doesn't reload a
@@ -208,6 +223,8 @@ npm run serve:demo         # builds, serves demo/ at http://localhost:4000
 - `dist/fluid-buddha-patcher.global.js` — the Extreme page renderer and plan patcher,
   fetched the first time the agent draws or edits a page. **Host it next to
   `fluid-buddha.global.js`.**
+- `dist/fluid-buddha-prefs.global.js` — the visitor's preferences panel, fetched when
+  opened. **Host it next to `fluid-buddha.global.js`.**
 - `dist/fluid-buddha-composed.global.js` — the script of a server-rendered composed page
   (Phase 2): hydrates its interactive sections, sends its forms, applies the agent's
   edits. Loaded by the page itself (`/g/…` or `@fluidbuddha/next`).
@@ -217,7 +234,7 @@ npm run serve:demo         # builds, serves demo/ at http://localhost:4000
 - `dist/index.d.ts` — TypeScript types.
 
 > Bundle size: the script-tag core (all design levels' UI, no Three.js) is
-> ~37 kB gzipped (the page renderer, regions and patches load on demand); about a third of that is the stylesheet.
+> ~38 kB gzipped (the page renderer, regions, patches and the preferences panel load on demand); about a third of that is the stylesheet.
 > Level 2 adds the ~465 kB (~120 kB gzipped) particles file. `npm test`
 > fails if the gzipped core grows past 42 kB. If the particles file can't be
 > loaded, Level 2 still works, with the halo instead of the smoke field.

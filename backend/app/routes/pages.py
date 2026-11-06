@@ -40,6 +40,7 @@ from app.experience.intent import GENERAL, Intent, Signals
 from app.experience.manifest import ensure_manifest, load_manifest
 from app.experience.pages import bind_page, build_and_store_page, serve_page
 from app.experience.regions import _content_version, intent_for
+from app.experiments import store as exp_store
 from app.experiments.bots import is_bot
 from app.tenancy import store
 from app.tenancy.deps import owned_website
@@ -77,10 +78,18 @@ async def _page(request: Request, db: AsyncSession, site: store.Website, path: s
     q = dict(request.query_params)
     ua = q.get("ua") or request.headers.get("user-agent")  # the adapter forwards the visitor's UA
     settings = get_settings()
+    from app.experience import taste as taste_mod
+
+    # The visitor's taste: the compact form the browser keeps in the `fbtaste`
+    # cookie (forwarded by the Next.js adapter), merged with their stored profile.
+    visitor = q.get("visitor") if exp_store.VISITOR_RE.match(q.get("visitor") or "") else None
+    stored = await taste_mod.load(db, site.site_key, visitor) if visitor else None
+    session_t = taste_mod.from_compact(q.get("taste"))
+    taste = stored.merge(session_t) if stored else session_t
     out = await serve_page(
         db, request.app.state.runtime, site.site_key, path=path, sig=_signals(q, path),
         fbv=q.get("fbv"), bot=is_bot(ua, False), domain=site.domain or "",
-        api_base=settings.public_api_url, public_key=site.public_key or "")
+        api_base=settings.public_api_url, public_key=site.public_key or "", taste=taste)
     # What a host page loads next to the HTML (the Next.js adapter uses these).
     out["scripts"] = {"composed": f"{settings.widget_sdk_base.rstrip('/')}/fluid-buddha-composed.global.js",
                       "loader": f"{settings.public_api_url.rstrip('/')}/widget/loader.js",
@@ -177,10 +186,13 @@ def _check_pattern(p: str) -> str:
 
 
 async def _route_view(db: AsyncSession, site_key: str, r: routes.Route) -> dict[str, Any]:
+    from app.experience.bandit import reward_rate
+
     plans = await rs.list_plans(db, site_key, page=r.pattern)
     plans = [p for p in plans if p["regions"] == [routes.PAGE_REGIONS]]
     for p in plans:
         p.pop("plan", None)
+        p["reward_rate"] = reward_rate(p)
     return {**r.to_dict(), "plans": plans}
 
 

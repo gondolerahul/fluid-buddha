@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  Api, ApiError, IntentFamily, IntentRules, PlanRow, PlanStatus, PlanView, RegionSlot, ResolvedIntent,
+  Api, ApiError, IntentFamily, IntentRules, PlanRow, PlanStatus, PlanView, RegionSettings, RegionSlot, ResolvedIntent,
 } from "@/lib/api";
 import { Modal, Spinner, fmtDate, useToast } from "@/components/ui";
 import { EditOnly, Editable } from "@/components/Permission";
@@ -48,6 +48,7 @@ export default function RegionsPage() {
   const [gen, setGen] = useState({ page: "/", family: "" });
   const [tryIt, setTryIt] = useState({ page: "/pricing", utm_campaign: "", q: "", referrer: "" });
   const [tried, setTried] = useState<ResolvedIntent | null>(null);
+  const [bandit, setBandit] = useState<Omit<RegionSettings, "regions_enabled"> | null>(null);
 
   const loadPlans = useCallback((family = "") =>
     Api.listPlans(id, family || undefined).then((r) => setPlans(r.plans)).catch(() => setPlans([])), [id]);
@@ -55,6 +56,7 @@ export default function RegionsPage() {
     Promise.all([Api.getRegionSettings(id), Api.listRegions(id), Api.listIntentFamilies(id)])
       .then(([s, r, f]) => {
         setEnabled(s.regions_enabled); setSlots(r.regions); setComponents(r.components); setFamilies(f.families);
+        setBandit({ bandit_enabled: s.bandit_enabled, max_arms: s.max_arms, explore_pct: s.explore_pct });
       })
       .catch(() => toast("Could not load regions", "err")), [id, toast]);
   useEffect(() => { load(); loadPlans(); }, [load, loadPlans]);
@@ -68,6 +70,11 @@ export default function RegionsPage() {
 
   const toggle = () => run(async () => setEnabled((await Api.setRegionSettings(id, !enabled)).regions_enabled),
     enabled ? "Generated regions are off: visitors see your page's own content" : "Generated regions are on");
+
+  const saveBandit = (patch: Partial<Omit<RegionSettings, "regions_enabled">>) => run(async () => {
+    const s = await Api.setRegionSettings(id, !!enabled, patch);
+    setBandit({ bandit_enabled: s.bandit_enabled, max_arms: s.max_arms, explore_pct: s.explore_pct });
+  }, "Saved");
 
   const saveSlot = () => slotDraft && run(async () => {
     await Api.saveRegion(id, slotDraft.name.trim(), {
@@ -121,6 +128,41 @@ export default function RegionsPage() {
         </EditOnly>
       </div>
       {!enabled && <div className="notice" style={{ marginBottom: 14 }}>Generated regions are off: every visitor sees your page&apos;s own content.</div>}
+
+      {/* ---- learning (bandits, Phase 3) ---- */}
+      {bandit && (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div className="row between wrap" style={{ gap: 8 }}>
+            <div>
+              <h3>Learn what works</h3>
+              <p className="muted" style={{ fontSize: "0.84rem", maxWidth: 640 }}>
+                Try up to {bandit.max_arms} versions of each plan and send more visitors to the one that gets more clicks,
+                sign-ups and goals. A share of visitors always sees every version, so new ones get a fair chance.
+              </p>
+            </div>
+            <EditOnly>
+              <div className="row wrap" style={{ gap: 10, alignItems: "center" }}>
+                <label className="row" style={{ gap: 6, fontSize: "0.86rem" }}>
+                  <input type="checkbox" checked={bandit.bandit_enabled} disabled={busy}
+                    onChange={(e) => saveBandit({ bandit_enabled: e.target.checked })} /> On
+                </label>
+                <label className="row" style={{ gap: 6, fontSize: "0.86rem" }}>Versions
+                  <select className="select" style={{ width: 70 }} value={bandit.max_arms} disabled={busy}
+                    onChange={(e) => saveBandit({ max_arms: Number(e.target.value) })}>
+                    {[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+                <label className="row" style={{ gap: 6, fontSize: "0.86rem" }}>Always explore
+                  <select className="select" style={{ width: 80 }} value={bandit.explore_pct} disabled={busy}
+                    onChange={(e) => saveBandit({ explore_pct: Number(e.target.value) })}>
+                    {[0, 5, 10, 20, 30].map((n) => <option key={n} value={n}>{n}%</option>)}
+                  </select>
+                </label>
+              </div>
+            </EditOnly>
+          </div>
+        </div>
+      )}
 
       {/* ---- slots ---- */}
       <div className="card" style={{ marginBottom: 18 }}>
@@ -268,16 +310,20 @@ export default function RegionsPage() {
         </EditOnly>
         {plans.length === 0 ? <div className="empty">No plans yet. They appear as visitors arrive, or generate one above.</div> : (
           <table className="table">
-            <thead><tr><th>Goal</th><th>Page</th><th>Regions</th><th>Made by</th><th>Served</th><th>Made</th><th></th></tr></thead>
+            <thead><tr><th>Goal</th><th>Page</th><th>Regions</th><th>Made by</th><th>Served</th><th>Results</th><th>Made</th><th></th></tr></thead>
             <tbody>
               {plans.map((p) => (
                 <tr key={p.id}>
                   <td>{famLabel(p.family)}{p.persona && <span className="badge" style={{ marginLeft: 6 }}>{p.persona}</span>}
+                    {!!p.taste && <span className="badge" style={{ marginLeft: 6 }} title="Taste bucket">{p.taste}</span>}
+                    {!!p.arm && <span className="badge" style={{ marginLeft: 6 }}>version {p.arm + 1}</span>}
                     {p.status !== "auto" && <span className={`badge ${p.status === "pinned" ? "accent" : "err"}`} style={{ marginLeft: 6 }}>{p.status}</span>}</td>
                   <td className="mono" style={{ fontSize: "0.8rem" }}>{p.page}</td>
                   <td className="mono faint" style={{ fontSize: "0.76rem" }}>{p.regions.join(", ")}</td>
                   <td className="muted">{p.composer === "model" ? "the agent" : "site content rules"}</td>
                   <td>{p.hit_count}×</td>
+                  <td className="muted" style={{ fontSize: "0.8rem" }}>{p.reward_rate == null ? "—"
+                    : `${(p.reward_rate * 100).toFixed(1)}% (${p.rewards})`}</td>
                   <td className="muted" style={{ fontSize: "0.8rem" }}>{fmtDate(p.created_at)}</td>
                   <td><button className="btn btn-ghost btn-sm" onClick={() => openPlan(p)}>Preview</button></td>
                 </tr>

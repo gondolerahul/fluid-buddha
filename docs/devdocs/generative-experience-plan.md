@@ -334,11 +334,78 @@ and a conversation that can edit the page in place.
 canonical page for crawlers, data from the customer's records, and in-place edits from
 the conversation.
 
-### Phase 3 — Personal experience
+### Phase 3 — Personal experience ✅
 
-Taste profile (session, then opt-in persistent; stored by FluidBuddha, D5), tunables applied
-within brand limits, taste bucket in the plan key, "why am I seeing this", profile panel,
-erasure extension, region-level bandits.
+Goal (strategy §5): generated regions and pages suit each visitor's taste, within the
+brand's limits, with the visitor able to see why and change it, and the system learning
+which variants work — without tracking anyone who hasn't opted in.
+
+**Data (migration `0036_taste_profiles`)**
+- `taste_profiles` — `(site_key, visitor_id)` → `dims` (per dimension: value, confidence,
+  source explicit|implicit, updated_at) and `interests`. A foreign key to
+  `visitor_memories` with `ON DELETE CASCADE`: a profile exists only for a visitor who
+  chose "Remember me" on a site that offers memory, and it goes when their memory goes
+  (forget, retention sweep, erasure, the site turning memory off).
+- `plan_cache` gains `taste` (the bucket), `arm` (variant number), `base_key`, `rewards`;
+  `hit_count` counts pulls. `plan_feedback (site_key, plan_row, visitor, event)` dedupes
+  rewards per visitor.
+- `site_experience` gains `bandit_enabled`, `max_arms` (1–3), `explore_pct`.
+
+#### P3-1 · Taste profile model and signals ⏱️M
+- Dimensions: `density` (airy|balanced|compact), `format` (prose|bullets|tables|charts|
+  visuals), `detail` (summary|standard|deep), `modality` (voice|text|silent), `tone`
+  (formal|friendly|concise), `motion` (calm|standard|lively), `scheme` (light|dark|auto),
+  plus `interests` (topic → score).
+- Explicit choices set confidence 1 and are never overridden by inference; implicit
+  evidence moves confidence by 0.15 per event and decays (half-life 14 days).
+- Signals: the visitor's own settings (`prefers-reduced-motion`, `prefers-color-scheme`),
+  how they use the agent (mic → voice, typing → text), what they say ("simpler", "in more
+  detail", "show me a table", "keep it short" → explicit), what they open (FAQ, tables,
+  charts) and the goals they arrive with (interests).
+- **Bucket** for caching: only confident (≥ 0.5) `density` and a coarse `format` group
+  (`text` | `tables` | `visual`) → at most 3 × 3 + default.
+
+#### P3-2 · Storage, identity levels and visitor controls ⏱️M
+- Anonymous visitors: the profile lives in the browser for the session
+  (`sessionStorage`) and travels with each request; nothing is stored server-side.
+- Remembered visitors (memory opt-in, D5): `POST /experience/taste` merges and stores.
+- Visitor panel ("Your preferences" in the widget, loaded on demand): see and change each
+  setting, reset, and a link to "Forget me". Console: none (visitor data stays the
+  visitor's), except counts.
+- No sensitive inference and no personalised prices (strategy §5.6–5.7): only the listed
+  dimensions exist; prices always come from bindings.
+
+#### P3-3 · Tunables within brand limits ⏱️S
+- `apply_tunables(design, profile)`: only axes the design system allows, only to allowed
+  values. Density → `--ds-gap` / `--ds-pad`; type scale → `--ds-base-size`; motion →
+  `--ds-motion` (calm disables reveal animations); scheme → the design system's optional
+  `schemes.{light,dark}` palettes. Used by regions, composed pages (SSR stylesheet) and the
+  widget's page surface.
+
+#### P3-4 · Taste-aware plans ⏱️S
+- The bucket joins the plan cache key; the planners get a short taste brief ("prefers
+  tables, compact, short answers") and the rules composer and component candidates prefer
+  components matching the format preference.
+
+#### P3-5 · "Why am I seeing this" ⏱️S
+- Every served region and page carries `why`: the signals used, in plain words ("You came
+  from a pricing campaign · you prefer short summaries"). Regions and served pages show a
+  small "Why this?" control; it opens the explanation and the preferences panel.
+
+#### P3-6 · Region-level bandits ⏱️M
+- Per cache key, up to `max_arms` alternative plans (arm 0 is the first). Serving picks an
+  arm by Thompson sampling on `rewards / pulls`, with an `explore_pct` floor of uniform
+  picks; pinned plans and experiment arms bypass it. A new arm is built in the background
+  once the existing arms have 30 pulls each (model: "a different angle on this outline";
+  rules: the next fitting component per slot).
+- Rewards: `POST /experience/feedback {plan_id, event: engage|convert}` from CTA clicks,
+  form submits and `FluidBuddha.conversion()`; counted once per visitor and plan.
+- Console: switch, max arms, exploration; arms with pulls and reward rate in the plans
+  lists.
+
+**Phase 3 exit:** a remembered visitor's choices persist across visits; anonymous visitors
+get session-level taste; plans differ by taste bucket within brand limits; visitors can see
+why and change it; the bandit shifts traffic to the better-rewarded variant.
 
 ### Phase 4 — Free-form (G3), the product we sell (D1)
 
@@ -386,6 +453,7 @@ Not in this plan: the repo-wide "A2UI" → "FluidBuddha" rename (D10) is a separ
 | 2026-11-06 | P0-7…P0-9 implemented; Phase 0 complete (second record below). |
 | 2026-11-06 | Phase 1 (P1-1…P1-4) implemented (third record below). |
 | 2026-11-06 | Phase 2 (P2-1…P2-6) implemented (fourth record below). |
+| 2026-11-06 | Phase 3 (P3-1…P3-6) implemented (fifth record below). |
 
 ### Record: P0-1…P0-6 (2026-11-06)
 
@@ -597,4 +665,61 @@ the server only (client-side, user-token binding is Phase 6); plans are not cach
 - Structured data per view is a basic `WebPage` JSON-LD; richer schema.org output is Phase 5.
 - A plan's region ids from the model aren't checked against exemplars for stability across
   regenerations beyond the validator's slug rules.
+
+### Record: Phase 3 — personal experience (2026-11-06)
+
+**Backend**
+- Migration `0036_taste_profiles`: `taste_profiles` (FK to `visitor_memories`, cascade),
+  `plan_cache.taste / arm / base_key / rewards`, `plan_feedback`, bandit settings on
+  `site_experience`.
+- `app/experience/taste.py` (dimensions, explicit vs implicit with decay, merge, bucket,
+  brief, words → explicit preferences, widget events, compact cookie form, storage only for
+  remembered visitors), `personal.py` (tunables within brand limits incl. dark/light
+  palettes, plain-language reasons), `bandit.py` (Thompson sampling with an exploration
+  floor, new-arm rule, outlines, reward rate).
+- Planners: taste brief in prompts, format-aware component choice, short text for
+  "summary" visitors, variants for bandit arms ("a different angle" for the model; the next
+  fitting component / reordered page for the rules).
+- Serving: the taste bucket joins the cache key; arms picked by the bandit when enabled
+  (pinned plans and experiment arms bypass it); new arms built in the background;
+  responses carry tuned tokens and `why`; the SSR stylesheet uses `--ds-gap`, `--ds-pad`,
+  `--ds-anim`. Regions now resolve `entity:` / `content:` bindings too (closing a Phase 2
+  gap).
+- Public `POST /experience/taste` and `POST /experience/feedback` (once per visitor, plan
+  and event; bots ignored); `GET /experience/page` reads `taste` (from the `fbtaste`
+  cookie) and a remembered visitor's stored profile.
+- Agent: what the visitor says updates their taste (`EVENTS/taste` to the widget, saved
+  when remembered); heavy and lean answers get a "VISITOR TASTE" line (shape, never facts).
+- Design-system API accepts `schemes.{light,dark}`.
+
+**SDK and packages**
+- `src/core/taste.ts` (core, +0.9 kB): session profile, events, cookie, plan rewards;
+  widget header "Your preferences" button; mic / typing signals; taste in hello / sync.
+- `src/core/why.ts`: "Why this?" and engagement rewards in regions and served pages.
+- Preferences panel loads on demand (`fluid-buddha-prefs.global.js`).
+- `FluidBuddha.conversion()` also rewards the plans shown.
+- `@fluidbuddha/next` forwards the `fbtaste` cookie.
+
+**Console**
+- Regions: "Learn what works" (on/off, versions, exploration); plans show taste bucket,
+  version and results. Pages: results column. Design: dark-scheme colours when the scheme
+  tunable allows dark; tunables copy updated.
+
+**Verification**
+- Backend: `tests/test_personal.py` (12 tests); full suite 420 passed, 2 skipped (need Redis).
+- SDK: 12 new smoke assertions (taste updates, cookie, taste in requests, why, rewards,
+  preferences panel); script-tag core 38.3 kB gzipped.
+- `integrations/js`: cookie forwarding asserted (22 tests).
+- Browser: served page shows "Why this?" with honest reasons; the preferences panel opens
+  from it, reflects the browser's dark-mode signal as a guess, and a change becomes "you
+  chose this" with the cookie and session updated; the console's learning card renders.
+  Caught and fixed: a brand-default layout was being described as the visitor's
+  preference, and the served page lacked the spacing after "Why this?".
+
+**Known gaps carried forward**
+- Interests are recorded (from events) but not yet fed from intent families automatically.
+- Bandit rewards are per plan, not per region; per-region attribution needs region-level
+  arms (Phase 4's fragment cache is the natural place).
+- Statistics: the bandit optimises; the always-valid holdout remains the way to *prove* lift.
+- No live model in testing (mock mode): model variants were exercised with fakes only.
 

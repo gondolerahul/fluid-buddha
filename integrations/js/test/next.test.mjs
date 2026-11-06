@@ -27,7 +27,8 @@ test('fetchComposedPage asks the server for the path with the visitor signals', 
   const calls = [];
   const page = await fetchComposedPage({ installCode: CODE, fetch: fakeFetch(PAGE, calls) }, {
     path: '/pricing', searchParams: { utm_campaign: 'switch', q: 'vs rival', other: 'x', fbv: 'pl_0123456789' },
-    headers: { 'user-agent': 'Googlebot/2.1', referer: 'https://www.google.com/' } });
+    headers: { 'user-agent': 'Googlebot/2.1', referer: 'https://www.google.com/',
+               cookie: 'a=1; fbtaste=density%3Acompact%2Cdetail%3Asummary; b=2' } });
   const u = new URL(calls[0].url);
   assert.equal(u.origin + u.pathname, 'https://agent.example.com/experience/page');
   assert.equal(u.searchParams.get('key'), 'fbk_abcdefgh12345678');
@@ -37,6 +38,7 @@ test('fetchComposedPage asks the server for the path with the visitor signals', 
   assert.equal(u.searchParams.get('other'), null);
   assert.equal(u.searchParams.get('ua'), 'Googlebot/2.1');
   assert.equal(u.searchParams.get('referrer'), 'https://www.google.com/');
+  assert.equal(u.searchParams.get('taste'), 'density:compact,detail:summary');
   assert.equal(page.notFound, false);
   assert.equal(page.planId, 'pl_0123456789');
   await assert.rejects(fetchComposedPage({ installCode: 'nope' }, { path: '/' }), /invalid install code/);

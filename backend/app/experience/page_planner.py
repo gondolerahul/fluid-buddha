@@ -62,13 +62,18 @@ def _words(s: str) -> set[str]:
     return {w for w in _WORD_RE.findall((s or "").lower()) if len(w) > 2}
 
 
-def candidates(manifest: ComponentManifest, focus: str) -> list[ManifestEntry]:
-    """The components most relevant to the route and intent (always the basics)."""
+def candidates(manifest: ComponentManifest, focus: str, prefer: Optional[str] = None) -> list[ManifestEntry]:
+    """The components most relevant to the route and intent (always the basics);
+    components suiting the visitor's format preference rank higher (Phase 3)."""
+    from app.experience.planner import FORMAT_RENDERERS
+
     fw = _words(focus)
+    good = FORMAT_RENDERERS.get(prefer or "", ())
     scored = []
     for e in manifest.entries():
         hay = _words(" ".join([e.purpose, e.id.replace(".", " "), *e.use_when]))
         bonus = 1 if not e.id.startswith("fb.") else 0  # prefer the customer's own components
+        bonus += 2 if e.renderer in good else 0
         scored.append((len(hay & fw) + bonus, e))
     scored.sort(key=lambda x: -x[0])
     picked = [e for _, e in scored[:MAX_CANDIDATES]]
@@ -114,8 +119,11 @@ def _tool_spec() -> Any:
 
 
 def _prompt(route: Route, params: dict[str, str], intent: Intent, cands: list[ManifestEntry], m: Material,
-            ents: list[dict[str, Any]], examples: list[list[str]], *, bindable: str, brand_voice: str) -> str:
+            ents: list[dict[str, Any]], examples: list[list[str]], *, bindable: str, brand_voice: str,
+            taste_brief: str = "", avoid: str = "") -> str:
     lines = [f"ROUTE: {route.pattern} — {route.title or ''}. Purpose: {route.purpose or 'a page of the site'}",
+             f"VISITOR TASTE: {taste_brief}" if taste_brief else "",
+             f"VARIANT: take a clearly different angle from this version: {avoid}" if avoid else "",
              f"ROUTE PARAMETERS: {json.dumps(params)}" if params else "",
              f"INTENT: {intent.label} (stage: {intent.stage or 'unknown'})",
              f"BRAND VOICE: {brand_voice}" if brand_voice else "",
@@ -166,14 +174,16 @@ def check(regions: list[dict[str, Any]], allowed: set[str], m: Material) -> tupl
 async def build_page_plan(
     db: AsyncSession, rt: Any, site_key: str, route: Route, params: dict[str, str], intent: Intent,
     sig: Signals, *, manifest: ComponentManifest, registry: Any, llm: Any = None, model: Optional[str] = None,
-    bindable: str = "", brand_voice: str = "",
+    bindable: str = "", brand_voice: str = "", taste: Any = None, variant: int = 0, avoid: str = "",
 ) -> dict[str, Any]:
     """``{plan, composer, build_ms, tokens, dropped, problems}``."""
     t0 = time.monotonic()
     bridge = rt.bridge(db, site_key=site_key)
     focus_sig = Signals(page=route.pattern, query=f"{route.title} {route.purpose}".strip(), lang=sig.lang)
     m = await gather(db, bridge, site_key, intent, focus_sig, threshold=rt.settings.cortex_confidence_threshold)
-    cands = candidates(manifest, f"{intent.label} {intent.stage} {route.title} {route.purpose}")
+    prefer = taste.value("format") if taste is not None else None
+    taste_brief = taste.brief() if taste is not None else ""
+    cands = candidates(manifest, f"{intent.label} {intent.stage} {route.title} {route.purpose}", prefer)
     allowed = {e.id for e in cands}
     tokens = [0, 0]
     dropped: list[str] = []
@@ -192,7 +202,8 @@ async def build_page_plan(
 
         ents = await entity_samples(db, site_key)
         ex = await exemplars(db, site_key, intent.family)
-        prompt = _prompt(route, params, intent, cands, m, ents, ex, bindable=bindable, brand_voice=brand_voice)
+        prompt = _prompt(route, params, intent, cands, m, ents, ex, bindable=bindable, brand_voice=brand_voice,
+                         taste_brief=taste_brief, avoid=avoid)
         attempt_text = prompt
         for attempt in range(2):  # the first try, then one repair round
             try:
@@ -241,8 +252,11 @@ async def build_page_plan(
     title = route.title or route.purpose or intent.label
     slots = [RegionSlot(id=s.id, name=s.name, label=title if s.name == "hero" else s.label,
                         components=s.components) for s in RULES_SLOTS]
+    if variant % 2 == 1:  # a bandit arm: highlights before the intro
+        slots[1], slots[2] = slots[2], slots[1]
     regions = compose_rules(slots, manifest, Intent("page", title, intent.stage) if intent.family == "general"
-                            else intent, focus_sig, m)
+                            else intent, focus_sig, m, prefer=prefer,
+                            short=taste is not None and taste.value("detail") == "summary")
     rep = finish(route.title or intent.label, regions, "rules")
     return _out(rep, "rules", t0, tokens, dropped)
 

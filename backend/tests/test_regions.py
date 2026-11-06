@@ -235,7 +235,7 @@ def test_console_slots_families_and_plans():
 
     with TestClient(app) as client:
         h, site, w = _site(client)
-        assert client.get(f"{w}/regions/settings", headers=h).json() == {"regions_enabled": True}
+        assert client.get(f"{w}/regions/settings", headers=h).json()["regions_enabled"] is True
         bad = client.put(f"{w}/regions/Hero!", headers=h, json={})
         assert bad.status_code == 422
         assert client.put(f"{w}/regions/hero", headers=h, json={"components": ["fb.nope"]}).status_code == 422
@@ -342,4 +342,4 @@ def test_region_test_arms():
         tid = t.json()["id"]
         promoted = client.post(f"{w}/tests/{tid}/promote", headers=h, json={"variant": "a"})
         assert promoted.status_code == 200
-        assert client.get(f"{w}/regions/settings", headers=h).json() == {"regions_enabled": False}
+        assert client.get(f"{w}/regions/settings", headers=h).json()["regions_enabled"] is False

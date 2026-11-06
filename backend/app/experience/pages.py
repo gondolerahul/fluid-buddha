@@ -13,7 +13,6 @@ plan, else its most-served plan, else a rules page composed from site content
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -27,14 +26,12 @@ from app.experience.binding import bind_plan
 from app.experience.intent import Intent, Signals
 from app.experience.manifest import ensure_manifest, is_wc_renderer, load_manifest
 from app.experience.plan import validate_plan
-from app.experience.regions import _content_version, intent_for, planner_llm
+from app.experience.regions import _content_version, _schedule as _schedule_token, intent_for, pick_arm, planner_llm
 from app.experience.resolvers import make_resolver
 from app.experience.routes_store import PAGE_REGIONS, Route
 
 logger = logging.getLogger(__name__)
 
-_building: set[str] = set()
-_tasks: set[asyncio.Task] = set()
 
 
 async def plan_by_plan_id(db: AsyncSession, site_key: str, plan_id: str, *, page: Optional[str] = None
@@ -66,7 +63,8 @@ async def _best_for_route(db: AsyncSession, site_key: str, route: Route) -> Opti
 
 async def build_and_store_page(
     db: AsyncSession, rt: Any, site_key: str, route: Route, params: dict[str, str], intent: Intent,
-    sig: Signals, *, key: str, content: str, use_model: bool = True,
+    sig: Signals, *, key: str, content: str, use_model: bool = True, taste: Any = None, arm: int = 0,
+    base_key: Optional[str] = None, avoid: str = "",
 ) -> dict[str, Any]:
     from app.apis.registry import get_site_apis
     from app.design.system import ensure_design, load_design_system
@@ -80,36 +78,27 @@ async def build_and_store_page(
     built = await build_page_plan(
         db, rt, site_key, route, params, intent, sig, manifest=manifest, registry=get_site_apis(site_key),
         llm=llm, model=get_settings().heavy_model, bindable=bindable_prompt(site_key),
-        brand_voice=load_design_system(site_key).brand_voice)
+        brand_voice=load_design_system(site_key).brand_voice, taste=taste, variant=arm, avoid=avoid)
     row = await rs.store_plan(
         db, site_key, key=key, family=intent.family, persona=sig.persona, lang=sig.lang, page=route.pattern,
         regions=[PAGE_REGIONS], content_version=content, manifest_version=manifest.version,
-        plan=built["plan"], composer=built["composer"], build_ms=built["build_ms"])
+        plan=built["plan"], composer=built["composer"], build_ms=built["build_ms"],
+        taste=taste.bucket() if taste is not None else "", arm=arm, base_key=base_key or key)
     row["dropped"], row["problems"] = built["dropped"], built["problems"]
     return row
 
 
 def _schedule(rt: Any, site_key: str, route: Route, params: dict[str, str], intent: Intent, sig: Signals,
-              *, key: str, content: str) -> None:
-    token = f"{site_key}:{key}"
-    if token in _building:
-        return
-    _building.add(token)
-
-    async def run() -> None:
+              *, key: str, content: str, taste: Any = None, arm: int = 0, base_key: Optional[str] = None,
+              avoid: str = "") -> None:
+    async def build() -> None:
         from app.db import session_scope
 
-        try:
-            async with session_scope() as db:
-                await build_and_store_page(db, rt, site_key, route, params, intent, sig, key=key, content=content)
-        except Exception as exc:
-            logger.warning("background page build failed for %s: %s", site_key, exc)
-        finally:
-            _building.discard(token)
+        async with session_scope() as db:
+            await build_and_store_page(db, rt, site_key, route, params, intent, sig, key=key, content=content,
+                                       taste=taste, arm=arm, base_key=base_key, avoid=avoid)
 
-    task = asyncio.get_running_loop().create_task(run())
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
+    _schedule_token(f"{site_key}:{key}", build)
 
 
 async def bind_page(db: AsyncSession, rt: Any, site_key: str, plan: dict[str, Any], ctx: dict[str, Any]
@@ -146,8 +135,10 @@ def canonical_url(domain: str, path: str) -> str:
 async def serve_page(
     db: AsyncSession, rt: Any, site_key: str, *, path: str, sig: Signals, fbv: Optional[str] = None,
     bot: bool = False, domain: str = "", api_base: str = "", public_key: str = "", wait: bool = False,
+    taste: Any = None,
 ) -> dict[str, Any]:
     from app.design.system import ensure_design, load_design_system
+    from app.experience.personal import apply_tunables, explain
     from app.experience.ssr import render_fragment, stylesheet
     from app.orchestrator.profile import profile_for
 
@@ -162,6 +153,9 @@ async def serve_page(
 
     row: Optional[dict[str, Any]] = None
     restored = False
+    intent: Optional[Intent] = None
+    if bot:
+        taste = None  # crawlers get the brand's own page
     if fbv:
         row = await plan_by_plan_id(db, site_key, fbv, page=route.pattern)
         restored = row is not None
@@ -175,18 +169,21 @@ async def serve_page(
         content = await _content_version(db, site_key)
         key = rs.plan_cache_key(family=intent.family, persona=sig.persona, lang=sig.lang, page=route.pattern,
                                 regions=[PAGE_REGIONS], content_version=content,
-                                manifest_version=manifest.version)
+                                manifest_version=manifest.version,
+                                taste=taste.bucket() if taste is not None else "")
         row = await rs.pinned_plan(db, site_key, family=intent.family, page=route.pattern, regions=[PAGE_REGIONS])
         out["served"] = "pinned" if row else "cached"
         if row is None:
-            row = await rs.cached_plan(db, site_key, key)
+            row = await pick_arm(db, site_key, key, on_new_arm=lambda n, avoid: _schedule(
+                rt, site_key, route, params, intent, sig, key=f"{key}#arm{n}", content=content, taste=taste,
+                arm=n, base_key=key, avoid=avoid))
         if row is None:
             if wait or bot:
                 row = await build_and_store_page(db, rt, site_key, route, params, intent, sig, key=key,
-                                                 content=content, use_model=not bot)
+                                                 content=content, use_model=not bot, taste=taste)
                 out["served"] = "built"
             else:
-                _schedule(rt, site_key, route, params, intent, sig, key=key, content=content)
+                _schedule(rt, site_key, route, params, intent, sig, key=key, content=content, taste=taste)
                 out["pending"] = True
                 row = await _best_for_route(db, site_key, route)
                 out["served"] = "fallback"
@@ -208,6 +205,8 @@ async def serve_page(
            "persona": sig.persona, "page": path, "route": params}
     sections, manifest, plan_id = await bind_page(db, rt, site_key, row["plan"], ctx)
     design = load_design_system(site_key)
+    overrides, applied = apply_tunables(design, taste)
+    why = explain(intent, sig, taste, served=out.get("served", ""), applied=applied)
     canonical = canonical_url(domain, path)
     is_canonical = bool(route.canonical_plan) and row["id"] == route.canonical_plan
     title = str(row["plan"].get("title") or route.title or design.name)
@@ -217,7 +216,9 @@ async def serve_page(
         "plan_row": row["id"],
         "html": render_fragment(sections, plan_id=plan_id, title=title,
                                 form_action=f"{api_base.rstrip('/')}/experience/lead" if api_base else ""),
-        "css": stylesheet(design),
+        "css": stylesheet(design, overrides),
+        "why": why,
+        "arm": row.get("arm", 0),
         "head": {
             "title": title, "description": desc, "canonical": canonical,
             # Crawlers and the owner's canonical page are indexed; generated variants aren't.
@@ -225,10 +226,10 @@ async def serve_page(
             "json_ld": {"@context": "https://schema.org", "@type": "WebPage", "name": title,
                         "description": desc, "url": canonical},
         },
-        "data": {"plan_id": plan_id, "api": api_base, "key": public_key, "page": path,
+        "data": {"plan_id": plan_id, "api": api_base, "key": public_key, "page": path, "why": why,
                  "sections": [s for s in sections if s["type"] in ("chart", "roi_calculator", "enquiry_form")
                               or is_wc_renderer(s["type"])]},
-        "tokens": design.to_tokens(),
+        "tokens": {**design.to_tokens(), **overrides},
         "restored": restored,
     })
     if manifest.bundle and any(is_wc_renderer(s["type"]) for s in sections):

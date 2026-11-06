@@ -43,7 +43,8 @@ export default async function Pricing({ searchParams }) {
 - Register the route (`/pricing`, `/products/:slug`, `/guides/*`) in the console's
   **Pages** tab; pick a canonical page for search engines there.
 - The visitor's UTM tags, search terms, referrer and user agent are passed on, so the page
-  fits their goal and crawlers get the canonical page.
+  fits their goal and crawlers get the canonical page. Their taste travels in the widget's
+  `fbtaste` session cookie on your domain and is forwarded too.
 - Responses are `Cache-Control: private, no-store`: pages differ per visitor.
 - `fetchComposedPage` never throws on network or server errors; it answers `notFound`
   (status 502/504), so your own page can render instead.

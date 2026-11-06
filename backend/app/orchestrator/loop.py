@@ -16,6 +16,7 @@ from app.orchestrator.lean import LeanResponder, needs_heavy
 from app.orchestrator.personas import valid_personas
 from app.orchestrator.result import ClientAction, TurnResult
 from app.orchestrator.router import FastRouter
+from app.experience.taste import clean as _clean_taste
 from app.orchestrator.state import ConversationState
 from app.orchestrator.thinker import HeavyThinker
 
@@ -45,6 +46,13 @@ def should_probe(state: ConversationState) -> bool:
 
 def bump_probe(state: ConversationState, probed: bool) -> None:
     state.turns_since_probe = 0 if probed else state.turns_since_probe + 1
+
+
+
+def taste_brief(state) -> str:
+    """The visitor's taste in a sentence for the prompt (Phase 3), or ''."""
+    raw = getattr(state, "taste", None)
+    return _clean_taste(raw).brief() if raw else ""
 
 
 class CognitiveLoop:
@@ -108,6 +116,7 @@ class CognitiveLoop:
             probe=probe,
             lang=state.lang,
             seen=state.lang_seen,
+            taste_brief=taste_brief(state),
             search=search,
         )
 
@@ -131,6 +140,7 @@ class CognitiveLoop:
             pii=state.pii,
             lang=state.lang,
             seen=state.lang_seen,
+            taste_brief=taste_brief(state),
             on_screen_plan=state.page_plan,
         )
 
@@ -191,6 +201,7 @@ class CognitiveLoop:
                 pii=state.pii,
                 lang=state.lang,
                 seen=state.lang_seen,
+                taste_brief=taste_brief(state),
                 on_screen_plan=state.page_plan,
             )
         else:
@@ -206,6 +217,7 @@ class CognitiveLoop:
                 probe=probe,
                 lang=state.lang,
                 seen=state.lang_seen,
+                taste_brief=taste_brief(state),
                 search=route.query_en,
             )
         result.answer_text = think.answer_text

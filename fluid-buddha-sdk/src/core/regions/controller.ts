@@ -20,6 +20,8 @@ import { EXTREME_STYLES } from '../../ui/styles';
 import { applyTokens } from '../designSystem';
 import { optionsFromAttributes, resolveConfig } from '../config';
 import { visitorId } from '../Experiment';
+import { getTaste, rememberPlan } from '../taste';
+import { trackEngagement, whyControl, WHY_STYLES } from '../why';
 
 export interface RegionsConfig {
   api: string;
@@ -41,6 +43,7 @@ interface RegionsAnswer {
   bundle?: { url: string; integrity: string };
   pending?: boolean;
   retry_after_ms?: number;
+  why?: string[];
 }
 
 const NAME_RE = /^[a-z][a-z0-9-]{0,39}$/;
@@ -72,11 +75,11 @@ function signals(): Record<string, string> {
 }
 
 function fill(el: RegionHost, section: PageSection, answer: RegionsAnswer,
-              enquiry: (values: Record<string, string>) => Promise<boolean>): void {
+              enquiry: (values: Record<string, string>) => Promise<boolean>, cfg: RegionsConfig): void {
   const root = el.shadowRoot;
   if (!root) return;
   const style = document.createElement('style');
-  style.textContent = EXTREME_STYLES + REGION_STYLES;
+  style.textContent = EXTREME_STYLES + REGION_STYLES + WHY_STYLES;
   const wrap = document.createElement('div');
   wrap.className = 'fbpage-region';
   applyTokens(wrap, answer.tokens);
@@ -85,6 +88,11 @@ function fill(el: RegionHost, section: PageSection, answer: RegionsAnswer,
     plan_id: answer.plan_id, bundle: answer.bundle,
   });
   if (!wrap.childElementCount) return; // nothing drawable: keep the fallback
+  // "Why this?" (Phase 3) and engagement rewards for the plan that drew it.
+  const why = whyControl(document, answer.why);
+  if (why) wrap.prepend(why);
+  trackEngagement(wrap, cfg, answer.plan_id);
+  rememberPlan(answer.plan_id);
   root.replaceChildren(style, wrap);
   el.filled = true;
   el.setAttribute('data-fb-state', 'ready');
@@ -144,7 +152,7 @@ export class RegionsController {
         body: JSON.stringify({
           key: cfg.key || undefined, site: cfg.key ? undefined : cfg.site,
           visitor: visitorId() || undefined, page: window.location.pathname,
-          regions: [...new Set(els.map((e) => e.regionName))], signals: signals(),
+          regions: [...new Set(els.map((e) => e.regionName))], signals: signals(), taste: getTaste(),
           lang: (document.documentElement.lang || '').toLowerCase().startsWith('hi') ? 'hi' : 'en',
           automated: !!(navigator as { webdriver?: boolean }).webdriver,
         }),
@@ -159,7 +167,7 @@ export class RegionsController {
       const section = regions[el.regionName];
       if (!section) continue;
       if (retry && this.interacted() && !el.belowFold()) continue; // never jump visible content
-      fill(el, section, answer, (values) => this.enquiry(values));
+      fill(el, section, answer, (values) => this.enquiry(values), cfg);
     }
     if (answer.pending && !retry) {
       const wait = Math.min(Math.max(answer.retry_after_ms || 2500, 500), MAX_RETRY_MS);
