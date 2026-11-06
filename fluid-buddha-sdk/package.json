@@ -39,13 +39,13 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "@types/three": "^0.160.0",
+    "@types/three": "^0.187.0",
     "esbuild": "^0.28.2",
     "jsdom": "^24.1.0",
     "typescript": "^5.5.0"
   },
   "dependencies": {
-    "three": "^0.160.0"
+    "three": "^0.187.0"
   },
   "overrides": {
     "fflate": "^0.8.3"
