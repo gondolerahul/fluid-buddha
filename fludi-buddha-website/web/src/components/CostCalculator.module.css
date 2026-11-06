@@ -1,0 +1,11 @@
+.calc { padding: clamp(28px, 3vw, 44px); }
+.head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+.value { font-family: var(--font-display); font-weight: 300; font-size: clamp(36px, 3.4vw, 56px); letter-spacing: -0.03em; }
+.range { width: 100%; margin: 22px 0 28px; accent-color: var(--accent); height: 28px; }
+.rows { display: grid; gap: 8px; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding: 14px 18px; border-radius: var(--r-lg); border: 1px solid var(--border); }
+.row span { font-weight: 500; } .row b { font-weight: 500; text-align: right; font-family: var(--font-display); font-size: 20px; letter-spacing: -0.02em; }
+.row small { grid-column: 2; text-align: right; color: var(--fg-subtle); font-size: 12.5px; }
+.best { border-color: var(--border-gold); background: var(--accent-quiet); }
+.rec { margin-top: 18px; font-size: 14px; color: var(--fg-muted); }
+.rec b { font-weight: 500; color: var(--fg); }

@@ -50,6 +50,12 @@
       "port": 5190
     },
     {
+      "name": "website",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd fludi-buddha-website\\web && npx next dev -p 3100"],
+      "port": 3100
+    },
+    {
       "name": "console",
       "runtimeExecutable": "cmd",
       "runtimeArgs": [

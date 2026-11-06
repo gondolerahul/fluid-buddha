@@ -1,0 +1,11 @@
+.for { margin-top: 64px; }
+.tile { display: flex; flex-direction: column; gap: 12px; padding: 18px 18px 26px; }
+.tileImg { position: relative; aspect-ratio: 16 / 10; border-radius: var(--r-lg); overflow: hidden; margin-bottom: 10px; background: var(--surface-2); }
+.tileImg img { object-fit: cover; transition: transform 1.2s var(--ease-out); }
+.tile:hover .tileImg img { transform: scale(1.04); }
+.tile h3, .tile p { padding-inline: 8px; }
+.more { padding-inline: 8px; margin-top: auto; font-size: 14px; color: var(--accent); }
+.pricing { background: var(--surface); border-block: 1px solid var(--border); }
+.plans { margin-top: 56px; }
+.price { font-family: var(--font-display); font-weight: 300; font-size: clamp(30px, 2.6vw, 42px); letter-spacing: -0.03em; margin: 14px 0 6px; }
+.hot { border-color: var(--border-gold); box-shadow: var(--shadow-gold); }
