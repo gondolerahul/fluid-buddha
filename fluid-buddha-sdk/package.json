@@ -42,7 +42,7 @@
     "@types/three": "^0.160.0",
     "esbuild": "^0.28.2",
     "jsdom": "^24.1.0",
-    "typescript": "^5.5.0"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "three": "^0.160.0"
