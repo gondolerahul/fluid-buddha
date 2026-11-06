@@ -46,7 +46,7 @@ GOAL_NAME_RE = re.compile(r"^[\w.:-]{1,64}$")
 _MAX_EVENTS_PER_VISITOR = 50
 
 
-SUBJECTS = ("greeting", "trigger", "tour", "persona", "design")
+SUBJECTS = ("greeting", "trigger", "tour", "persona", "design", "regions")
 VARIANT_KEYS = ("a", "b", "c", "d")
 DESIGNS = ("level1", "level2", "level3")
 
@@ -398,6 +398,11 @@ def clean_overrides(subject: str, raw: Any, *, personas: list[str],
         if d not in DESIGNS:
             raise ValueError("The design level is level1, level2 or level3.")
         return {"design": d}
+    if subject == "regions":
+        # Generated regions (Phase 1) against the page's own content.
+        if not isinstance(o.get("regions"), bool):
+            raise ValueError("Each variant turns generated regions on or off.")
+        return {"regions": o["regions"]}
     raise ValueError(f"Can't test {subject!r}")
 
 

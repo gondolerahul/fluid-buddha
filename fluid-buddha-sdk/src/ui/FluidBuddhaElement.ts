@@ -16,11 +16,13 @@ import { Arm, Experiment } from '../core/Experiment';
 import { TriggerRule, Triggers } from '../core/Triggers';
 import { Session } from '../core/Session';
 import { applyTokens, fetchDesignSystem } from '../core/designSystem';
+import { configureRegions } from '../core/Regions';
+import { loadPatcher } from '../core/patch/load';
 import { Canvas } from './components/canvas';
 import { sourcesEl } from './citations';
 import { Level2Shell } from './level2/Level2Shell';
 import { Level3Shell } from './level3/Level3Shell';
-import { PageRenderer, EnquiryPayload } from './page/PageRenderer';
+import type { PageRenderer, EnquiryPayload } from './page/PageRenderer';
 import { AuraCanvas, AuraState } from './aura/AuraCanvas';
 import { stylesFor } from './styles';
 import { callBar, callPrompt } from './call';
@@ -60,6 +62,7 @@ export class FluidBuddhaElement extends HTMLElement {
   private level2?: Level2Shell;
   private level3?: Level3Shell;
   private pageRenderer?: PageRenderer;
+  private pageInner?: HTMLElement;
   private pageSurface?: HTMLDivElement;
 
   private trigger!: HTMLButtonElement;
@@ -110,6 +113,8 @@ export class FluidBuddhaElement extends HTMLElement {
     this.designSet = !!opts.design;
     this.accentSet = !!opts.accent;
     this.config = resolveConfig(opts);
+    // Generated regions on this page (Phase 1) use the widget's backend and key.
+    configureRegions({ api: this.config.api, key: this.config.key, site: this.config.site });
     this.style.setProperty('--fb-accent', this.config.accent);
     this.setAttribute('data-position', this.config.position);
     this.setAttribute('data-design', this.config.design);
@@ -285,7 +290,14 @@ export class FluidBuddhaElement extends HTMLElement {
     root.appendChild(surface);
 
     this.pageSurface = surface;
-    this.pageRenderer = new PageRenderer(inner, (p) => this.onEnquiry(p));
+    this.pageInner = inner;
+    // Edits of the page on this surface (P2-4); the patcher loads on first use.
+    window.addEventListener('fluidbuddha:plan_patch', (e) => {
+      const d = (e as CustomEvent<{ plan_id?: string }>).detail;
+      if (d?.plan_id && inner.getAttribute('data-fb-plan') === d.plan_id) {
+        void loadPatcher().then((m) => m.applyPatch(d as never, [surface], (v) => this.session.submitLead(v)));
+      }
+    });
 
     void fetchDesignSystem(this.config.api, this.config.site).then((ds) => {
       if (ds) {
@@ -297,9 +309,15 @@ export class FluidBuddhaElement extends HTMLElement {
   }
 
   private renderPage(page: PageSpec): void {
-    if (!this.pageRenderer || !this.pageSurface) return;
-    this.pageSurface.classList.remove('hidden');
-    this.pageRenderer.render(page);
+    const surface = this.pageSurface;
+    const inner = this.pageInner;
+    if (!surface || !inner) return;
+    // The page renderer loads with the first page (it isn't in the core script).
+    void loadPatcher().then((m) => {
+      this.pageRenderer ??= new m.PageRenderer(inner, (p) => this.onEnquiry(p));
+      surface.classList.remove('hidden');
+      this.pageRenderer.render(page);
+    });
   }
 
   /** The generated enquiry form posts straight to /leads (WS7) — the visitor's
@@ -742,7 +760,9 @@ export class FluidBuddhaElement extends HTMLElement {
       });
       section = (inView?.textContent || '').trim().slice(0, 80) || undefined;
     }
-    return { page, title, section, sections: this.pageSections() };
+    // A served composed page reports its plan, so the agent can edit it (P2-4).
+    const plan_id = document.querySelector('main[data-fb-plan]')?.getAttribute('data-fb-plan') || undefined;
+    return { page, title, section, sections: this.pageSections(), plan_id };
   }
 
   private pageSections(): Array<{ id: string; label: string }> {

@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluidBuddha — Don't read about it. Talk to it. (Option 5 mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fraunces:ital,opsz,wght@1,9..144,300&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Devanagari:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #eef0f3; --muted: #9aa0a8; --gold: #d8a93a; --gold2: #f3cf7a; --line: rgba(255,255,255,.1); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #06070a; color: var(--ink); font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .hi { font-family: 'Noto Sans Devanagari', Inter, sans-serif; }
+  em.s { font-family: Fraunces, serif; font-style: italic; font-weight: 300; color: var(--gold2); }
+  .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 60; display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; background: linear-gradient(180deg, rgba(6,7,10,.9), rgba(6,7,10,0)); }
+  .brand { font-weight: 600; font-size: 17px; } .brand i { font-style: normal; color: var(--gold); }
+  .nav .r { display: flex; gap: 10px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 99px; padding: 11px 20px; font: 500 14px Inter, sans-serif; cursor: pointer; text-decoration: none; border: 1px solid transparent; }
+  .btn.gold { background: var(--gold); color: #1a1306; } .btn.ghost { border-color: rgba(255,255,255,.22); color: var(--ink); background: none; }
+  .pill { font: 11px 'JetBrains Mono'; letter-spacing: .1em; text-transform: uppercase; color: var(--ink); border: 1px solid rgba(255,255,255,.16); border-radius: 99px; padding: 8px 12px; background: none; cursor: pointer; }
+  .tag { position: fixed; right: 32px; bottom: 18px; z-index: 60; font: 10.5px 'JetBrains Mono', monospace; letter-spacing: .08em; color: #5e636b; text-transform: uppercase; } .tag a { color: inherit; }
+
+  /* ============ the stage: the hero IS the demo ============ */
+  .stage { position: relative; min-height: 100vh; overflow: hidden; perspective: 1700px; background: radial-gradient(ellipse 65% 55% at 50% 52%, #171a20, #06070a 74%); }
+  .stage::before { content: ''; position: absolute; left: 50%; top: 54%; width: 60vw; height: 50vh; transform: translate(-50%, -50%); background: radial-gradient(ellipse, rgba(216,169,58,.12), transparent 65%); pointer-events: none; }
+  .floor { position: absolute; left: -20%; right: -20%; top: 78%; height: 40%; background: radial-gradient(ellipse 45% 40% at 50% 0%, rgba(255,255,255,.06), transparent 70%); pointer-events: none; }
+  .head { position: relative; z-index: 5; text-align: center; padding-top: 92px; }
+  .head h1 { font: 600 clamp(32px, 4.4vw, 66px)/1.04 Inter; letter-spacing: -.045em; }
+  .head p { margin-top: 10px; font: 300 clamp(15px, 1.2vw, 18px)/1.5 Inter; color: #aeb4bc; }
+
+  .scene { position: relative; height: min(56vh, 520px); margin-top: 16px; transform-style: preserve-3d; }
+  .rig { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; transition: transform 1.2s cubic-bezier(.2,.8,.2,1); }
+  .laptop { position: absolute; width: 640px; height: 420px; left: -320px; top: -230px; transform-style: preserve-3d; }
+  .lid { position: absolute; inset: 0; border-radius: 18px; background: #15171b; padding: 14px; box-shadow: 0 0 0 2px #2a2c31, 0 60px 120px rgba(0,0,0,.65), 0 0 120px rgba(216,169,58,.12); }
+  .chin { position: absolute; left: -46px; right: -46px; bottom: -24px; height: 24px; border-radius: 0 0 20px 20px; background: linear-gradient(#b4b7bd, #75787f); box-shadow: 0 30px 60px rgba(0,0,0,.6); }
+  .chin::before { content: ''; position: absolute; left: 50%; top: 0; width: 120px; height: 8px; margin-left: -60px; border-radius: 0 0 8px 8px; background: #8d9097; }
+  .scr { position: relative; width: 100%; height: 100%; border-radius: 6px; background: #0b0c0f; overflow: hidden; }
+  /* FluidBuddha's own website inside the laptop */
+  .page { position: absolute; left: 0; right: 0; top: 0; transition: transform 1.1s cubic-bezier(.4,.1,.2,1); }
+  .w-nav { height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: 1px solid #1c1e23; font: 600 12px Inter; }
+  .w-nav span { font: 400 10.5px Inter; color: #8a9098; margin-left: 12px; } .w-nav i { font-style: normal; color: var(--gold); }
+  .w-hero { padding: 34px 22px 26px; height: 252px; }
+  .w-hero h3 { font: 600 30px/1.06 Inter; letter-spacing: -.04em; width: 62%; } .w-hero h3 em { font-family: Fraunces; font-weight: 300; color: var(--gold2); }
+  .w-hero p { margin-top: 10px; font: 12px/1.5 Inter; color: #9aa0a8; width: 55%; } .w-hero .b { display: inline-block; margin-top: 14px; font: 600 11px Inter; background: var(--gold); color: #1a1306; padding: 8px 12px; border-radius: 99px; }
+  .w-sec { padding: 22px; } .w-sec h4 { font: 600 17px Inter; letter-spacing: -.02em; margin-bottom: 12px; }
+  .w-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; } .w-steps div { border: 1px solid #23262c; border-radius: 10px; padding: 12px; font: 600 12px Inter; background: #101216; } .w-steps small { display: block; font: 400 10.5px Inter; color: #8a9098; margin-top: 4px; } .w-steps b { color: var(--gold); font: 600 10px 'JetBrains Mono'; display: block; margin-bottom: 6px; }
+  .w-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; } .w-plans div { border: 1px solid #23262c; border-radius: 10px; padding: 12px; font: 11px Inter; color: #9aa0a8; background: #101216; } .w-plans b { display: block; font: 600 16px Inter; color: #fff; margin-top: 4px; }
+  .spot { position: absolute; left: 14px; right: 14px; height: 120px; border-radius: 12px; box-shadow: 0 0 0 2px var(--gold), 0 0 0 1000px rgba(0,0,0,.55), 0 0 40px rgba(216,169,58,.5); opacity: 0; transition: opacity .6s; pointer-events: none; z-index: 3; }
+  .spot.on { opacity: 1; }
+  .panel { position: absolute; right: 12px; bottom: 12px; top: 52px; width: 262px; border-radius: 14px; background: linear-gradient(170deg, rgba(36,35,40,.97), rgba(17,17,20,.98)); border: 1px solid rgba(216,169,58,.3); box-shadow: 0 24px 60px rgba(0,0,0,.55); display: flex; flex-direction: column; z-index: 4; }
+  .ph { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .ph .av { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 38% 34%, #fff2c6, #d8a93a 50%, #6b4d12); box-shadow: 0 0 0 0 rgba(216,169,58,.5); }
+  body.speaking .ph .av { animation: talk .5s ease-in-out infinite alternate; } @keyframes talk { to { box-shadow: 0 0 0 6px rgba(216,169,58,.15); } }
+  .ph b { display: block; font: 600 12px Inter; } .ph small { font: 9.5px 'JetBrains Mono'; color: var(--gold); letter-spacing: .12em; text-transform: uppercase; }
+  .pb { flex: 1; padding: 10px; display: flex; flex-direction: column; justify-content: flex-end; gap: 7px; overflow: hidden; }
+  .msg { flex-shrink: 0; font: 11.5px/1.45 Inter; padding: 8px 10px; border-radius: 12px; max-width: 94%; animation: pop .3s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px); } }
+  .msg.me { align-self: flex-end; background: #2c3038; border-bottom-right-radius: 4px; } .msg.ai { align-self: flex-start; background: rgba(216,169,58,.12); border: 1px solid rgba(216,169,58,.25); border-bottom-left-radius: 4px; }
+  .msg .src { display: inline-block; margin-top: 6px; font: 9.5px 'JetBrains Mono'; color: var(--gold); border: 1px solid rgba(216,169,58,.35); border-radius: 99px; padding: 2px 7px; }
+  .mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 7px; } .mini div { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 5px; font: 9.5px Inter; color: #b9bec6; text-align: center; } .mini b { display: block; font: 600 11.5px Inter; color: #fff; }
+  .mini div.hot { border-color: rgba(216,169,58,.6); background: rgba(216,169,58,.08); }
+  .card { background: #1d1c21; border: 1px solid rgba(216,169,58,.45); border-radius: 12px; padding: 10px; margin-top: 2px; position: relative; }
+  .card b { display: block; font: 600 12px Inter; } .card span { font: 11px Inter; color: #b9bec6; }
+  .card .row { display: flex; gap: 6px; margin-top: 8px; } .card button { font: 600 10.5px Inter; padding: 5px 10px; border-radius: 99px; border: 1px solid rgba(255,255,255,.2); background: none; color: var(--ink); cursor: pointer; } .card button.y { background: var(--gold); color: #1a1306; border-color: var(--gold); }
+  .card .ok { position: absolute; right: 9px; top: 9px; font: 600 10px 'JetBrains Mono'; color: #7fd18b; border: 1px solid #7fd18b; border-radius: 4px; padding: 2px 6px; transform: rotate(8deg); }
+  .typing { display: inline-flex; gap: 3px; } .typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); animation: blink 1s infinite; } .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; } @keyframes blink { 50% { opacity: .25; } }
+  .pf { height: 38px; border-top: 1px solid rgba(255,255,255,.07); display: flex; align-items: center; padding: 0 10px; font: 10.5px Inter; color: #7c828b; }
+
+  /* feature labels floating around the laptop */
+  .feat { position: absolute; width: 200px; transform-style: preserve-3d; transition: transform .9s cubic-bezier(.2,.8,.2,1); }
+  .feat .in { border-radius: 14px; padding: 12px 14px; border: 1px dashed rgba(255,255,255,.16); background: rgba(12,13,16,.55); backdrop-filter: blur(8px); transition: all .6s cubic-bezier(.2,.8,.2,1); }
+  .feat .in b { display: flex; align-items: center; gap: 8px; font: 600 13.5px Inter; color: #6f757d; }
+  .feat .in b i { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid #3a3e45; display: grid; place-items: center; font: 600 11px Inter; font-style: normal; color: transparent; }
+  .feat .in small { display: block; margin-top: 5px; font: 11.5px/1.4 Inter; color: #5f656d; }
+  .feat.on .in { border: 1px solid rgba(216,169,58,.6); background: linear-gradient(160deg, rgba(216,169,58,.16), rgba(12,13,16,.8)); box-shadow: 0 20px 50px rgba(0,0,0,.45), 0 0 40px rgba(216,169,58,.15); }
+  .feat.on .in b { color: #fff; } .feat.on .in b i { background: var(--gold); border-color: var(--gold); color: #1a1306; } .feat.on .in small { color: #c3c8cf; }
+  .feat.flash .in { animation: flash 1s ease-out; } @keyframes flash { 0% { transform: scale(1.12); } 100% { transform: none; } }
+  .slack { position: absolute; width: 250px; left: 400px; top: 300px; z-index: 6; background: #fff; color: #1d1c1d; border-radius: 12px; padding: 10px 12px; font: 11px/1.4 Inter; box-shadow: 0 24px 60px rgba(0,0,0,.5); opacity: 0; transform: translateZ(120px) translateY(20px); transition: all .7s cubic-bezier(.2,.8,.2,1); }
+  .slack.on { opacity: 1; transform: translateZ(120px); }
+  .slack .h { font: 600 10.5px Inter; color: #616061; margin-bottom: 3px; }
+
+  .controls { position: relative; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 22px 6vw 60px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 900px; }
+  .chip { font: 14px Inter; color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 99px; padding: 10px 15px; cursor: pointer; transition: border-color .3s, opacity .3s; }
+  .chip:hover { border-color: var(--gold); } .chip.done { opacity: .45; } .busy .chip, .busy .askbar { opacity: .4; pointer-events: none; }
+  .askbar { display: flex; align-items: center; gap: 8px; width: min(560px, 92vw); padding: 6px 6px 6px 18px; border-radius: 99px; background: rgba(14,16,20,.8); border: 1px solid rgba(216,169,58,.4); box-shadow: 0 0 40px rgba(216,169,58,.12); }
+  .askbar input { flex: 1; background: none; border: 0; outline: none; color: var(--ink); font: 15px Inter; }
+  .askbar .mic { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--gold); cursor: pointer; font-size: 16px; } .askbar .mic.rec { animation: rec 1s infinite; } @keyframes rec { 50% { box-shadow: 0 0 0 8px rgba(216,169,58,.2); } }
+  .count { font: 12px 'JetBrains Mono'; color: #8a9098; letter-spacing: .06em; } .count b { color: var(--gold2); font-weight: 500; }
+
+  /* sections */
+  section.after { position: relative; padding: 110px 6vw; max-width: 1240px; margin: 0 auto; }
+  .eyebrow { font: 500 11px 'JetBrains Mono'; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); }
+  section.after h2 { margin-top: 14px; font: 600 clamp(32px, 4vw, 58px)/1.05 Inter; letter-spacing: -.04em; max-width: 16em; } section.after .lead { margin-top: 14px; font: 300 18px/1.55 Inter; color: #b0b6be; max-width: 38em; }
+  .tried { margin-top: 44px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .tr { border-radius: 18px; padding: 22px; border: 1px solid var(--line); background: #0b0c10; position: relative; }
+  .tr.on { border-color: rgba(216,169,58,.5); background: linear-gradient(160deg, rgba(216,169,58,.1), #0b0c10 60%); }
+  .tr .st { font: 500 10.5px 'JetBrains Mono'; letter-spacing: .12em; text-transform: uppercase; color: #6f757d; } .tr.on .st { color: var(--gold); }
+  .tr b { display: block; margin-top: 8px; font: 600 17px Inter; } .tr p { margin-top: 6px; font: 14px/1.5 Inter; color: #a0a6ae; }
+  .tr button { margin-top: 12px; font: 13px Inter; color: var(--gold2); background: none; border: 0; cursor: pointer; padding: 0; } .tr.on button { display: none; }
+  .steps { margin-top: 44px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .step { border-radius: 20px; padding: 26px; border: 1px solid var(--line); background: linear-gradient(170deg, #14161b, #0b0c0f); } .step .n { font: 600 13px 'JetBrains Mono'; color: var(--gold); } .step h3 { margin: 10px 0 6px; font: 600 21px Inter; letter-spacing: -.02em; } .step p { color: #a6acb4; font-size: 15px; line-height: 1.55; }
+  .code { margin-top: 16px; font: 12px/1.6 'JetBrains Mono'; background: #040508; border: 1px solid #23262c; border-radius: 12px; padding: 12px; color: #c9ced6; } .code b { color: #7fe3f0; font-weight: 400; } .code i { color: var(--gold2); font-style: normal; }
+  .plans2 { margin-top: 44px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .pl { border-radius: 20px; padding: 26px 22px; border: 1px solid var(--line); background: #0b0c10; } .pl.hot { border-color: rgba(216,169,58,.6); background: linear-gradient(170deg, rgba(216,169,58,.1), #0b0c10 60%); }
+  .pl small { font: 500 11px 'JetBrains Mono'; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); } .pl b { display: block; margin: 12px 0 2px; font: 600 32px Inter; letter-spacing: -.03em; } .pl .per { font: 13px Inter; color: #8a9098; }
+  .pl ul { list-style: none; margin: 18px 0 22px; display: grid; gap: 8px; font: 14px Inter; color: #c2c7ce; } .pl li::before { content: '✓  '; color: var(--gold); }
+  .final { text-align: center; padding: 120px 6vw 150px; } .final h2 { margin: 0 auto; font: 600 clamp(34px, 4.6vw, 66px)/1.04 Inter; letter-spacing: -.045em; max-width: 15em; } .final .cta { margin-top: 28px; display: flex; gap: 12px; justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 26px 6vw; color: #5f646c; font-size: 12px; text-align: center; line-height: 1.6; }
+  @media (max-width: 760px) { .feat { display: none; } }
+  @media (max-width: 760px) { .laptop { transform: scale(.55); } .tried, .steps, .plans2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<nav class="nav"><div class="brand">Fluid<i>Buddha</i></div><div class="r"><button class="pill" id="soundBtn">Sound off</button><a class="btn gold" href="#price">Start free</a></div></nav>
+<div class="tag"><a href="index.html">Option 5 · Talk to it · mockup</a></div>
+
+<div class="stage">
+  <div class="floor"></div>
+  <div class="head">
+    <h1>Your website should answer people.<br><em class="s">Ask ours anything.</em></h1>
+    <p>Don't read about FluidBuddha. Try it. This page runs on it.</p>
+  </div>
+
+  <div class="scene">
+    <div class="rig" id="rig">
+      <div class="laptop">
+        <div class="lid"><div class="scr" id="scr">
+          <div class="page" id="page">
+            <div class="w-nav"><div>Fluid<i>Buddha</i><span>Product</span><span>How it works</span><span>Pricing</span></div><span style="color:var(--gold)">Start free</span></div>
+            <div class="w-hero"><h3>Your website, <em>answering every visitor.</em></h3><p>A voice-first agent that talks, shows and acts on your pages, using only your content.</p><span class="b">Start free</span></div>
+            <div class="w-sec" id="secHow"><h4>How it works</h4><div class="w-steps"><div><b>01</b>Add one line<small>Paste the script once</small></div><div><b>02</b>It reads your site<small>Pages, PDFs, price lists</small></div><div><b>03</b>It answers<small>Day and night, by voice</small></div></div></div>
+            <div class="w-sec" id="secPrice"><h4>Pricing</h4><div class="w-plans"><div>Free<b>₹0</b>100 conversations</div><div>Growth<b>₹33,000</b>2,000 / month</div><div>Scale<b>₹1,25,000</b>10,000 / month</div></div></div>
+            <div style="height:200px"></div>
+          </div>
+          <div class="spot" id="spot"></div>
+          <div class="panel"><div class="ph"><div class="av"></div><div><b>Pragya · FluidBuddha</b><small id="pst">ready</small></div></div><div class="pb" id="pb"></div><div class="pf">Ask anything… 🎙</div></div>
+        </div></div>
+        <div class="chin"></div>
+        <div class="slack" id="slack"><div class="h">#sales · FluidBuddha</div>📅 <b>Demo booked</b> · Thursday 11:00 AM<br>Visitor asked about pricing and Hindi</div>
+      </div>
+      <!-- the six things it does, waiting to be discovered -->
+      <div class="feat" data-f="talk" style="left:-560px;top:-210px"><div class="in"><b><i>✓</i>It talks and shows</b><small>Answers out loud and draws a table while it speaks.</small></div></div>
+      <div class="feat" data-f="nav" style="left:-575px;top:-60px"><div class="in"><b><i>✓</i>It takes you to the right place</b><small>Scrolls the page and highlights the section.</small></div></div>
+      <div class="feat" data-f="lang" style="left:-560px;top:90px"><div class="in"><b><i>✓</i>English and Hindi</b><small>Even when the website is only in English.</small></div></div>
+      <div class="feat" data-f="honest" style="left:350px;top:-210px"><div class="in"><b><i>✓</i>It doesn't guess</b><small>If it's not on the website, it says so.</small></div></div>
+      <div class="feat" data-f="book" style="left:365px;top:-60px"><div class="in"><b><i>✓</i>It books meetings</b><small>Only after the visitor says yes.</small></div></div>
+      <div class="feat" data-f="team" style="left:350px;top:90px"><div class="in"><b><i>✓</i>It tells your team</b><small>Hot leads land in Slack instantly.</small></div></div>
+    </div>
+  </div>
+
+  <div class="controls" id="controls">
+    <div class="chips" id="chips">
+      <button class="chip" data-k="price">How much does it cost?</button>
+      <button class="chip" data-k="how">Show me how it works</button>
+      <button class="chip hi" data-k="hindi">क्या ये हिंदी में बात करता है?</button>
+      <button class="chip" data-k="dare">Who will win the IPL this year?</button>
+      <button class="chip" data-k="book">Book a demo</button>
+    </div>
+    <form class="askbar" id="askbar"><input id="q" placeholder="Or ask your own question…" autocomplete="off"><button type="button" class="mic" id="mic" title="Speak">🎙</button></form>
+    <div class="count" id="count">You've discovered <b>0</b> of 6 things it does</div>
+  </div>
+</div>
+
+<section class="after" id="tried">
+  <div class="eyebrow">What you just tried</div>
+  <h2>Everything a great salesperson does, on every visit.</h2>
+  <div class="tried" id="triedGrid"></div>
+</section>
+<section class="after" id="how">
+  <div class="eyebrow">How it works</div>
+  <h2>Your website can do this by this evening.</h2>
+  <div class="steps">
+    <div class="step"><div class="n">01</div><h3>Add one line of code</h3><p>WordPress, Shopify, Webflow or any site.</p><div class="code">&lt;<b>script</b> <i>src</i>="…/loader.js" <i>data-key</i>="fbk_…" async&gt;</div></div>
+    <div class="step"><div class="n">02</div><h3>It reads your website</h3><p>Your pages, PDFs and price lists become what it knows. It answers only from them.</p></div>
+    <div class="step"><div class="n">03</div><h3>Visitors start talking</h3><p>By voice or text, in English or Hindi. You get the leads, the bookings and a weekly summary.</p></div>
+  </div>
+</section>
+<section class="after" id="price">
+  <div class="eyebrow">Pricing</div>
+  <h2>Start free. Pay for conversations, not seats.</h2>
+  <div class="plans2">
+    <div class="pl"><small>Free</small><b>₹0</b><span class="per">per month</span><ul><li>100 conversations</li><li>Voice and text</li><li>Lead capture</li></ul><a class="btn ghost" href="#">Start free</a></div>
+    <div class="pl hot"><small>Growth</small><b>₹33,000</b><span class="per">per month</span><ul><li>2,000 conversations</li><li>₹17 per extra conversation</li><li>Bookings, quotes, Slack</li></ul><a class="btn gold" href="#">Start a trial</a></div>
+    <div class="pl"><small>Scale</small><b>₹1,25,000</b><span class="per">per month</span><ul><li>10,000 conversations</li><li>₹10 per extra conversation</li><li>A/B tests and lift reports</li></ul><a class="btn ghost" href="#">Talk to us</a></div>
+    <div class="pl"><small>Enterprise</small><b>Custom</b><span class="per">volume pricing</span><ul><li>Unlimited conversations</li><li>SSO, audit log, self-hosting</li><li>Your own AI model</li></ul><a class="btn ghost" href="#">Contact sales</a></div>
+  </div>
+</section>
+<section class="final"><h2>You just talked to a website. <em class="s">Imagine yours doing that.</em></h2><div class="cta"><a class="btn gold" href="#">Start free · 100 conversations</a><a class="btn ghost" href="#">Book a demo</a></div></section>
+<footer>Mockup. Pragya's replies are scripted so the page runs without a backend. On the real site they come from the live agent. FluidBuddha plans and prices are real.</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let soundOn = false;
+$('#soundBtn').onclick = () => { soundOn = !soundOn; $('#soundBtn').textContent = soundOn ? 'Sound on' : 'Sound off'; if (!soundOn) speechSynthesis.cancel(); };
+
+const FEATS = {
+  talk: ['It talks and shows', 'Spoken answers in under a second, with tables, charts and calculators drawn while it speaks.', 'How much does it cost?', 'price'],
+  nav: ['It takes visitors to the right place', 'It scrolls, navigates and highlights the exact section a visitor needs.', 'Show me how it works', 'how'],
+  lang: ['It speaks English and Hindi', 'Visitors can ask in Hindi or Hinglish, even if your website is only in English.', 'क्या ये हिंदी में बात करता है?', 'hindi'],
+  honest: ["It doesn't guess", "Answers come only from your website, with sources. If something isn't there, it says so and offers your team.", 'Who will win the IPL this year?', 'dare'],
+  book: ['It books meetings, quotes and trials', 'Nothing happens until the visitor confirms, on screen or by saying "yes".', 'Book a demo', 'book'],
+  team: ['It tells your team instantly', 'Hot leads go to Slack or your CRM, and your team can take over live.', 'Book a demo', 'book'],
+};
+const found = new Set();
+function discover(...fs) {
+  fs.forEach(f => { if (found.has(f)) return; found.add(f); const el = document.querySelector(`.feat[data-f="${f}"]`); el.classList.add('on', 'flash'); setTimeout(() => el.classList.remove('flash'), 1000); });
+  $('#count').innerHTML = found.size === 6 ? '<b>All 6 discovered.</b> That is the whole product.' : `You've discovered <b>${found.size}</b> of 6 things it does`;
+  renderTried();
+}
+function renderTried() {
+  $('#triedGrid').innerHTML = Object.entries(FEATS).map(([k, [t, d, q, key]]) => `<div class="tr ${found.has(k) ? 'on' : ''}"><div class="st">${found.has(k) ? '✓ You tried this' : 'Not tried yet'}</div><b>${t}</b><p>${d}</p><button data-k="${key}">Try it: “${q}” ↑</button></div>`).join('');
+  $('#triedGrid').querySelectorAll('button').forEach(b => b.onclick = () => { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => ask(b.dataset.k), 700); });
+}
+renderTried();
+
+/* the camera turns toward the side whose feature lights up */
+function look(side) { const ry = side === 'left' ? 7 : side === 'right' ? -7 : 0; $('#rig').style.transform = `rotateY(${ry}deg) translateZ(${side ? 30 : 0}px)`; }
+
+function addMsg(cls, html) { const m = document.createElement('div'); m.className = 'msg ' + cls; m.innerHTML = html; $('#pb').appendChild(m); while ($('#pb').children.length > 7) $('#pb').firstChild.remove(); return m; }
+async function aiSay(text, extra = '', hi = false) {
+  document.body.classList.add('speaking'); $('#pst').textContent = 'speaking';
+  if (soundOn && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(text); const v = speechSynthesis.getVoices().find(x => (hi ? /hi-IN/ : /en-IN/).test(x.lang)) || speechSynthesis.getVoices().find(x => /en-/.test(x.lang)); if (v) u.voice = v; speechSynthesis.speak(u); }
+  const m = addMsg('ai' + (hi ? ' hi' : ''), ''); const w = text.split(' ');
+  for (let i = 0; i < w.length; i++) { m.innerHTML = w.slice(0, i + 1).join(' '); await sleep(60); }
+  if (extra) m.insertAdjacentHTML('beforeend', extra);
+  document.body.classList.remove('speaking'); $('#pst').textContent = 'ready';
+  return m;
+}
+async function think() { $('#pst').textContent = 'thinking'; const t = addMsg('ai', '<span class="typing"><i></i><i></i><i></i></span>'); await sleep(650); t.remove(); }
+function scrollPage(y) { $('#page').style.transform = `translateY(${-y}px)`; }
+function spotOn(top) { const s = $('#spot'); s.style.top = top + 'px'; s.classList.add('on'); setTimeout(() => s.classList.remove('on'), 4200); }
+
+const Q = {
+  price: 'How much does it cost?', how: 'Show me how it works', hindi: 'क्या ये हिंदी में बात करता है?', dare: 'Who will win the IPL this year?', book: 'Book a demo',
+};
+let busy = false;
+async function ask(k, typed) {
+  if (busy) return; busy = true; $('#controls').classList.add('busy');
+  document.querySelector(`.chip[data-k="${k}"]`)?.classList.add('done');
+  addMsg('me' + (k === 'hindi' && !typed ? ' hi' : ''), typed || Q[k]); $('#pst').textContent = 'listening'; await sleep(400);
+  await think();
+  if (k === 'price') {
+    look('left');
+    await aiSay("You pay per conversation. Here are the plans:", `<div class="mini"><div>Free<b>₹0</b>100</div><div class="hot">Growth<b>₹33,000</b>2,000</div><div>Scale<b>₹1.25L</b>10,000</div></div><span class="src">Source · Pricing page</span>`);
+    discover('talk');
+  } else if (k === 'how') {
+    look('left'); scrollPage(252); await sleep(900); spotOn(52);
+    await aiSay("Here's how it works. I've taken you to that section: add one line, it reads your site, and it starts answering.", '<span class="src">Source · How it works</span>');
+    discover('nav'); setTimeout(() => scrollPage(0), 4600);
+  } else if (k === 'hindi') {
+    look('left');
+    await aiSay('हाँ! मैं हिंदी और अंग्रेज़ी दोनों में बात करती हूँ, भले ही आपकी वेबसाइट सिर्फ़ अंग्रेज़ी में हो।', '', true);
+    discover('lang');
+  } else if (k === 'dare') {
+    look('right');
+    await aiSay("I don't know that from this website. I can connect you with the team if you have a question about FluidBuddha.");
+    discover('honest');
+  } else if (k === 'book') {
+    look('right');
+    const m = await aiSay('Sure. Shall I book this for you?', `<div class="card" id="bk"><b>20-minute demo</b><span>Thursday, 11:00 AM · with our team</span><div class="row"><button class="y" id="bkY">Yes, book it</button><button id="bkN">Not now</button></div></div>`);
+    busy = false; $('#controls').classList.remove('busy');
+    $('#bkY').onclick = async () => {
+      $('#bk .row').remove(); $('#bk').insertAdjacentHTML('beforeend', '<span class="ok">Booked ✓</span>');
+      addMsg('me', 'Yes'); await sleep(300); await aiSay("Done. You'll get an email with the invite.");
+      discover('book'); await sleep(500); $('#slack').classList.add('on'); discover('team'); setTimeout(() => $('#slack').classList.remove('on'), 5000);
+    };
+    $('#bkN').onclick = async () => { $('#bk .row').remove(); addMsg('me', 'Not now'); await aiSay('No problem. Nothing was booked.'); };
+    return;
+  }
+  setTimeout(() => look(''), 2500);
+  busy = false; $('#controls').classList.remove('busy');
+}
+function classify(t) {
+  const s = t.toLowerCase();
+  if (/book|demo|meeting|call|schedule|appointment/.test(s)) return 'book';
+  if (/price|pric|cost|plan|₹|rupee|kitna|free/.test(s)) return 'price';
+  if (/how|work|setup|install|start/.test(s)) return 'how';
+  if (/hindi|हिं|हिन्दी|हिंदी|language|bhasha/.test(s)) return 'hindi';
+  return 'dare';
+}
+document.querySelectorAll('.chip').forEach(b => b.onclick = () => ask(b.dataset.k));
+$('#askbar').onsubmit = e => { e.preventDefault(); const v = $('#q').value.trim(); if (!v) return; $('#q').value = ''; ask(classify(v), v); };
+/* voice input where the browser supports it */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+$('#mic').onclick = () => {
+  if (!SR) { $('#q').placeholder = 'Voice needs Chrome or Edge. Type your question here.'; $('#q').focus(); return; }
+  const r = new SR(); r.lang = 'en-IN'; r.interimResults = false; $('#mic').classList.add('rec');
+  r.onresult = e => { const t = e.results[0][0].transcript; ask(classify(t), t); };
+  r.onend = () => $('#mic').classList.remove('rec'); r.start();
+};
+/* fit the laptop and the six labels to the viewport */
+function layout() {
+  const s = Math.max(0.5, Math.min(1, (innerWidth - 500) / 700, (innerHeight * 0.58) / 470));
+  document.querySelector('.laptop').style.transform = `scale(${s})`;
+  $('.scene').style.height = Math.round(470 * s + 30) + 'px';
+  const half = 320 * s, gap = 28;
+  const rows = [-150, 0, 150].map(y => y * Math.max(s, 0.75) - 50);
+  document.querySelectorAll('.feat').forEach((el, i) => {
+    const left = i < 3; el.style.left = (left ? -half - gap - 200 : half + gap) + 'px'; el.style.top = rows[i % 3] + 'px';
+  });
+}
+layout(); addEventListener('resize', layout);
+/* a gentle idle float, and the welcome */
+let t0 = performance.now();
+(function float(t) { const r = $('#rig'); if (!busy && !r.style.transform.includes('rotateY(7') && !r.style.transform.includes('rotateY(-7')) r.style.transform = `rotateY(${Math.sin((t - t0) / 3000) * 3}deg)`; requestAnimationFrame(float); })(t0);
+setTimeout(() => aiSay("Hi! I'm Pragya. Ask me anything about FluidBuddha, or pick a question below."), 900);
+window.__o5 = { ask, found };
+</script>
+</body>
+</html>

@@ -181,10 +181,20 @@ p { margin: 0; }
 .table tr:hover td { background: rgba(255, 255, 255, 0.015); }
 
 /* ---- tabs ---- */
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 26px; }
+/* The row scrolls sideways when there are more tabs than fit, instead of
+   widening the page. The rule line is an inset shadow so overflow clipping
+   never cuts the active tab's underline. */
+.tabs {
+  display: flex; gap: 4px; box-shadow: inset 0 -1px 0 var(--line); margin-bottom: 26px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.tabs::-webkit-scrollbar { height: 4px; }
+.tabs::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.tabs::-webkit-scrollbar-track { background: transparent; }
 .tab {
   padding: 10px 14px; color: var(--text-soft); font-size: 0.9rem; font-weight: 500;
-  border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer;
+  border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; flex: 0 0 auto;
   transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
 }
 .tab:hover { color: var(--text); }

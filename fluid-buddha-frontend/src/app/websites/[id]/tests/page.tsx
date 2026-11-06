@@ -13,6 +13,7 @@ const SUBJECTS: { key: TestSubject; label: string; hint: string }[] = [
   { key: "tour", label: "Guided tour", hint: "Offer the tour when the agent opens, or not." },
   { key: "persona", label: "Starting persona", hint: "Who the agent assumes it is talking to at first." },
   { key: "design", label: "Design level", hint: "Companion panel, immersive presence or ambient atmosphere." },
+  { key: "regions", label: "Generated regions", hint: "Your page's own content against regions FluidBuddha generates for each visitor's goal (set them up in the Regions tab)." },
 ];
 const DESIGNS = [
   { key: "level1", label: "Level 1 · Companion" },
@@ -33,6 +34,7 @@ function describe(o: VariantOverrides, rules: Record<string, string>, personas: 
   if (o.tour !== undefined) return o.tour ? "Tour on" : "Tour off";
   if (o.persona !== undefined) return o.persona ? personas[o.persona] ?? o.persona : "Worked out from the conversation";
   if (o.design !== undefined) return DESIGNS.find((d) => d.key === o.design)?.label ?? o.design;
+  if (o.regions !== undefined) return o.regions ? "Generated regions" : "The page's own content";
   return "—";
 }
 
@@ -76,7 +78,7 @@ export default function TestsPage() {
   };
   const promote = async (t: VariantTest, key: string, label: string) => {
     const where = t.subject === "design" ? "the site's design level" : t.subject === "trigger"
-      ? "which triggers are on" : "the agent profile";
+      ? "which triggers are on" : t.subject === "regions" ? "whether generated regions are on" : "the agent profile";
     if (!window.confirm(`Make “${label}” the default for everyone? This updates ${where} and ends the test.`)) return;
     try {
       await Api.promoteVariant(id, t.id, key);
@@ -93,8 +95,8 @@ export default function TestsPage() {
         <div>
           <h2>A/B tests</h2>
           <p className="muted" style={{ fontSize: "0.88rem", maxWidth: 700 }}>
-            Try 2–4 versions of one thing — the greeting, the triggers, the tour, the starting persona or the
-            design — and see which wins more of your site&apos;s goal. Each visitor always sees the same version.
+            Try 2–4 versions of one thing — the greeting, the triggers, the tour, the starting persona, the
+            design or generated regions — and see which wins more of your site&apos;s goal. Each visitor always sees the same version.
             The verdict stays trustworthy however often you check it.
           </p>
         </div>
@@ -241,6 +243,7 @@ function blank(subject: TestSubject, i: number): Draft {
     case "tour": return { label, overrides: { tour: i === 0 } };
     case "persona": return { label, overrides: { persona: "" } };
     case "design": return { label, overrides: { design: DESIGNS[Math.min(i, 2)].key } };
+    case "regions": return { label: i === 0 ? "Page's own content" : "Generated", overrides: { regions: i !== 0 } };
   }
 }
 
@@ -341,6 +344,13 @@ function TestForm({ id, rules, personas, holdoutRunning, onCancel, onStarted }: 
               onChange={(e) => setOverride(i, { tour: e.target.value === "on" })}>
               <option value="on">Offer the guided tour</option>
               <option value="off">No tour</option>
+            </select>
+          )}
+          {subject === "regions" && (
+            <select className="select" aria-label={`Version ${i + 1} regions`} value={v.overrides.regions ? "on" : "off"}
+              onChange={(e) => setOverride(i, { regions: e.target.value === "on" })}>
+              <option value="off">The page&apos;s own content</option>
+              <option value="on">Generated regions</option>
             </select>
           )}
           {subject === "persona" && (

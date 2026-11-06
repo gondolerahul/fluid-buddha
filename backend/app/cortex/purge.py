@@ -33,6 +33,9 @@ _SITE_TABLES = (
     "visitor_memories",  # M3-3
     "agent_tokens", "agent_requests",  # M3-2
     "campaigns",  # M3-1: its pages and events go with it (ON DELETE CASCADE)
+    "site_design_systems", "site_component_manifests",  # P0-7
+    "site_routes", "site_entities", "site_connectors",  # Phase 2 (before plan_cache: FK)
+    "site_experience", "site_regions", "site_intent_families", "plan_cache",  # Phase 1
 )
 
 
@@ -66,6 +69,11 @@ async def invalidate_site_caches(db: AsyncSession, site_key: str) -> None:
                           "WHERE site_key = :sk AND status = 'auto'"), {"sk": site_key})
     await db.execute(text("DELETE FROM answer_audio_cache WHERE site_key = :sk"),
                      {"sk": site_key})
+    # Generated region plans quote site content too (Phase 1); pinned and
+    # blocked plans are the owner's decisions and stay.
+    if await _table_exists(db, "plan_cache"):
+        await db.execute(text("DELETE FROM plan_cache WHERE site_key = :sk AND status = 'auto'"),
+                         {"sk": site_key})
 
 
 async def purge_site(db: AsyncSession, site_key: str) -> dict[str, int]:

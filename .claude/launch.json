@@ -1,0 +1,62 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd backend && set MOCK_AI=true&& set PUBLIC_API_URL=http://localhost:8081&& set CORS_ORIGINS=http://localhost:3001,http://localhost:4000,http://localhost:8090&& .venv\\Scripts\\python.exe -m uvicorn app.main:app --port 8081"
+      ],
+      "port": 8081
+    },
+    {
+      "name": "backend-selfhosted",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd backend && set MOCK_AI=true&& set SELF_HOSTED=true&& set PUBLIC_API_URL=http://localhost:8081&& set CORS_ORIGINS=http://localhost:3001,http://localhost:4000,http://localhost:8090&& .venv\\Scripts\\python.exe -m uvicorn app.main:app --port 8081"
+      ],
+      "port": 8081
+    },
+    {
+      "name": "backend-loadtest",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd backend && set MOCK_AI=true&& set PUBLIC_RATE_LIMIT_PER_MIN=1000000&& set PUBLIC_DAILY_SPEND_CAP_USD=100000&& set PUBLIC_API_URL=http://localhost:8081&& set CORS_ORIGINS=http://localhost:3001,http://localhost:4000,http://localhost:8090&& .venv\\Scripts\\python.exe -m uvicorn app.main:app --port 8081"
+      ],
+      "port": 8081
+    },
+    {
+      "name": "sdk-demo",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd fluid-buddha-sdk && ..\\backend\\.venv\\Scripts\\python.exe -m http.server 4000"
+      ],
+      "port": 4000
+    },
+    {
+      "name": "mockups",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5180", "--directory", "docs/marketing-docs/mockups"],
+      "port": 5180
+    },
+    {
+      "name": "website-assets",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5190", "--directory", "fludi-buddha-website"],
+      "port": 5190
+    },
+    {
+      "name": "console",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd fluid-buddha-frontend && set NEXT_PUBLIC_API_BASE=http://localhost:8081&& npx next dev -p 3001"
+      ],
+      "port": 3001
+    }
+  ]
+}

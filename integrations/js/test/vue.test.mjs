@@ -5,7 +5,7 @@ import { setupDom, fakeServer, wait, CODE, widgets } from './env.mjs';
 
 const window = setupDom();
 const { createApp, h, ref, nextTick } = await import('vue');
-const { FluidBuddha } = await import('../packages/vue/dist/index.mjs');
+const { FluidBuddha, FbRegion } = await import('../packages/vue/dist/index.mjs');
 
 test('mounts the widget, follows prop changes, and removes it on unmount', async () => {
   const state = fakeServer(window);
@@ -54,5 +54,15 @@ test('a server that is down is reported', async () => {
   assert.equal(state.loads.length, 1);
   assert.match(errors[0], /could not load https:\/\/down\.example\.com\/widget\/loader\.js/);
   assert.equal(widgets(), 0);
+  app.unmount();
+});
+
+test('FbRegion renders an <fb-region> with the slot content inside', async () => {
+  const app = createApp({ render: () => h(FbRegion, { name: 'proof' }, () => [h('p', 'Our own proof')]) });
+  app.mount(window.document.getElementById('app'));
+  await nextTick();
+  const el = window.document.querySelector('fb-region');
+  assert.equal(el.getAttribute('name'), 'proof');
+  assert.equal(el.querySelector('p').textContent, 'Our own proof');
   app.unmount();
 });

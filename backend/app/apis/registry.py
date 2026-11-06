@@ -33,12 +33,58 @@ logger = logging.getLogger(__name__)
 _HTTP_METHODS = ("get", "post", "put", "patch", "delete")
 
 
+_EFFECTS = ("read", "write", "destructive")
+_AUTHS = ("site", "user", "none")
+_CONFIRMS = ("none", "card", "typed")
+
+
 @dataclass
 class ApiOperation:
     operation_id: str
     method: str
     path: str
     summary: str
+    # Generative-experience annotations (``x-fb-*``, strategy §4.2.3). Defaults
+    # keep specs without annotations behaving exactly as before.
+    effect: str = "read"          # read | write | destructive
+    entity: str = ""              # manifest entity type the response carries
+    cache: str = ""               # e.g. "public:300s" | "per-user" | "none"
+    auth: str = "site"            # site | user | none
+    pii: tuple[str, ...] = ()     # field paths holding personal data
+    confirm: str = "none"         # none | card | typed
+
+
+def _default_effect(method: str) -> str:
+    m = method.upper()
+    if m in ("GET", "HEAD"):
+        return "read"
+    if m == "DELETE":
+        return "destructive"
+    return "write"
+
+
+def _response_example(op: dict[str, Any]) -> Any:
+    """The documented JSON example of a 2xx response, used as the simulated
+    response so offline/mock mode can render bound data realistically."""
+    responses = op.get("responses") if isinstance(op.get("responses"), dict) else {}
+    for code in ("200", "201", 200, 201, "default"):
+        r = responses.get(code)
+        if not isinstance(r, dict):
+            continue
+        media = (r.get("content") or {}).get("application/json") or {}
+        if "example" in media:
+            return media["example"]
+        examples = media.get("examples")
+        if isinstance(examples, dict) and examples:
+            first = next(iter(examples.values()))
+            if isinstance(first, dict) and "value" in first:
+                return first["value"]
+    return None
+
+
+def _choice(value: Any, allowed: tuple[str, ...], default: str) -> str:
+    v = str(value or "").strip().lower()
+    return v if v in allowed else default
 
 
 class SiteApiRegistry:
@@ -61,23 +107,48 @@ class SiteApiRegistry:
                 if method.lower() not in _HTTP_METHODS or not isinstance(op, dict):
                     continue
                 op_id = op.get("operationId") or f"{method.lower()}_{path.strip('/').replace('/', '_')}"
+                pii = op.get("x-fb-pii") or ()
                 self._ops[op_id] = {
                     "method": method.upper(),
                     "path": path,
                     "summary": op.get("summary") or op.get("description") or "",
+                    "effect": _choice(op.get("x-fb-effect"), _EFFECTS,
+                                      _default_effect(method)),
+                    "entity": str(op.get("x-fb-entity") or "")[:80],
+                    "cache": str(op.get("x-fb-cache") or "")[:40],
+                    "auth": _choice(op.get("x-fb-auth"), _AUTHS, "site"),
+                    "pii": tuple(str(x) for x in pii) if isinstance(pii, list) else (),
+                    "confirm": _choice(op.get("x-fb-confirm"), _CONFIRMS, "none"),
+                    "example": _response_example(op),
                 }
 
+    @staticmethod
+    def _op(op_id: str, o: dict[str, Any]) -> ApiOperation:
+        return ApiOperation(
+            op_id, o["method"], o["path"], o["summary"],
+            effect=o["effect"], entity=o["entity"], cache=o["cache"],
+            auth=o["auth"], pii=o["pii"], confirm=o["confirm"],
+        )
+
     def operations(self) -> list[ApiOperation]:
-        return [
-            ApiOperation(op_id, o["method"], o["path"], o["summary"])
-            for op_id, o in self._ops.items()
-        ]
+        return [self._op(op_id, o) for op_id, o in self._ops.items()]
+
+    def operation(self, operation_id: str) -> ApiOperation | None:
+        o = self._ops.get(operation_id)
+        return self._op(operation_id, o) if o else None
+
+    def bindable_operations(self) -> list[ApiOperation]:
+        """Operations a page may bind data to: reads that need no user token
+        (user-scoped binding arrives with the SaaS identity layer)."""
+        return [o for o in self.operations() if o.effect == "read" and o.auth != "user"]
 
     def to_prompt(self) -> str:
         ops = self.operations()
         if not ops:
             return ""
-        listed = "; ".join(f'{o.operation_id} ({o.method} {o.path}) — {o.summary}' for o in ops)
+        listed = "; ".join(
+            f'{o.operation_id} ({o.method} {o.path}, {o.effect}) — {o.summary}' for o in ops
+        )
         return (
             "SITE APIS — call `call_site_api` with one of these EXACT operation_ids "
             "to pull data or submit an enquiry: " + listed + "."
@@ -92,12 +163,15 @@ class SiteApiRegistry:
 
         # Simulate when there is no live endpoint configured (offline / mock).
         if not self.base_url or get_settings().mock_ai:
-            return {
+            out = {
                 "ok": True, "simulated": True, "operation_id": operation_id,
                 "echo": params,
                 "note": "Simulated response — no live API base URL is configured "
                         "for this site.",
             }
+            if op.get("example") is not None:
+                out["data"] = op["example"]
+            return out
 
         url = self.base_url + self._fill_path(op["path"], params)
         headers = {"Accept": "application/json"}

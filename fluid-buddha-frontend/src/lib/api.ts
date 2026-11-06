@@ -107,6 +107,12 @@ function errorMessage(data: unknown, fallback: string): string {
   const body = (data && typeof data === "object" ? data : {}) as { detail?: unknown; message?: unknown };
   const detail = body.detail ?? body.message;
   if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail) && "message" in detail) {
+    // {message, problems[]} (e.g. a manifest that can't be approved yet).
+    const d = detail as { message?: unknown; problems?: unknown };
+    const problems = Array.isArray(d.problems) ? d.problems.map(String) : [];
+    return [String(d.message ?? ""), ...problems].filter(Boolean).join(" · ");
+  }
   if (Array.isArray(detail)) {
     const parts = detail.map((d: { loc?: unknown[]; msg?: string }) => {
       const field = Array.isArray(d.loc) ? d.loc.filter((p) => p !== "body").join(".") : "";
@@ -454,9 +460,9 @@ export type DigestSettings = {
 export type DigestPreview = { subject: string; text: string; html: string };
 
 /** Variant tests (M2-4). */
-export type TestSubject = "greeting" | "trigger" | "tour" | "persona" | "design";
+export type TestSubject = "greeting" | "trigger" | "tour" | "persona" | "design" | "regions";
 export type VariantOverrides = { greeting?: string; triggers?: string[]; tour?: boolean;
-  persona?: string; design?: "level1" | "level2" | "level3" };
+  persona?: string; design?: "level1" | "level2" | "level3"; regions?: boolean };
 export type Variant = { key: string; label: string; overrides: VariantOverrides };
 export type VariantTest = {
   id: string; name: string; subject: TestSubject; variants: Variant[];
@@ -1000,4 +1006,144 @@ export const Api = {
   eraseVisitor: (id: string, email: string) =>
     api<{ leads: number; conversations: number }>(`/tenant/websites/${id}/privacy/erase`,
       { method: "POST", body: { email } }),
+
+  // Generative experience (P0-7, P0-9): design system and component manifest.
+  getDesignSystem: (id: string) => api<DesignSystemView>(`/tenant/websites/${id}/design-system`),
+  saveDesignSystem: (id: string, body: DesignSystemInput) =>
+    api<DesignSystemView>(`/tenant/websites/${id}/design-system`, { method: "PUT", body }),
+  resetDesignSystem: (id: string) =>
+    api<DesignSystemView>(`/tenant/websites/${id}/design-system`, { method: "DELETE" }),
+  getManifest: (id: string) => api<ManifestView>(`/tenant/websites/${id}/manifest`),
+  getManifestVersion: (id: string, v: number) =>
+    api<ManifestVersion>(`/tenant/websites/${id}/manifest/versions/${v}`),
+  createManifestVersion: (id: string, data: unknown, notes = "") =>
+    api<ManifestVersion>(`/tenant/websites/${id}/manifest/versions`, { method: "POST", body: { data, notes } }),
+  updateManifestDraft: (id: string, v: number, data: unknown, notes = "") =>
+    api<ManifestVersion>(`/tenant/websites/${id}/manifest/versions/${v}`, { method: "PUT", body: { data, notes } }),
+  deleteManifestDraft: (id: string, v: number) =>
+    api<void>(`/tenant/websites/${id}/manifest/versions/${v}`, { method: "DELETE" }),
+  approveManifestVersion: (id: string, v: number) =>
+    api<ManifestVersion>(`/tenant/websites/${id}/manifest/versions/${v}/approve`, { method: "POST" }),
+  draftManifestFromStorybook: (id: string, body: { url?: string; index?: unknown; docgen?: unknown }) =>
+    api<ManifestVersion>(`/tenant/websites/${id}/manifest/drafts/storybook`, { method: "POST", body }),
+  draftManifestFromSite: (id: string, body: { url?: string; max_pages?: number }) =>
+    api<ManifestVersion>(`/tenant/websites/${id}/manifest/drafts/site`, { method: "POST", body }),
+  // Adaptive regions (Phase 1): slots, intent families, plans.
+  getRegionSettings: (id: string) => api<{ regions_enabled: boolean }>(`/tenant/websites/${id}/regions/settings`),
+  setRegionSettings: (id: string, regions_enabled: boolean) =>
+    api<{ regions_enabled: boolean }>(`/tenant/websites/${id}/regions/settings`, { method: "PUT", body: { regions_enabled } }),
+  listRegions: (id: string) => api<{ regions: RegionSlot[]; components: { id: string; renderer: string; purpose: string }[] }>(
+    `/tenant/websites/${id}/regions`),
+  saveRegion: (id: string, name: string, body: Omit<RegionSlot, "id" | "name">) =>
+    api<RegionSlot>(`/tenant/websites/${id}/regions/${encodeURIComponent(name)}`, { method: "PUT", body }),
+  deleteRegion: (id: string, name: string) =>
+    api<void>(`/tenant/websites/${id}/regions/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  listIntentFamilies: (id: string) => api<{ families: IntentFamily[] }>(`/tenant/websites/${id}/intent-families`),
+  suggestIntentFamilies: (id: string) =>
+    api<{ suggestions: Omit<IntentFamily, "id" | "enabled" | "updated_at">[] }>(`/tenant/websites/${id}/intent-families/suggest`),
+  saveIntentFamily: (id: string, slug: string, body: Omit<IntentFamily, "id" | "slug" | "updated_at">) =>
+    api<IntentFamily>(`/tenant/websites/${id}/intent-families/${encodeURIComponent(slug)}`, { method: "PUT", body }),
+  deleteIntentFamily: (id: string, slug: string) =>
+    api<void>(`/tenant/websites/${id}/intent-families/${encodeURIComponent(slug)}`, { method: "DELETE" }),
+  resolveIntent: (id: string, page: string, signals: Record<string, string>) =>
+    api<{ intent: ResolvedIntent; signal_text: string }>(`/tenant/websites/${id}/intent/resolve`,
+      { method: "POST", body: { page, signals } }),
+  listPlans: (id: string, family?: string) =>
+    api<{ plans: PlanRow[] }>(`/tenant/websites/${id}/plans${family ? `?family=${encodeURIComponent(family)}` : ""}`),
+  getPlan: (id: string, pid: string) => api<PlanView>(`/tenant/websites/${id}/plans/${pid}`),
+  generatePlan: (id: string, body: { page: string; family?: string; persona?: string; lang?: string }) =>
+    api<PlanView>(`/tenant/websites/${id}/plans/generate`, { method: "POST", body }),
+  setPlanStatus: (id: string, pid: string, status: PlanStatus) =>
+    api<PlanRow>(`/tenant/websites/${id}/plans/${pid}`, { method: "PUT", body: { status } }),
+  deletePlan: (id: string, pid: string) => api<void>(`/tenant/websites/${id}/plans/${pid}`, { method: "DELETE" }),
+  // Composed pages (Phase 2): routes, entities, connectors.
+  listRoutes: (id: string) => api<{ routes: SiteRoute[]; hosted_base: string }>(`/tenant/websites/${id}/routes`),
+  createRoute: (id: string, body: RouteInput) => api<SiteRoute>(`/tenant/websites/${id}/routes`, { method: "POST", body }),
+  updateRoute: (id: string, rid: string, body: RouteInput) =>
+    api<SiteRoute>(`/tenant/websites/${id}/routes/${rid}`, { method: "PUT", body }),
+  deleteRoute: (id: string, rid: string) => api<void>(`/tenant/websites/${id}/routes/${rid}`, { method: "DELETE" }),
+  setCanonical: (id: string, rid: string, plan: string | null) =>
+    api<SiteRoute>(`/tenant/websites/${id}/routes/${rid}/canonical`, { method: "PUT", body: { plan } }),
+  generateRoutePage: (id: string, rid: string, body: { family?: string; path?: string }) =>
+    api<PlanRow & { preview_html: string; plan_id: string; intent: ResolvedIntent }>(
+      `/tenant/websites/${id}/routes/${rid}/generate`, { method: "POST", body }),
+  entityTypes: (id: string) => api<{ types: { type: string; count: number }[] }>(`/tenant/websites/${id}/entities`),
+  listEntities: (id: string, type: string) =>
+    api<{ records: EntityRecord[] }>(`/tenant/websites/${id}/entities/${encodeURIComponent(type)}`),
+  saveEntity: (id: string, type: string, key: string, data: Record<string, unknown>) =>
+    api<EntityRecord>(`/tenant/websites/${id}/entities/${encodeURIComponent(type)}/${encodeURIComponent(key)}`,
+      { method: "PUT", body: { data } }),
+  deleteEntity: (id: string, type: string, key: string) =>
+    api<void>(`/tenant/websites/${id}/entities/${encodeURIComponent(type)}/${encodeURIComponent(key)}`, { method: "DELETE" }),
+  importEntities: (id: string, body: { type: string; format: "json" | "csv"; key_field: string; content: string }) =>
+    api<{ imported: number; problems: string[] }>(`/tenant/websites/${id}/entities/import`, { method: "POST", body }),
+  listConnectors: (id: string) => api<{ connectors: Connector[] }>(`/tenant/websites/${id}/connectors`),
+  createConnector: (id: string, body: ConnectorInput) =>
+    api<Connector>(`/tenant/websites/${id}/connectors`, { method: "POST", body }),
+  deleteConnector: (id: string, cid: string) => api<void>(`/tenant/websites/${id}/connectors/${cid}`, { method: "DELETE" }),
+  syncConnector: (id: string, cid: string) =>
+    api<{ status: string; records: number }>(`/tenant/websites/${id}/connectors/${cid}/sync`, { method: "POST" }),
+};
+
+// ---- composed pages (Phase 2) ----
+export type RouteInput = { pattern: string; title: string; purpose: string; enabled: boolean; priority: number };
+export type SiteRoute = RouteInput & { id: string; canonical_plan: string | null; plans: PlanRow[] };
+export type EntityRecord = { id: string; type: string; key: string; data: Record<string, unknown>; source: string;
+  updated_at: string | null };
+export type ConnectorInput = { kind: "json_feed" | "wordpress"; name: string; url: string; entity_type: string;
+  items_path: string; key_field: string; fields: Record<string, string> };
+export type Connector = { id: string; kind: "json_feed" | "wordpress"; name: string; url: string; entity_type: string;
+  config: Record<string, unknown>; last_sync_at: string | null; last_status: string };
+
+// ---- adaptive regions (Phase 1) ----
+export type RegionSlot = { id: string; name: string; label: string; purpose: string; components: string[];
+  pages: string[]; enabled: boolean };
+export type IntentRules = Partial<Record<"paths" | "utm_source" | "utm_medium" | "utm_campaign" |
+  "referrer_hosts" | "query_terms", string[]>>;
+export type IntentFamily = { id: string; slug: string; label: string; description: string; stage: string;
+  rules: IntentRules; priority: number; enabled: boolean; updated_at: string | null };
+export type ResolvedIntent = { family: string; label: string; stage: string; confidence: number;
+  source: "rule" | "embedding" | "model" | "default" | "console"; matched: string[] };
+export type PlanStatus = "auto" | "pinned" | "blocked";
+export type PlanRow = { id: string; site_key: string; cache_key: string; family: string; persona: string; lang: string;
+  page: string; regions: string[]; content_version: string; manifest_version: number | null;
+  composer: "model" | "repaired" | "fallback" | "rules";
+  status: PlanStatus; hit_count: number; build_ms: number; created_at: string; last_hit_at: string | null };
+export type PlanView = PlanRow & { plan: Record<string, unknown>; rendered: Record<string, unknown>;
+  preview_html: string; intent?: ResolvedIntent; dropped?: string[]; problems?: string[] };
+
+// ---- generative experience (P0-7) ----
+export type Tunable = { allowed: string[]; default?: string | null };
+export type DesignSystemInput = {
+  name?: string; logo_url?: string; colors?: Record<string, string>;
+  typography?: { font_family?: string; heading_family?: string; base_size?: string; scale?: number };
+  radius?: string; brand_voice?: string; tunables?: Record<string, Tunable>;
+};
+export type DesignSystemDoc = Required<Omit<DesignSystemInput, "tunables">> & {
+  tokens: Record<string, string>; tunables?: Record<string, Tunable>;
+};
+export type DesignSystemView = {
+  current: { data: DesignSystemInput; updated_at: string; updated_by: string | null } | null;
+  effective: DesignSystemDoc;
+  source: "console" | "file" | "extracted" | "default";
+};
+export type PropSpecDoc = { type: string; source: string; required?: boolean; max_items?: number;
+  max_length?: number; enum?: string[] };
+export type ManifestEntryDoc = { id: string; renderer: string; purpose: string; use_when: string[];
+  avoid_when: string[]; actions: string[]; version: number; ssr: boolean; props: Record<string, PropSpecDoc> };
+export type ManifestBundle = { url: string; integrity: string };
+export type ManifestStatus = "draft" | "approved" | "archived";
+export type ManifestVersionSummary = { id: string; site_key: string; version: number; status: ManifestStatus;
+  source: "manual" | "storybook" | "site" | "file"; notes: string; created_at: string; created_by: string | null;
+  approved_at: string | null; approved_by: string | null; components?: number };
+export type ManifestVersion = ManifestVersionSummary & {
+  data: Record<string, unknown>;
+  check: { problems: string[]; components: ManifestEntryDoc[]; component_count: number; bundle: ManifestBundle | null };
+};
+export type ManifestView = {
+  source: "default" | "file" | "console";
+  active_version: number | null;
+  active: ManifestVersion | null;
+  effective: { bundle: ManifestBundle | null; components: ManifestEntryDoc[] };
+  versions: ManifestVersionSummary[];
 };

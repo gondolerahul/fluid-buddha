@@ -49,7 +49,7 @@ const shared = {
 const scriptTagLoader = {
   name: 'script-tag-loaders',
   setup(b) {
-    b.onResolve({ filter: /\/(particles|components)\/load$|^\.\/load$/ }, (args) => ({
+    b.onResolve({ filter: /\/(particles|components|regions|patch)\/load$|^\.\/load$/ }, (args) => ({
       path: path.join(args.resolveDir, args.path.replace(/load$/, 'load.global.ts')),
     }));
   },
@@ -72,6 +72,17 @@ await Promise.all([
   build({ ...shared, entryPoints: ['src/ui/components/global.ts'], format: 'iife',
           globalName: 'FluidBuddhaComponents', minify: true,
           outfile: 'dist/fluid-buddha-components.global.js' }),
+  // Generated regions (Phase 1), fetched when a page has an <fb-region>.
+  build({ ...shared, entryPoints: ['src/core/regions/global.ts'], format: 'iife',
+          globalName: 'FluidBuddhaRegions', minify: true,
+          outfile: 'dist/fluid-buddha-regions.global.js' }),
+  // Plan patches (Phase 2), fetched when the agent edits a page on screen.
+  build({ ...shared, entryPoints: ['src/core/patch/global.ts'], format: 'iife',
+          globalName: 'FluidBuddhaPatcher', minify: true,
+          outfile: 'dist/fluid-buddha-patcher.global.js' }),
+  // Server-rendered composed pages (Phase 2): hydration + patches.
+  build({ ...shared, entryPoints: ['src/composed.ts'], format: 'iife', globalName: 'FluidBuddhaComposed',
+          minify: true, outfile: 'dist/fluid-buddha-composed.global.js' }),
   // The recap page's renderer (M2-6): components only, no widget.
   build({ ...shared, entryPoints: ['src/recap.ts'], format: 'iife', globalName: 'FluidBuddhaRecap',
           minify: true, outfile: 'dist/fluid-buddha-recap.global.js' }),
@@ -80,4 +91,4 @@ await Promise.all([
           minify: true, outfile: 'dist/fluid-buddha-page.global.js' }),
 ]);
 
-console.log('built dist/fluid-buddha.{global.js,mjs,cjs} + particles + components + hindi + recap + page');
+console.log('built dist/fluid-buddha.{global.js,mjs,cjs} + particles + components + regions + hindi + recap + page');

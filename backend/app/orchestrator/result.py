@@ -47,13 +47,46 @@ class ComponentPayload:
 
 @dataclass
 class PageSpec:
-    """A full runtime-generated page (Extreme tier) for the DATA channel."""
+    """A full runtime-generated page (Extreme tier) for the DATA channel.
+
+    The wire shape stays v1.0's ``{sync_id, title, sections[]}``; a page built
+    from an Experience Plan adds ``plan_id``, ``actions`` and, per section,
+    ``id`` / ``component`` / ``state`` (all additive)."""
     sync_id: str
     title: str
     sections: list[dict[str, Any]]
+    plan_id: Optional[str] = None
+    # The validated plan (bindings as references, never values). Kept server
+    # side for caching and the agent view; not sent on the wire.
+    plan: Optional[dict[str, Any]] = None
+    actions: list[dict[str, Any]] = field(default_factory=list)
+    # The customer's component bundle {url, integrity} when a section is drawn
+    # by one of their Web Components (``type: "wc:<tag>"``, P0-8).
+    bundle: Optional[dict[str, str]] = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"sync_id": self.sync_id, "title": self.title, "sections": self.sections}
+        d: dict[str, Any] = {"sync_id": self.sync_id, "title": self.title,
+                             "sections": self.sections}
+        if self.plan_id:
+            d["plan_id"] = self.plan_id
+        if self.actions:
+            d["actions"] = self.actions
+        if self.bundle:
+            d["bundle"] = self.bundle
+        return d
+
+
+@dataclass
+class PlanPatch:
+    """An edit of the composed page on screen (``DATA/plan_patch``, P2-4). Each
+    added or replaced op carries its bound ``section``; ``plan`` (the patched
+    plan) stays server side."""
+    plan_id: str
+    ops: list[dict[str, Any]]
+    plan: Optional[dict[str, Any]] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"plan_id": self.plan_id, "ops": self.ops}
 
 
 @dataclass
@@ -90,6 +123,7 @@ class TurnResult:
     components: list[ComponentPayload] = field(default_factory=list)
     pages: list[PageSpec] = field(default_factory=list)
     patches: list[ComponentPatch] = field(default_factory=list)
+    plan_patches: list[PlanPatch] = field(default_factory=list)
     leads: list[Any] = field(default_factory=list)   # LeadIn from capture_lead
     # Actions the agent proposed, awaiting the visitor (M2-8): the transport
     # stores each as a run and returns it to the widget's confirmation card.
@@ -112,5 +146,6 @@ class TurnResult:
             "components": [c.to_dict() for c in self.components],
             "pages": [p.to_dict() for p in self.pages],
             "patches": [p.to_dict() for p in self.patches],
+            "plan_patches": [p.to_dict() for p in self.plan_patches],
             "grounding": self.grounding.to_dict(),
         }

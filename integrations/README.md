@@ -25,6 +25,8 @@ website in the console's Install tab.
 | Framer | [`framer/`](framer) | Code component, or custom code | typechecked with the JS packages |
 | React — `@fluidbuddha/react` | [`js/packages/react`](js/packages/react) | `<FluidBuddha installCode="…" />` | `npm test` in `js/` |
 | Vue — `@fluidbuddha/vue` | [`js/packages/vue`](js/packages/vue) | `<FluidBuddha install-code="…" />` | `npm test` in `js/` |
+| Composed pages — `@fluidbuddha/next` | [`js/packages/next`](js/packages/next) | `createPageHandler(…)` in a catch-all Route Handler, or `<ComposedPage>` (Phase 2) | `npm test` in `js/` |
+| Page components — `@fluidbuddha/components` | [`js/packages/components`](js/packages/components) | `defineFbComponent(…)` + `npx fb-manifest` → console Components tab (P0-8) | `npm test` in `js/` |
 
 The JS tests also run the backend's real loader script in jsdom.
 

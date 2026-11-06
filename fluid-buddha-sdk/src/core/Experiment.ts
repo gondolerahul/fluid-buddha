@@ -84,6 +84,19 @@ function randomId(): string {
 }
 
 /** True when `path` is the goal page (or below it). */
+/** This browser's anonymous visitor id (shared with generated regions,
+ *  Phase 1), created on first use; null without storage. */
+export function visitorId(): string | null {
+  const s = storage();
+  if (!s) return null;
+  let vid = s.getItem(VISITOR_KEY);
+  if (!vid) {
+    vid = randomId();
+    s.setItem(VISITOR_KEY, vid);
+  }
+  return vid;
+}
+
 export function matchesGoal(path: string, goal: string | null): boolean {
   if (!goal) return false;
   const p = path.replace(/\/+$/, '') || '/';

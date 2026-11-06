@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluidBuddha — home film draft, scroll preview</title>
+<link rel="icon" href="../brand/logo/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400&family=Hanken+Grotesk:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --paper: #f6f2ea; --fg: #1a1611; --muted: #5c554b; --gold: #c98f2f; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--paper); color: var(--fg); font-family: 'Hanken Grotesk', system-ui, sans-serif; }
+  #track { position: relative; }
+  .stage { position: sticky; top: 0; height: 100vh; overflow: hidden; background: #000; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 20px 40px; }
+  .nav img { height: 34px; }
+  .nav a { font: 500 14px 'Hanken Grotesk'; text-decoration: none; padding: 11px 20px; border-radius: 99px; color: #3a2407;
+           background: linear-gradient(90deg,#fff1cf 0%,#f6c96f 18%,#e3a23d 42%,#b9791f 56%,#f0bd5e 78%,#ffe7b0 100%); box-shadow: 0 8px 28px rgba(237,171,72,.3); }
+  .copy { position: absolute; left: max(6vw, 150px); top: 50%; width: min(36vw, 500px); z-index: 10; opacity: 0; pointer-events: none; }
+  .eyebrow { font: 500 11px 'JetBrains Mono'; letter-spacing: .16em; text-transform: uppercase; color: var(--gold); margin-bottom: 18px; }
+  h1, h2 { font-family: 'Space Grotesk', sans-serif; font-weight: 300; letter-spacing: -.035em; line-height: 1.04; }
+  h1 { font-size: clamp(40px, 4.6vw, 76px); } h2 { font-size: clamp(30px, 3.2vw, 54px); }
+  .gold { background: linear-gradient(90deg,#b9791f,#e3a23d 40%,#c98f2f 70%,#b9791f); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { margin-top: 18px; font-size: clamp(15px, 1.2vw, 19px); line-height: 1.7; font-weight: 300; color: var(--muted); }
+  ul.lines { list-style: none; margin-top: 20px; display: grid; gap: 10px; font-size: clamp(15px, 1.15vw, 18px); font-weight: 300; }
+  ul.lines li::before { content: '— '; color: var(--gold); }
+  .chips { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips span { font-size: 13px; padding: 8px 13px; border-radius: 99px; border: 1px solid rgba(255,240,220,.2); background: rgba(26,23,20,.55); backdrop-filter: blur(16px); color: #f6f1e9; }
+  body.night .copy .eyebrow { color: #edab48; } body.night .copy h1, body.night .copy h2 { color: #f6f1e9; }
+  body.night .copy .sub, body.night .copy ul.lines { color: #b3aaa0; }
+  body.night .copy .gold { background: linear-gradient(90deg,#fdc871,#edab48 40%,#ffefd8 70%,#fdc871); -webkit-background-clip: text; background-clip: text; }
+  .illus { margin-top: 10px; font: 11px 'JetBrains Mono'; color: #8a8074; letter-spacing: .06em; }
+  .askbar { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 10px; width: min(560px, 90vw);
+            padding: 8px 8px 8px 20px; border-radius: 99px; background: rgba(255,253,249,.55); backdrop-filter: blur(20px) saturate(175%);
+            border: 1px solid rgba(40,30,15,.12); box-shadow: 0 10px 30px -12px rgba(60,45,20,.3), inset 0 1px 0 rgba(255,255,255,.85); font: 15px 'Hanken Grotesk'; color: #8a8074; transition: background .6s, color .6s; }
+  body.night .askbar { background: rgba(26,23,20,.55); border-color: rgba(255,248,238,.16); color: #b3aaa0; box-shadow: 0 10px 34px -10px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,252,247,.4); }
+  .askbar span { flex: 1; } .askbar i { width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 38% 34%, #fff2c6, #d8a93a 50%, #6b4d12); }
+  .index { position: fixed; left: 20px; top: 50%; transform: translateY(-50%); z-index: 25; display: grid; gap: 7px; }
+  .index a { font: 10px 'JetBrains Mono'; letter-spacing: .1em; text-transform: uppercase; color: rgba(138,128,116,.55); text-decoration: none; cursor: pointer; }
+  .index a.on { color: var(--gold); } body.night .index a { color: rgba(179,170,160,.4); } body.night .index a.on { color: #edab48; }
+  .hud { position: fixed; right: 18px; top: 84px; z-index: 30; font: 11px 'JetBrains Mono'; color: #8a8074; background: rgba(255,253,249,.75); padding: 6px 10px; border-radius: 8px; }
+  .note { position: fixed; right: 18px; bottom: 96px; z-index: 30; font: 11px 'JetBrains Mono'; color: #8a8074; max-width: 240px; line-height: 1.5; text-align: right; }
+  @media (max-width: 1000px) { .index, .note { display: none; } .copy { left: 6vw; width: 44vw; } }
+  .loading { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 50; font: 12px 'JetBrains Mono'; color: #8a8074; letter-spacing: .14em; background: rgba(246,242,234,.9); padding: 10px 16px; border-radius: 10px; }
+</style>
+</head>
+<body>
+<div class="loading" id="loading">LOADING FRAMES · <span id="pct">0</span>%</div>
+<nav class="nav"><img src="../brand/logo/logo-fluidbuddha-horizontal-gold.svg" alt="FluidBuddha" id="logo"><a href="#">Start free</a></nav>
+<nav class="index" id="index"></nav>
+<div id="track"><div class="stage"><canvas id="cv"></canvas><div id="copies"></div></div></div>
+<div class="askbar"><span>Ask this website anything</span><i></i></div>
+<div class="hud" id="hud">frame 0</div>
+<div class="note">Home film draft · 14 shots + 2 loops · Gemini Omni 360p drafts. Finals render at 1080p. Copy is HTML on top of the film.</div>
+<script>
+/* chapter = [first frame, last frame, label, html]; frame ranges come from film.json clip lengths */
+const CH = [
+  [0, 140, 'Hero', `<div class="eyebrow">FluidBuddha · your website, answering</div><h1>Your website, <span class="gold">answering every visitor.</span></h1><p class="sub">It listens, speaks, shows and books, using only what your website says.</p>`],
+  [190, 335, 'Liquid', `<div class="eyebrow">Generative interface</div><h2>Liquid until <span class="gold">you ask.</span></h2><p class="sub">Nothing is pre-drawn. When a visitor asks, your website pours itself into the answer.</p>`],
+  [400, 560, '9:40 PM', `<div class="eyebrow">9:40 PM</div><h2>Meera has two questions. <span class="gold">Your website has no answers.</span></h2><p class="sub">She runs sales at a 40-person company and is comparing CRMs tonight. Does it work with Tally? What would 25 users cost?</p>`],
+  [580, 676, 'Before', `<div class="eyebrow">Without FluidBuddha</div><h2>Most websites go quiet <span class="gold">the moment someone has a question.</span></h2><p class="sub">"Contact sales for pricing." The next call is on Thursday. She leaves for a competitor.</p>`],
+  [700, 821, 'After', `<div class="eyebrow">With FluidBuddha</div><h2>Same website. Same visitor. <span class="gold">Different result.</span></h2>`],
+  [900, 1062, 'The answer', `<div class="eyebrow">She asks out loud</div><h2>It answers in a second, <span class="gold">from your price list.</span></h2><ul class="lines"><li>₹37,475 a month for 25 users</li><li>How the Tally sync works, drawn as she listens</li></ul><p class="illus">Northwind CRM · example figures, illustrative</p>`],
+  [1100, 1255, 'Right page', `<div class="eyebrow">It acts on the page</div><h2>It takes her to <span class="gold">your security page.</span></h2><p class="sub">Data stored in India. Exactly what she needed to see.</p>`],
+  [1300, 1496, 'Booked', `<div class="eyebrow">She says yes</div><h2>Demo booked for 10 AM. <span class="gold">Your team has the lead.</span></h2><p class="sub">Nothing runs until the visitor confirms. The hot lead lands in Slack.</p>`],
+  [1520, 1689, 'What happened', `<div class="eyebrow">What just happened</div><h2>One conversation <span class="gold">did it all.</span></h2><ul class="lines"><li>It listened</li><li>It answered from your website</li><li>It drew the integration</li><li>It took her to the right page</li><li>It booked the demo</li><li>Your team got the lead</li></ul>`],
+  [1700, 1834, 'Talk to it', `<div class="eyebrow">Live demo · the film rests here</div><h2>Don't read about it. <span class="gold">Talk to it.</span></h2><div class="chips"><span>How much does it cost?</span><span>Show me how it works</span><span>क्या ये हिंदी में बात करता है?</span><span>Book a demo</span></div>`],
+  [1900, 2027, 'Only your site', `<div class="eyebrow">Grounded in your content</div><h2>It only answers <span class="gold">from your website.</span></h2><p class="sub">Every answer comes from your pages, with a link to the source.</p>`],
+  [2040, 2172, 'Honest', `<div class="eyebrow">When it doesn't know</div><h2>It can't shine <span class="gold">with what isn't there.</span></h2><p class="sub">If something isn't on your site, it says so, and offers your team.</p>`],
+  [2200, 2365, 'Morning', `<div class="eyebrow">8:00 AM</div><h2>You wake up to customers, <span class="gold">not missed chances.</span></h2>`],
+  [2420, 2606, 'One line', `<div class="eyebrow">How it works</div><h2>One line of code. <span class="gold">Live this afternoon.</span></h2><ul class="lines"><li>Add one line to your site</li><li>It reads your website</li><li>It starts answering, day and night</li></ul>`],
+  [2650, 2799, 'Proof', `<div class="eyebrow">Measure it yourself</div><h2>See the extra sales, <span class="gold">measured properly.</span></h2><p class="sub">One in ten visitors never meets it. The difference is your lift, safe to check every day.</p><p class="illus">Example chart · illustrative</p>`],
+  [2880, 3181, 'Start', `<div class="eyebrow">Free plan · 100 conversations</div><h2>One drop, <span class="gold">on your site.</span></h2><p class="sub">Start free. Pay for conversations, not seats.</p>`],
+];
+const N = 3182, FPS = 24, NIGHT = [410, 2250];
+document.getElementById('track').style.height = (N * 9) + 'px';
+document.getElementById('copies').innerHTML = CH.map((c, i) => `<div class="copy" id="c${i}">${c[3]}</div>`).join('');
+document.getElementById('index').innerHTML = CH.map((c, i) => `<a data-i="${i}">${c[2]}</a>`).join('');
+document.querySelectorAll('.index a').forEach(a => a.onclick = () => { const c = CH[+a.dataset.i]; jump((c[0] + c[1]) / 2); });
+
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+const frames = new Array(N); let loaded = 0;
+const src = i => `out/16x9/clips-360p/frames/f${String(i + 1).padStart(5, '0')}.jpg`;
+// load in passes (every 8th frame first) so scrubbing works before everything arrives
+const order = []; for (const step of [32, 8, 2, 1]) for (let i = 0; i < N; i += step) if (!order.includes(i)) order.push(i);
+let q = 0; function next() { if (q >= order.length) return; const i = order[q++]; const im = new Image(); im.onload = () => { loaded++; frames[i] = im; document.getElementById('pct').textContent = Math.round(loaded / N * 100); if (loaded === N) document.getElementById('loading').style.display = 'none'; if (Math.abs(i - cur) < 40) draw(); next(); }; im.onerror = next; im.src = src(i); }
+for (let k = 0; k < 8; k++) next();
+
+function size() { const d = Math.min(devicePixelRatio || 1, 2); cv.width = innerWidth * d; cv.height = innerHeight * d; draw(); }
+addEventListener('resize', size);
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+function frameAt() { const t = document.getElementById('track'), r = t.getBoundingClientRect(); return Math.round(clamp(-r.top / (r.height - innerHeight)) * (N - 1)); }
+function jump(f) { const t = document.getElementById('track'); scrollTo({ top: t.offsetTop + (f / (N - 1)) * (t.offsetHeight - innerHeight), behavior: 'instant' }); draw(); }
+let cur = 0;
+function nearest(i) { for (let d = 0; d < 64; d++) { if (frames[i - d]) return frames[i - d]; if (frames[i + d]) return frames[i + d]; } return null; }
+function draw() {
+  const f = frameAt(); cur = f; const im = nearest(f);
+  if (im) { const s = Math.max(cv.width / im.naturalWidth, cv.height / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s; g.drawImage(im, (cv.width - w) / 2, (cv.height - h) / 2, w, h); }
+  const night = f >= NIGHT[0] && f <= NIGHT[1];
+  document.body.classList.toggle('night', night);
+  document.getElementById('logo').src = night ? '../brand/logo/logo-fluidbuddha-horizontal-onblack.svg' : '../brand/logo/logo-fluidbuddha-horizontal-gold.svg';
+  let active = -1;
+  CH.forEach((c, i) => {
+    const fade = 18, o = Math.min(clamp((f - c[0]) / fade), clamp((c[1] - f) / fade));
+    const el = document.getElementById('c' + i); el.style.opacity = o; el.style.transform = `translateY(calc(-50% + ${(1 - o) * 14}px))`;
+    if (o > 0.5) active = i;
+  });
+  document.querySelectorAll('.index a').forEach((a, i) => a.classList.toggle('on', i === active));
+  document.getElementById('hud').textContent = `frame ${f} · ${(f / FPS).toFixed(1)}s`;
+}
+addEventListener('scroll', draw, { passive: true });
+size();
+window.__film = { jump, CH };
+</script>
+</body>
+</html>

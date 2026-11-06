@@ -9,7 +9,9 @@ typography, radius, logo, brand voice). It is:
     voice (visual styling is never invented by the model — the frontend applies
     the tokens).
 
-Resolution mirrors the multi-site content pipeline: a per-site env override
+Resolution (P0-7): the design system an owner manages in the console
+(``site_design_systems``) comes first. Then, mirroring the multi-site content
+pipeline: a per-site env override
 (``<SITE>_DESIGN_SYSTEM``) or a ``DESIGN_SYSTEM_DIR/<site>.json`` file. Without
 a file, the tokens read off the site's own CSS at onboarding are used
 (``site_design``, WS9; loaded by ``ensure_design``), else a sensible default
@@ -89,8 +91,15 @@ class DesignSystem:
         tokens["--ds-radius"] = self.radius
         return tokens
 
+    @property
+    def tunables(self) -> dict[str, Any]:
+        """Which tokens personalisation may vary, and within what range
+        (strategy §4.2.1). Stored now; applied in Phase 3."""
+        t = self.raw.get("tunables")
+        return t if isinstance(t, dict) else {}
+
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "name": self.name,
             "logo_url": self.logo_url,
             "colors": self.colors,
@@ -99,6 +108,9 @@ class DesignSystem:
             "brand_voice": self.brand_voice,
             "tokens": self.to_tokens(),
         }
+        if self.tunables:
+            d["tunables"] = self.tunables
+        return d
 
     def to_prompt(self) -> str:
         palette = ", ".join(f"{k}={v}" for k, v in self.colors.items())
@@ -128,30 +140,63 @@ def _design_path(site_key: str) -> Path | None:
 _TTL_S = 30.0
 # Designs extracted at onboarding, by site: (expires_at, data or None).
 _extracted: dict[str, tuple[float, dict[str, Any] | None]] = {}
+# Designs managed in the console (P0-7), by site: (expires_at, data or None).
+_customer: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
 def remember_extracted(site_key: str, data: dict[str, Any] | None) -> None:
     _extracted[site_key] = (time.monotonic() + _TTL_S, data)
 
 
+def remember_customer(site_key: str, data: dict[str, Any] | None) -> None:
+    _customer[site_key] = (time.monotonic() + _TTL_S, data)
+
+
+def forget(site_key: str) -> None:
+    """Drop the cached console design for a site (after an edit)."""
+    _customer.pop(site_key, None)
+
+
 async def ensure_design(site_key: str) -> None:
-    """Load the site's extracted design into the cache unless fresh."""
+    """Load the site's console and extracted designs into the cache unless fresh."""
     hit = _extracted.get(site_key)
-    if hit and hit[0] > time.monotonic():
+    chit = _customer.get(site_key)
+    now = time.monotonic()
+    if hit and hit[0] > now and chit and chit[0] > now:
         return
     from app.db import session_scope
+    from app.experience.store import get_design_system
     from app.onboarding.design import load_design
 
     try:
         async with session_scope() as db:
             data = await load_design(db, site_key)
+            row = await get_design_system(db, site_key)
+        custom = row["data"] if row else None
     except Exception as exc:  # never let a design read break a conversation
         logger.warning("design load failed for %s: %s", site_key, exc)
         data = hit[1] if hit else None
+        custom = chit[1] if chit else None
     remember_extracted(site_key, data)
+    remember_customer(site_key, custom)
+
+
+def design_source(site_key: str) -> str:
+    """Where the effective design comes from: console | file | extracted | default."""
+    chit = _customer.get(site_key)
+    if chit and chit[1]:
+        return "console"
+    if _load_file_design(site_key) is not None:
+        return "file"
+    hit = _extracted.get(site_key)
+    return "extracted" if hit and hit[1] else "default"
 
 
 def load_design_system(site_key: str) -> DesignSystem:
+    """Console design → design-system file → extracted at onboarding → default."""
+    chit = _customer.get(site_key)
+    if chit and chit[1]:
+        return DesignSystem.from_dict(chit[1])
     file_design = _load_file_design(site_key)
     if file_design is not None:
         return file_design

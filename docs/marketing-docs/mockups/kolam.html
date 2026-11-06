@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluidBuddha — KOLAM (Concept A mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --granite: #15171a; --flour: #f4efe6; --gold: #d8a93a; --accent: #c9a24a; --silver: #c2c8d2;
+    --kumkum: #b5462f; --ink: #ece7dd; --muted: #9b958b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: #0c0d0f; color: var(--ink); font-family: Inter, system-ui, sans-serif; overflow-x: hidden; }
+  ::selection { background: var(--gold); color: #111; }
+
+  /* Level 3 "The Atmosphere": breathing edge rim-light */
+  .rim { position: fixed; inset: 0; pointer-events: none; z-index: 50; border-radius: 0;
+         box-shadow: inset 0 0 0 1px rgba(216,169,58,.18), inset 0 0 60px rgba(216,169,58,.10);
+         animation: breathe 5.5s ease-in-out infinite; transition: box-shadow .6s; }
+  body.speaking .rim { box-shadow: inset 0 0 0 1px rgba(216,169,58,.45), inset 0 0 110px rgba(216,169,58,.22); }
+  body.listening .rim { box-shadow: inset 0 0 0 1px rgba(194,200,210,.45), inset 0 0 90px rgba(194,200,210,.16); }
+  body.silent .rim { box-shadow: inset 0 0 0 1px rgba(216,169,58,.06), inset 0 0 30px rgba(216,169,58,.03); animation: none; }
+  @keyframes breathe { 50% { opacity: .55; } }
+
+  header.top { position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: flex; align-items: center; justify-content: space-between;
+               padding: 22px 32px; pointer-events: none; }
+  header.top > * { pointer-events: auto; }
+  .brand { font-family: Fraunces, serif; font-size: 20px; letter-spacing: .01em; color: var(--flour); }
+  .brand i { color: var(--gold); font-style: normal; }
+  .top-right { display: flex; gap: 10px; align-items: center; }
+  .pill { font: 11px 'JetBrains Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+          border: 1px solid rgba(255,255,255,.12); border-radius: 99px; padding: 7px 12px; background: rgba(12,13,15,.4); backdrop-filter: blur(8px); }
+  button.pill { cursor: pointer; color: var(--ink); }
+  button.pill:hover { border-color: var(--gold); }
+  a.pill { text-decoration: none; }
+
+  section.scene { position: relative; min-height: 100vh; overflow: hidden; }
+  section.scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .overlay { position: relative; z-index: 5; min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-end;
+             padding: 0 6vw 13vh; pointer-events: none; }
+  .overlay * { pointer-events: auto; }
+  .eyebrow { font: 11px 'JetBrains Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); margin-bottom: 18px; }
+  h1, h2 { font-family: Fraunces, serif; font-weight: 300; letter-spacing: -0.025em; line-height: 1.02; color: var(--flour); }
+  h1 { font-size: clamp(44px, 7.2vw, 112px); max-width: 9.5em; }
+  h2 { font-size: clamp(36px, 5vw, 76px); max-width: 10em; }
+  h1 em, h2 em { font-style: italic; color: var(--gold); }
+  .sub { margin-top: 22px; font-size: clamp(16px, 1.4vw, 20px); color: #c9c2b6; max-width: 34em; line-height: 1.55; }
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity 1.4s ease, transform 1.4s cubic-bezier(.2,.7,.2,1); }
+  .reveal.in { opacity: 1; transform: none; }
+
+  .tap-hint { margin-top: 34px; display: inline-flex; align-items: center; gap: 12px; font: 12px 'JetBrains Mono', monospace;
+              letter-spacing: .14em; text-transform: uppercase; color: var(--silver); }
+  .tap-hint .drop { width: 10px; height: 10px; border-radius: 50%; background: var(--silver); box-shadow: 0 0 0 0 rgba(194,200,210,.6); animation: ping 2.2s infinite; }
+  @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(194,200,210,.55); } 100% { box-shadow: 0 0 0 18px rgba(194,200,210,0); } }
+  .scroll-cue { position: absolute; right: 6vw; bottom: 13vh; z-index: 6; font: 11px 'JetBrains Mono', monospace; letter-spacing: .16em;
+                color: var(--muted); writing-mode: vertical-rl; text-transform: uppercase; }
+
+  .truth { position: absolute; left: 6vw; bottom: 1.8vh; z-index: 6; font: 10.5px 'JetBrains Mono', monospace; letter-spacing: .06em;
+           color: #7f7a71; max-width: 70vw; }
+  .truth b { color: var(--accent); font-weight: 400; }
+
+  /* section 2 */
+  #honest .overlay { justify-content: center; padding-bottom: 0; }
+  #honest .copy { max-width: 30em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 34px; max-width: 38em; }
+  .chip { font: 14px Inter, sans-serif; color: var(--ink); background: rgba(20,22,25,.55); border: 1px solid rgba(244,239,230,.16);
+          padding: 11px 16px; border-radius: 99px; cursor: pointer; backdrop-filter: blur(10px); transition: border-color .3s, background .3s, opacity .3s; }
+  .chip:hover { border-color: var(--gold); background: rgba(216,169,58,.08); }
+  .chip.dare { border-style: dashed; border-color: rgba(181,70,47,.55); }
+  .chip.dare small { display: block; font: 9.5px 'JetBrains Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: #d77a63; margin-bottom: 3px; }
+  .chips.busy .chip { opacity: .35; pointer-events: none; }
+  .typebox { margin-top: 14px; display: flex; gap: 8px; max-width: 30em; }
+  .typebox input { flex: 1; background: rgba(20,22,25,.55); border: 1px solid rgba(244,239,230,.14); color: var(--ink); border-radius: 12px;
+                   padding: 12px 14px; font: 14px Inter, sans-serif; outline: none; backdrop-filter: blur(10px); }
+  .typebox input:focus { border-color: var(--silver); }
+  .typebox button { background: none; border: 1px solid rgba(244,239,230,.14); color: var(--ink); border-radius: 12px; padding: 0 16px; cursor: pointer; }
+
+  .seal { position: absolute; z-index: 7; transform: translate(-50%, -50%) scale(.6) rotate(-8deg); opacity: 0; transition: all .7s cubic-bezier(.2,1.4,.3,1);
+          pointer-events: none; text-align: center; }
+  .seal.on { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-8deg); pointer-events: auto; }
+  .seal .ring { width: 118px; height: 118px; border-radius: 50%; border: 1.5px solid rgba(216,169,58,.85); display: grid; place-items: center; margin: 0 auto;
+                box-shadow: 0 0 0 5px rgba(216,169,58,.12), inset 0 0 22px rgba(216,169,58,.18); background: rgba(21,23,26,.55); backdrop-filter: blur(4px); }
+  .seal .ring span { font: 10px 'JetBrains Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); line-height: 1.5; }
+  .seal .ring strong { display: block; font: 300 30px Fraunces, serif; color: var(--flour); letter-spacing: -0.02em; }
+  .sources { margin-top: 10px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; transform: rotate(8deg); }
+  .sources a { font: 11px Inter, sans-serif; color: var(--ink); background: rgba(21,23,26,.75); border: 1px solid rgba(216,169,58,.35); border-radius: 99px; padding: 5px 10px; text-decoration: none; }
+  .nodots { position: absolute; z-index: 7; white-space: nowrap; font: italic 300 22px Fraunces, serif; color: #8e887e; opacity: 0; transition: opacity 1.2s; transform: translate(-50%, -50%); pointer-events: none; }
+  .nodots.on { opacity: 1; }
+
+  /* section 3 */
+  #loop .overlay { justify-content: center; padding-bottom: 0; }
+  .card { position: absolute; z-index: 8; right: 7vw; top: 50%; transform: translateY(-50%); width: min(360px, 86vw);
+          background: linear-gradient(160deg, rgba(30,26,22,.72), rgba(14,14,16,.78)); border: 1px solid rgba(216,169,58,.28);
+          border-radius: 20px; padding: 24px; backdrop-filter: blur(16px); box-shadow: 0 30px 80px rgba(0,0,0,.5); transition: opacity .8s, transform .8s; }
+  .card .k { font: 10.5px 'JetBrains Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+  .card h3 { font: 400 26px Fraunces, serif; margin: 10px 0 16px; color: var(--flour); }
+  .card dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13.5px; margin-bottom: 18px; }
+  .card dt { color: var(--muted); } .card dd { color: var(--ink); }
+  .card .row { display: flex; gap: 10px; }
+  .card button { flex: 1; padding: 13px; border-radius: 12px; font: 500 14px Inter, sans-serif; cursor: pointer; border: 1px solid rgba(244,239,230,.18); background: none; color: var(--ink); }
+  .card button.yes { background: var(--gold); color: #1a1407; border-color: var(--gold); }
+  .card .fine { margin-top: 12px; font-size: 11.5px; color: #8a847a; }
+  .card .stamp { position: absolute; right: 18px; top: 18px; font: 11px 'JetBrains Mono', monospace; letter-spacing: .16em; text-transform: uppercase;
+                 color: var(--gold); border: 1.5px solid var(--gold); border-radius: 6px; padding: 5px 8px; transform: rotate(9deg) scale(1.6); opacity: 0; transition: all .45s cubic-bezier(.2,1.6,.3,1); }
+  .card.done .stamp { opacity: 1; transform: rotate(9deg) scale(1); }
+  .card.gone { opacity: 0; transform: translateY(-50%) translateX(30px); pointer-events: none; }
+    .finale { position: absolute; z-index: 8; left: 70%; top: 50%; transform: translate(-50%, -50%); text-align: center; opacity: 0; pointer-events: none; transition: opacity 1.6s 1.2s; width: min(460px, 44vw); }
+  .finale.on { opacity: 1; pointer-events: auto; }
+  .finale .mark { font: 300 54px Fraunces, serif; letter-spacing: -0.02em; color: var(--flour); }
+  .finale .mark i { color: var(--gold); font-style: normal; }
+  .finale p { color: #b8b1a5; margin-top: 8px; }
+  .finale .note { font: 10px 'JetBrains Mono', monospace; color: #6f6a62; letter-spacing: .08em; margin-top: 6px; }
+  .receipt { margin: 26px auto 0; text-align: left; font: 12px 'JetBrains Mono', monospace; color: #bdb6aa; border-top: 1px dashed rgba(244,239,230,.2);
+             border-bottom: 1px dashed rgba(244,239,230,.2); padding: 14px 4px; line-height: 1.9; }
+  .receipt b { color: var(--gold); font-weight: 400; }
+  .finale .cta { margin-top: 20px; display: inline-flex; gap: 10px; }
+  .finale .cta button { padding: 12px 18px; border-radius: 99px; border: 1px solid rgba(216,169,58,.5); background: rgba(216,169,58,.1); color: var(--flour); cursor: pointer; font: 14px Inter, sans-serif; }
+
+  /* captions (Level 3 glass captions) */
+  .captions { position: fixed; left: 50%; bottom: 6.5vh; transform: translateX(-50%); z-index: 45; width: min(760px, 92vw);
+              display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+  .cap { background: rgba(18,19,22,.55); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 10px 16px;
+         font: 15.5px/1.45 Inter, sans-serif; color: var(--flour); transition: opacity 1s, transform 1s; max-width: 100%; text-align: center; }
+  .cap.visitor { color: var(--silver); font-style: italic; }
+  .cap.old { opacity: .4; transform: scale(.97); }
+  .cap .w { opacity: 0; transition: opacity .35s; } .cap .w.on { opacity: 1; }
+  .status { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 45; font: 10.5px 'JetBrains Mono', monospace;
+            letter-spacing: .3em; text-transform: uppercase; color: var(--gold); opacity: 0; transition: opacity .5s; }
+  .status.on { opacity: .85; }
+  .toast { position: fixed; left: 50%; top: 24px; transform: translate(-50%, -80px); z-index: 60; background: rgba(20,20,22,.9); border: 1px solid rgba(216,169,58,.4);
+           padding: 12px 18px; border-radius: 12px; font-size: 13.5px; transition: transform .5s; }
+  .toast.on { transform: translate(-50%, 0); }
+
+  #honest .overlay::before, #loop .overlay::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background: linear-gradient(90deg, rgba(10,11,13,.82) 0%, rgba(10,11,13,.55) 32%, rgba(10,11,13,0) 52%); }
+  #loop .copy { max-width: 26em; }
+  @media (max-width: 760px) {
+    .finale { left: 50%; top: 68%; width: 90vw; }
+    .card { right: auto; left: 50%; top: auto; bottom: 16vh; transform: translateX(-50%); }
+    .card.gone { transform: translateX(-50%) translateY(20px); }
+    .scroll-cue { display: none; }
+    #honest .overlay { justify-content: flex-start; padding-top: 14vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { .reveal { transition: none; } .rim { animation: none; } }
+</style>
+</head>
+<body class="dormant">
+<div class="rim"></div>
+<header class="top">
+  <div class="brand">Fluid<i>Buddha</i></div>
+  <div class="top-right">
+    <a class="pill" href="index.html">Concept A · Kolam · mockup</a>
+    <button class="pill" id="soundBtn">Sound off</button>
+  </div>
+</header>
+<div class="status" id="status"></div>
+<div class="captions" id="captions"></div>
+<div class="toast" id="toast"></div>
+
+<!-- ============ HERO: Wet Stone + first stroke ============ -->
+<section class="scene" id="hero">
+  <canvas id="c-hero"></canvas>
+  <div class="overlay">
+    <div class="eyebrow reveal" data-d="1400">Prelude · Wet stone</div>
+    <h1 class="reveal" data-d="1700">Every threshold deserves <em>a welcome.</em></h1>
+    <p class="sub reveal" data-d="2300">Yours is drawn live, in voice. Every answer is one unbroken line that can only loop around what your website actually says.</p>
+    <div class="tap-hint reveal" data-d="3200"><span class="drop"></span>Tap the stone to sprinkle water</div>
+  </div>
+  <div class="scroll-cue">Scroll ↓</div>
+  <div class="truth"><b>Product beat:</b> Level 3 "The Atmosphere" (rim-light, glass captions) · page-aware welcome · audio primed on the first tap</div>
+</section>
+
+<!-- ============ ACT III: The honest line ============ -->
+<section class="scene" id="honest">
+  <canvas id="c-honest"></canvas>
+  <div class="overlay">
+    <div class="copy">
+      <div class="eyebrow">Act III · The honest line</div>
+      <h2>Where there are <em>no dots,</em> there is no line.</h2>
+      <p class="sub">Each cluster of dots is one page of this website: everything Pragya knows. Ask her something, then dare her with a question this site doesn't cover.</p>
+      <div class="chips" id="chips">
+        <button class="chip" data-q="shopify">Do you work with Shopify?</button>
+        <button class="chip" data-q="cost">How much does it cost?</button>
+        <button class="chip" data-q="hindi">Can it speak Hindi?</button>
+        <button class="chip dare" data-q="dare"><small>The honest dare</small>Who will win the IPL this year?</button>
+      </div>
+      <form class="typebox" id="typebox"><input id="typein" placeholder="Or type instead…" autocomplete="off"><button>Ask</button></form>
+    </div>
+  </div>
+  <div class="seal" id="seal"><div class="ring"><span>grounded<strong id="sealPct">87%</strong>match</span></div><div class="sources" id="sources"></div></div>
+  <div class="nodots" id="nodots">No dots. No line.</div>
+  <div class="truth"><b>Product beat:</b> CORTEX grounding · "grounded · NN % match" badge · clickable sources · below 0.45 confidence she says she doesn't know</div>
+</section>
+
+<!-- ============ ACT V: Closing the loop ============ -->
+<section class="scene" id="loop">
+  <canvas id="c-loop"></canvas>
+  <div class="overlay">
+    <div class="copy" id="loopCopy">
+      <div class="eyebrow">Act V · Closing the loop</div>
+      <h2>The line has been open <em>since your first question.</em></h2>
+      <p class="sub">Pragya can propose a trial, a quote, a meeting or a payment link. Nothing runs until you confirm. Saying "haan" is enough.</p>
+    </div>
+  </div>
+  <div class="card" id="card">
+    <div class="stamp">Confirmed</div>
+    <div class="k">Pragya proposes</div>
+    <h3>Start a 14-day trial</h3>
+    <dl>
+      <dt>Plan</dt><dd>Growth · trial</dd>
+      <dt>For</dt><dd>your email (masked)</dd>
+      <dt>Today</dt><dd>₹0 · from our price list</dd>
+    </dl>
+    <div class="row"><button class="yes" id="haan">Say “haan”</button><button id="notnow">Not now</button></div>
+    <div class="fine">You can also say "yes", "confirm" or "ठीक है".</div>
+  </div>
+  <div class="finale" id="finale">
+    <div class="mark">Fluid<i>Buddha</i></div>
+    <p>One line. Grounded, honest, and closed on one word.</p>
+    <div class="note">(Production: a sikku-kolam version of the mark will be commissioned, so the closed loop <em>is</em> the logo.)</div>
+    <div class="receipt" id="receipt"></div>
+    <div class="cta"><button id="recapBtn">Send me this</button><button onclick="location.href='index.html'">Draw your threshold →</button></div>
+  </div>
+  <div class="truth"><b>Product beat:</b> visitor-confirmed action (price comes from the price list, never the model) · voice confirmation "haan" · recap page · "The Credits" session receipt</div>
+</section>
+
+<script>
+/* ===================================================================
+   Shared utilities
+   =================================================================== */
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+const $ = s => document.querySelector(s);
+function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+function gauss(r) { return (r() + r() + r() + r() - 2) / 2; }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const log = []; // "The Credits": everything that actually happened in this visit
+const t0 = performance.now();
+
+/* ---------- Pragya: captions, status, optional browser voice ---------- */
+let soundOn = false;
+$('#soundBtn').onclick = () => {
+  soundOn = !soundOn; $('#soundBtn').textContent = soundOn ? 'Sound on' : 'Sound off';
+  if (!soundOn) speechSynthesis.cancel();
+};
+function setState(s) {
+  document.body.classList.remove('dormant', 'listening', 'thinking', 'speaking', 'silent');
+  document.body.classList.add(s);
+  const st = $('#status');
+  st.textContent = s === 'dormant' || s === 'silent' ? '' : s;
+  st.classList.toggle('on', s !== 'dormant' && s !== 'silent');
+}
+function pickVoice() {
+  const v = speechSynthesis.getVoices();
+  return v.find(x => /en-IN/i.test(x.lang) && /female|heera|neerja|veena|raveena/i.test(x.name)) || v.find(x => /en-IN/i.test(x.lang)) || v.find(x => /en-GB|en-US/.test(x.lang));
+}
+function caption(text, who = 'pragya') {
+  const box = $('#captions');
+  [...box.children].forEach(c => c.classList.add('old'));
+  while (box.children.length > 2) box.firstChild.remove();
+  const el = document.createElement('div');
+  el.className = 'cap ' + who;
+  if (who === 'visitor') { el.textContent = text; box.appendChild(el); return el; }
+  el.innerHTML = text.split(' ').map(w => `<span class="w">${w}</span>`).join(' ');
+  box.appendChild(el);
+  clearTimeout(el._t); setTimeout(() => el.classList.add('old'), 14000);
+  return el;
+}
+function say(text) { // resolves when "spoken"
+  return new Promise(res => {
+    setState('speaking');
+    const el = caption(text);
+    const words = [...el.querySelectorAll('.w')];
+    const dur = Math.max(1400, words.length * 330);
+    words.forEach((w, i) => setTimeout(() => w.classList.add('on'), (i / words.length) * dur * 0.92));
+    let done = false; const finish = () => { if (!done) { done = true; res(); } };
+    if (soundOn && 'speechSynthesis' in window) {
+      const u = new SpeechSynthesisUtterance(text); const v = pickVoice(); if (v) u.voice = v;
+      u.rate = 1.02; u.pitch = 1.05; u.onend = finish; u.onerror = () => setTimeout(finish, dur);
+      speechSynthesis.speak(u); setTimeout(finish, dur + 6000);
+    } else setTimeout(finish, dur);
+  });
+}
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 3200); }
+
+/* ---------- Stone ---------- */
+function makeStone(w, h, seed = 11) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); const r = rng(seed);
+  g.fillStyle = '#131518'; g.fillRect(0, 0, w, h);
+  const blobs = Math.min(2600, (w * h) / 1400);
+  for (let i = 0; i < blobs; i++) {
+    const x = r() * w, y = r() * h, rad = (10 + r() * 70) * DPR, a = 0.018 + r() * 0.035;
+    const light = r() < 0.5;
+    const grd = g.createRadialGradient(x, y, 0, x, y, rad);
+    grd.addColorStop(0, light ? `rgba(120,112,104,${a})` : `rgba(0,0,0,${a * 1.6})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  const flecks = Math.min(260000, (w * h) / 22);
+  for (let i = 0; i < flecks; i++) {
+    const x = r() * w, y = r() * h, v = r(), s = (0.4 + r() * 1.3) * DPR;
+    g.fillStyle = v < 0.55 ? `rgba(0,0,0,${0.18 + r() * 0.35})` : v < 0.94 ? `rgba(150,146,140,${0.04 + r() * 0.1})` : `rgba(255,236,210,${0.12 + r() * 0.3})`;
+    g.fillRect(x, y, s, s);
+  }
+  return c;
+}
+function lightStone(g, w, h, k = 1, warmX = 0) { // raking dawn light, cool fill, vignette
+  let grd = g.createLinearGradient(warmX, 0, w * 0.85, h * 0.35);
+  grd.addColorStop(0, `rgba(233,180,120,${0.20 * k})`); grd.addColorStop(0.45, `rgba(233,190,150,${0.06 * k})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, w, h);
+  grd = g.createRadialGradient(w * 0.9, h * 0.05, 0, w * 0.9, h * 0.05, w * 0.7);
+  grd.addColorStop(0, `rgba(110,127,163,${0.10 * k})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, w, h);
+  grd = g.createRadialGradient(w * 0.5, h * 0.5, Math.min(w, h) * 0.35, w * 0.5, h * 0.5, Math.max(w, h) * 0.78);
+  grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,0,0.72)');
+  g.fillStyle = grd; g.fillRect(0, 0, w, h);
+}
+
+/* ---------- Flour ---------- */
+function flourSeg(g, a, b, w, r, alpha = 1, rgb = '244,239,230') {
+  const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l;
+  g.lineCap = 'round'; g.strokeStyle = `rgba(${rgb},${0.30 * alpha})`; g.lineWidth = w * 0.55;
+  g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+  const n = Math.ceil(l * w * 0.75);
+  for (let i = 0; i < n; i++) {
+    const t = r(), o = gauss(r) * w * 0.62, x = a.x + dx * t + nx * o, y = a.y + dy * t + ny * o, s = (0.45 + r() * 1.25) * DPR;
+    if (r() < 0.4) { g.fillStyle = `rgba(0,0,0,${0.38 * alpha})`; g.fillRect(x + 0.9 * DPR, y + 1.0 * DPR, s, s); }
+    g.fillStyle = `rgba(${rgb},${(0.3 + r() * 0.65) * alpha})`; g.fillRect(x, y, s, s);
+  }
+}
+function flourDot(g, x, y, rad, r, alpha = 1) {
+  const grd = g.createRadialGradient(x, y, 0, x, y, rad * 1.3);
+  grd.addColorStop(0, `rgba(244,239,230,${0.55 * alpha})`); grd.addColorStop(1, 'rgba(244,239,230,0)');
+  g.fillStyle = grd; g.beginPath(); g.arc(x, y, rad * 1.3, 0, 7); g.fill();
+  const n = Math.ceil(rad * rad * 1.6);
+  for (let i = 0; i < n; i++) {
+    const a = r() * 6.283, d = Math.sqrt(r()) * rad * 1.1, s = (0.5 + r() * 1.2) * DPR, px = x + Math.cos(a) * d, py = y + Math.sin(a) * d;
+    if (r() < 0.35) { g.fillStyle = `rgba(0,0,0,${0.35 * alpha})`; g.fillRect(px + DPR, py + DPR, s, s); }
+    g.fillStyle = `rgba(244,239,230,${(0.45 + r() * 0.55) * alpha})`; g.fillRect(px, py, s, s);
+  }
+}
+
+/* ---------- Kolam geometry: Gerdes mirror curves (guaranteed single closed loop) ---------- */
+function stepper(m, n, mirrors) {
+  const W = 2 * m, H = 2 * n;
+  return (x, y, dx, dy) => {
+    x += dx; y += dy;
+    if (x <= 0 || x >= W) dx = -dx;
+    if (y <= 0 || y >= H) dy = -dy;
+    const mk = mirrors.get(x + ',' + y);
+    if (mk === 'h') dy = -dy; else if (mk === 'v') dx = -dx;
+    return [x, y, dx, dy];
+  };
+}
+function countCurves(m, n, mirrors) {
+  const W = 2 * m, H = 2 * n, step = stepper(m, n, mirrors), seen = new Set(); let cycles = 0;
+  for (let x = 0; x <= W; x++) for (let y = 0; y <= H; y++) {
+    if ((x + y) % 2 === 0) continue;
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      if (x + dx < 0 || x + dx > W || y + dy < 0 || y + dy > H) continue;
+      const key = `${x},${y},${dx},${dy}`; if (seen.has(key)) continue;
+      cycles++; let s = [x, y, dx, dy], g = 0;
+      do { seen.add(s.join(',')); s = step(...s); } while (s.join(',') !== key && ++g < 20000);
+    }
+  }
+  return cycles / 2;
+}
+function designMirrors(m, n, seed, count) { // symmetric mirror sets, kept only if the curve stays one loop
+  const r = rng(seed);
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const M = new Map();
+    for (let i = 0; i < count; i++) {
+      const x = 1 + Math.floor(r() * (m - 1)), y = 1 + Math.floor(r() * (2 * n - 1));
+      if ((x + y) % 2 === 0) continue;
+      const t = r() < 0.5 ? 'h' : 'v';
+      for (const [px, py] of [[x, y], [2 * m - x, y], [x, 2 * n - y], [2 * m - x, 2 * n - y]]) M.set(px + ',' + py, t);
+    }
+    if (M.size && countCurves(m, n, M) === 1) return M;
+  }
+  return new Map();
+}
+function kolamPath(m, n, mirrors, place) {
+  const step = stepper(m, n, mirrors);
+  const pts = []; let s = [1, 0, 1, 1]; const start = s.join(','); let prevD = [-1, 1], g = 0;
+  do { pts.push({ x: s[0], y: s[1], din: prevD, dout: [s[2], s[3]] }); prevD = [s[2], s[3]]; s = step(...s); } while (s.join(',') !== start && ++g < 20000);
+  pts[0].din = prevD;
+  // Strands cross diagonally between dots and bulge around each pulli (a sikku-kolam weave):
+  // the tangent at each crossing is blended between the diagonal and the circle around the dot.
+  const odd = c => Math.abs(c.x % 2) === 1 && Math.abs(c.y % 2) === 1;
+  const T = pts.map((p, k) => {
+    const q = pts[(k + 1) % pts.length], dx = q.x - p.x, dy = q.y - p.y;
+    let c = { x: p.x + dx, y: p.y }; if (!odd(c)) c = { x: p.x, y: p.y + dy };
+    let tx = -(p.y - c.y), ty = p.x - c.x; if (tx * dx + ty * dy < 0) { tx = -tx; ty = -ty; }
+    const refl = p.din[0] !== p.dout[0] || p.din[1] !== p.dout[1], f = refl ? 1 : 0.5;
+    const bx = (dx / Math.SQRT2) * (1 - f) + tx * f, by = (dy / Math.SQRT2) * (1 - f) + ty * f, l = Math.hypot(bx, by);
+    return { x: bx / l, y: by / l };
+  });
+  const dense = [];
+  for (let k = 0; k < pts.length; k++) {
+    const a = pts[k], b = pts[(k + 1) % pts.length], ta = T[k], tb = T[(k + 1) % pts.length], h = 0.62;
+    const c0 = { x: a.x + ta.x * h, y: a.y + ta.y * h }, c1 = { x: b.x - tb.x * h, y: b.y - tb.y * h };
+    for (let i = 0; i < 10; i++) {
+      const t = i / 10, u = 1 - t;
+      dense.push(place(u * u * u * a.x + 3 * u * u * t * c0.x + 3 * u * t * t * c1.x + t * t * t * b.x,
+                       u * u * u * a.y + 3 * u * u * t * c0.y + 3 * u * t * t * c1.y + t * t * t * b.y));
+    }
+  }
+  dense.push(dense[0]);
+  // slow down at turns: "fast mid-stroke, slow at each turn"
+  for (let i = 1; i < dense.length - 1; i++) {
+    const a = dense[i - 1], b = dense[i], c = dense[i + 1];
+    const a1 = Math.atan2(b.y - a.y, b.x - a.x), a2 = Math.atan2(c.y - b.y, c.x - b.x);
+    let d = Math.abs(a2 - a1); if (d > Math.PI) d = 2 * Math.PI - d;
+    b.turn = Math.min(1, d * 5);
+  }
+  const dots = [];
+  for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) dots.push(place(2 * i + 1, 2 * j + 1));
+  return { dense, dots };
+}
+function placer(m, n, cx, cy, s) { // rotate 45° into the diamond orientation of a doorstep kolam
+  const k = Math.SQRT1_2;
+  return (x, y) => ({ x: cx + ((x - m) - (y - n)) * s * k, y: cy + ((x - m) + (y - n)) * s * k });
+}
+
+/* A progressive line drawer: writes flour into a persistent layer, exposes the "pen head" */
+class Drawer {
+  constructor(layer, dense, opts = {}) {
+    Object.assign(this, { layer, dense, i: 0, f: 0, speed: opts.speed || 4, w: opts.w || 4.5 * DPR, r: rng(opts.seed || 3), rgb: opts.rgb, stopAt: opts.stopAt ?? 1, done: false });
+  }
+  get head() { return this.dense[Math.min(this.i, this.dense.length - 1)]; }
+  get progress() { return this.i / (this.dense.length - 1); }
+  tick(dt) {
+    if (this.done) return;
+    const limit = Math.floor((this.dense.length - 1) * this.stopAt);
+    let budget = this.speed * DPR * (dt / 16.7);
+    while (budget > 0 && this.i < limit) {
+      const a = this.dense[this.i], b = this.dense[this.i + 1];
+      const l = Math.hypot(b.x - a.x, b.y - a.y);
+      const slow = 0.42 + 0.58 * (1 - (b.turn || 0));
+      flourSeg(this.layer, a, b, this.w, this.r, 1, this.rgb);
+      budget -= l / slow; this.i++;
+    }
+    if (this.i >= this.dense.length - 1) this.done = true;
+  }
+  drawAll(upto) { while (this.i < upto && this.i < this.dense.length - 1) { flourSeg(this.layer, this.dense[this.i], this.dense[this.i + 1], this.w, this.r, 1, this.rgb); this.i++; } }
+}
+function penHead(g, p, t, size = 1) {
+  if (!p) return;
+  const R = (16 + Math.sin(t / 140) * 3) * DPR * size;
+  const grd = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, R);
+  grd.addColorStop(0, 'rgba(255,226,150,.95)'); grd.addColorStop(0.25, 'rgba(216,169,58,.55)'); grd.addColorStop(1, 'rgba(216,169,58,0)');
+  g.globalCompositeOperation = 'lighter'; g.fillStyle = grd; g.beginPath(); g.arc(p.x, p.y, R, 0, 7); g.fill(); g.globalCompositeOperation = 'source-over';
+}
+
+/* Scene base: canvas sizing + RAF only while visible */
+function scene(canvasId, setup, frame) {
+  const cv = document.getElementById(canvasId), g = cv.getContext('2d');
+  const S = { cv, g, w: 0, h: 0, visible: false, t: 0 };
+  S.ready = false;
+  function size() {
+    const r = cv.getBoundingClientRect(); const w = Math.round(r.width * DPR), h = Math.round(r.height * DPR);
+    if (!w || !h) { S.ready = false; return; }
+    if (S.ready && w === S.w && h === S.h) return;
+    S.w = w; S.h = h; cv.width = w; cv.height = h; setup(S); S.ready = true;
+  }
+  size(); let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(size, 150); }).observe(cv);
+  let last = performance.now();
+  const loop = now => {
+    requestAnimationFrame(loop);
+    const dt = Math.min(50, now - last); last = now; S.t = now;
+    if (!S.ready) { size(); return; }
+    if (S.visible) { try { frame(S, dt, now); } catch (e) { console.error(e); } }
+  };
+  requestAnimationFrame(loop);
+  new IntersectionObserver(es => es.forEach(e => { S.visible = e.isIntersecting; if (e.isIntersecting && S.onEnter) S.onEnter(e.intersectionRatio); }), { threshold: [0, 0.35, 0.6] }).observe(cv.parentElement);
+  return S;
+}
+function newLayer(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+/* ===================================================================
+   HERO — wet stone, dots press in, the first stroke draws itself
+   =================================================================== */
+const heroStart = performance.now();
+let welcomed = false;
+const hero = scene('c-hero', S => {
+  S.stone = makeStone(S.w, S.h, 7);
+  S.flour = newLayer(S.w, S.h); S.fg = S.flour.getContext('2d');
+  S.wet = newLayer(S.w, S.h); S.wg = S.wet.getContext('2d');
+  const m = 6, n = 7, mobile = S.w / DPR < 760;
+  const cell = Math.min(S.w * (mobile ? 0.86 : 0.42), S.h * 0.78) / (Math.max(m, n) * 2 * 1.02);
+  const cx = mobile ? S.w * 0.5 : S.w * 0.71, cy = mobile ? S.h * 0.36 : S.h * 0.5;
+  const mir = new Map();
+  const K = kolamPath(m, n, mir, placer(m, n, cx, cy, cell));
+  S.K = K; S.dotR = cell * 0.13; S.r = rng(5);
+  S.dotOrder = K.dots.map((d, i) => ({ d, at: 2600 + rng(i + 9)() * 1500, done: false }));
+  S.drawer = new Drawer(S.fg, K.dense, { speed: 9, seed: 4 });
+  S.ripples = []; S.sift = [];
+  // after a resize, redraw instantly up to where we were
+  const elapsed = performance.now() - heroStart;
+  S.dotOrder.forEach(o => { if (elapsed > o.at) { flourDot(S.fg, o.d.x, o.d.y, S.dotR, S.r); o.done = true; } });
+  if (S.prevI) S.drawer.drawAll(S.prevI);
+}, (S, dt, now) => {
+  const { g, w, h } = S, el = now - heroStart;
+  const fade = Math.min(1, Math.max(0, (el - 300) / 2600));
+  g.fillStyle = '#060607'; g.fillRect(0, 0, w, h);
+  g.globalAlpha = fade; g.drawImage(S.stone, 0, 0); g.drawImage(S.wet, 0, 0);
+  lightStone(g, w, h, 0.4 + 0.6 * fade, -w * 0.1 + Math.sin(now / 4000) * w * 0.02);
+  g.globalAlpha = 1;
+  // loader: rice flour sifting through unseen fingers
+  if (el < 3400) for (let i = 0; i < 6; i++) S.sift.push({ x: w * (0.5 + gauss(S.r) * 0.04) + (w * 0.18 * (w / DPR > 760 ? 1 : 0)), y: -10, vy: (1 + S.r() * 2) * DPR, life: 1 });
+  g.fillStyle = 'rgba(244,239,230,.75)';
+  S.sift = S.sift.filter(p => { p.y += p.vy * dt / 16; p.vy += 0.05 * DPR; p.life -= 0.004; g.globalAlpha = Math.max(0, p.life); g.fillRect(p.x, p.y, 1.4 * DPR, 1.4 * DPR); return p.y < h && p.life > 0; });
+  g.globalAlpha = 1;
+  // dots press in like first raindrops
+  S.dotOrder.forEach(o => {
+    if (!o.done && el > o.at) { flourDot(S.fg, o.d.x, o.d.y, S.dotR, S.r); o.done = true; S.ripples.push({ x: o.d.x, y: o.d.y, r: 2, a: 0.22, c: '244,239,230' }); }
+  });
+  if (el > 4300) { S.drawer.tick(dt); S.prevI = S.drawer.i; }
+  g.drawImage(S.flour, 0, 0);
+  if (el > 4300 && !S.drawer.done) penHead(g, S.drawer.head, now);
+  if (S.drawer.done && !S.glowed) { S.glowed = now; }
+  if (S.glowed) { const k = Math.max(0, 1 - (now - S.glowed) / 2200); if (k > 0) { g.globalAlpha = k * 0.5; g.globalCompositeOperation = 'lighter'; g.filter = `blur(${6 * DPR}px)`; g.drawImage(S.flour, 0, 0); g.filter = 'none'; g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; } }
+  // water ripples
+  S.ripples = S.ripples.filter(rp => {
+    rp.r += 1.6 * DPR * dt / 16; rp.a -= 0.008 * dt / 16;
+    g.strokeStyle = `rgba(${rp.c},${Math.max(0, rp.a)})`; g.lineWidth = 1.2 * DPR; g.beginPath(); g.ellipse(rp.x, rp.y, rp.r, rp.r * 0.62, 0, 0, 7); g.stroke();
+    return rp.a > 0;
+  });
+});
+hero.cv.parentElement.addEventListener('pointerdown', e => {
+  if (e.target.closest('a,button')) return;
+  const rect = hero.cv.getBoundingClientRect(), x = (e.clientX - rect.left) * DPR, y = (e.clientY - rect.top) * DPR, r = hero.r;
+  for (let i = 0; i < 9; i++) { // a fan of droplets wets the stone
+    const px = x + gauss(r) * 70 * DPR, py = y + gauss(r) * 40 * DPR, rad = (4 + r() * 16) * DPR;
+    const grd = hero.wg.createRadialGradient(px - rad * 0.3, py - rad * 0.3, 0, px, py, rad);
+    grd.addColorStop(0, 'rgba(255,240,220,.16)'); grd.addColorStop(0.5, 'rgba(0,0,0,.22)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    hero.wg.fillStyle = grd; hero.wg.beginPath(); hero.wg.arc(px, py, rad, 0, 7); hero.wg.fill();
+    hero.ripples.push({ x: px, y: py, r: rad * 0.4, a: 0.45, c: '194,200,210' });
+  }
+  if (!welcomed) {
+    welcomed = true; log.push(['welcome', performance.now()]);
+    setTimeout(async () => {
+      await say("I'm Pragya. This page is a living demo of me.");
+      await say("Every dot here is something this website says. Scroll down, and dare me.");
+      setState('dormant');
+    }, 450);
+  }
+});
+
+/* reveal hero text on a timeline */
+document.querySelectorAll('#hero .reveal').forEach(el => setTimeout(() => el.classList.add('in'), +el.dataset.d));
+
+/* ===================================================================
+   ACT III — the honest line
+   =================================================================== */
+const CLUSTERS = [
+  { id: 'how', label: 'How it works', fx: 0.61, fy: 0.30 },
+  { id: 'lang', label: 'Languages', fx: 0.74, fy: 0.19 },
+  { id: 'pricing', label: 'Pricing', fx: 0.79, fy: 0.60 },
+  { id: 'integrations', label: 'Integrations', fx: 0.63, fy: 0.70 },
+  { id: 'security', label: 'Security', fx: 0.91, fy: 0.80 },
+];
+const BARE = { fx: 0.9, fy: 0.4 };
+const ANSWERS = {
+  shopify: { q: 'Do you work with Shopify?', c: 'integrations', pct: 87, ack: 'Good question. Let me show you.',
+    a: ['Yes. FluidBuddha installs on Shopify as a theme app embed.', 'Paste your install code, pick a position, and choose whether it shows on cart and account pages.'],
+    src: ['Install · Shopify', 'Integrations'] },
+  cost: { q: 'How much does it cost?', c: 'pricing', pct: 91, ack: 'Sure, here is how pricing works.',
+    a: ['Growth is ₹33,000 a month for 2,000 conversations, about ₹16.50 each.', 'There is also a free plan with 100 conversations to start.'],
+    src: ['Pricing', 'Plans & billing'] },
+  hindi: { q: 'Can it speak Hindi?', c: 'lang', pct: 84, ack: 'Haan, good one.',
+    a: ['I speak English and Hindi, and I understand Hinglish.', 'I can answer in Hindi even when your website is written in English.'],
+    src: ['Languages'] },
+  security: { q: 'Is it secure?', c: 'security', pct: 82, ack: 'Let me show you what is built in.',
+    a: ['Teams and roles, single sign-on, two-factor and an audit log are built in.', 'There is a SOC 2 control pack, and a self-hosted edition for regulated teams.'],
+    src: ['Security', 'Trust'] },
+  how: { q: 'How does it work?', c: 'how', pct: 89, ack: 'Good question. Let me show you.',
+    a: ['You add one script tag. We read your website and build my knowledge from it.', 'Then I talk, show and act on your pages, using only what your site says.'],
+    src: ['How it works'] },
+  dare: { q: 'Who will win the IPL this year?', c: null, ack: 'Let me check what I know.',
+    a: ["I don't know that from this site.", 'I can connect you with the team if you like.'] },
+};
+function classify(t) {
+  t = t.toLowerCase();
+  if (/shopify|wordpress|webflow|integrat|install|wix|framer/.test(t)) return 'shopify';
+  if (/price|pric|cost|plan|₹|rupee|free/.test(t)) return 'cost';
+  if (/hindi|language|hinglish|bhasha/.test(t)) return 'hindi';
+  if (/secur|sso|soc|privacy|gdpr|data/.test(t)) return 'security';
+  if (/how|work|what is|explain/.test(t)) return 'how';
+  return 'dare';
+}
+const honest = scene('c-honest', S => {
+  S.stone = makeStone(S.w, S.h, 23);
+  S.flour = newLayer(S.w, S.h); S.fg = S.flour.getContext('2d'); S.r = rng(8);
+  const mobile = S.w / DPR < 760, cell = (mobile ? 13 : 18) * DPR;
+  S.clusters = CLUSTERS.map((c, i) => {
+    const m = 2, n = 3, cx = S.w * (mobile ? 0.12 + c.fx * 0.8 : c.fx), cy = S.h * (mobile ? 0.5 + c.fy * 0.42 : c.fy);
+    const K = kolamPath(m, n, new Map(), placer(m, n, cx, cy, cell));
+    return { ...c, cx, cy, K, cell };
+  });
+  S.bare = { x: S.w * (mobile ? 0.86 : BARE.fx), y: S.h * (mobile ? 0.56 : BARE.fy) };
+  // sparse unlabeled "knowledge" dots around clusters, never on the bare stone
+  S.extra = [];
+  const r2 = rng(31);
+  S.clusters.forEach(c => { for (let i = 0; i < 9; i++) { const a = r2() * 6.28, d = (60 + r2() * 70) * DPR; const x = c.cx + Math.cos(a) * d, y = c.cy + Math.sin(a) * d * 0.7; if (Math.hypot(x - S.bare.x, y - S.bare.y) > 190 * DPR) S.extra.push({ x, y }); } });
+  S.redrawBase = () => {
+    S.fg.clearRect(0, 0, S.w, S.h);
+    S.clusters.forEach(c => c.K.dots.forEach(d => flourDot(S.fg, d.x, d.y, c.cell * 0.2, S.r)));
+    S.extra.forEach(d => flourDot(S.fg, d.x, d.y, 2.6 * DPR, S.r, 0.55));
+  };
+  S.redrawBase(); S.drawer = null; S.lit = null;
+  placeSealAt(S);
+}, (S, dt, now) => {
+  const { g, w, h } = S;
+  g.drawImage(S.stone, 0, 0); lightStone(g, w, h, 0.85, -w * 0.2);
+  // labels
+  g.font = `${10.5 * DPR}px "JetBrains Mono", monospace`; g.textAlign = 'center';
+  S.clusters.forEach(c => { g.fillStyle = S.lit === c ? 'rgba(216,169,58,.95)' : 'rgba(236,231,221,.38)'; g.fillText(c.label.toUpperCase(), c.cx, c.cy + c.cell * 3.6); });
+  // retrieved dots glow gold under the flour
+  if (S.lit) S.lit.K.dots.forEach((d, i) => {
+    const k = 0.6 + 0.4 * Math.sin(now / 300 + i);
+    const grd = g.createRadialGradient(d.x, d.y, 0, d.x, d.y, 26 * DPR);
+    grd.addColorStop(0, `rgba(216,169,58,${0.55 * k})`); grd.addColorStop(1, 'rgba(216,169,58,0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(d.x, d.y, 26 * DPR, 0, 7); g.fill();
+  });
+  if (S.drawer) S.drawer.tick(dt);
+  g.drawImage(S.flour, 0, 0);
+  if (S.drawer && !S.drawer.done && S.drawer.i > 0) penHead(g, S.drawer.head, now, 0.8);
+});
+function placeSealAt(S, c) {
+  const seal = $('#seal'), nd = $('#nodots');
+  const target = c || S.clusters[2];
+  seal.style.left = (target.cx / DPR + 120) + 'px'; seal.style.top = (target.cy / DPR - 40) + 'px';
+  nd.style.left = (S.bare.x / DPR - 40) + 'px'; nd.style.top = (S.bare.y / DPR + 64) + 'px';
+}
+function darePath(S) { // heads for bare stone, slows, hesitates, curls back into a small closed loop
+  const from = S.clusters[1], start = { x: from.cx + from.cell * 2.2, y: from.cy };
+  const pts = [], end = S.bare;
+  for (let i = 0; i <= 70; i++) {
+    const t = i / 70, e = 1 - Math.pow(1 - t, 2.2);
+    const x = start.x + (end.x - start.x) * e * 0.82, y = start.y + (end.y - start.y) * e * 0.82 + Math.sin(t * 9) * 4 * DPR * t;
+    pts.push({ x, y, turn: t > 0.7 ? 0.9 : 0.1 });
+  }
+  const last = pts[pts.length - 1], R = 24 * DPR;
+  for (let i = 1; i <= 46; i++) { // curl back
+    const a = Math.PI * 0.2 + (i / 46) * Math.PI * 2.0;
+    pts.push({ x: last.x - R + Math.cos(a) * R * (1 - i / 120) - (i / 46) * 34 * DPR, y: last.y + Math.sin(a) * R * (1 - i / 120), turn: 0.8 });
+  }
+  return pts;
+}
+let busy = false;
+async function ask(key) {
+  if (busy) return; busy = true; $('#chips').classList.add('busy');
+  const A = ANSWERS[key], S = honest;
+  $('#seal').classList.remove('on'); $('#nodots').classList.remove('on');
+  caption('“' + A.q + '”', 'visitor'); setState('listening');
+  await sleep(700); setState('thinking');
+  const tAck = performance.now();
+  await sleep(560);
+  log.push(['ack', performance.now() - tAck + 380]);
+  await say(A.ack);
+  S.redrawBase();
+  if (A.c) {
+    const c = S.clusters.find(x => x.id === A.c); S.lit = c; placeSealAt(S, c);
+    S.drawer = new Drawer(S.fg, c.K.dense, { speed: 3.5, seed: 12, w: 3.6 * DPR, stopAt: 0.5 });
+    await say(A.a[0]); S.drawer.stopAt = 1;
+    await say(A.a[1]);
+    while (!S.drawer.done) await sleep(80);
+    $('#sealPct').textContent = A.pct + '%';
+    $('#sources').innerHTML = A.src.map(s => `<a href="#" onclick="toast('Opens the source page: ${s}');return false">${s} ↗</a>`).join('');
+    $('#seal').classList.add('on');
+    log.push(['grounded', A.pct]);
+  } else {
+    S.lit = null; S.drawer = new Drawer(S.fg, darePath(S), { speed: 2.2, seed: 13, w: 3.2 * DPR });
+    while (!S.drawer.done) await sleep(80);
+    setState('silent'); await sleep(1200); // true silence: no dots, no line
+    $('#nodots').classList.add('on');
+    await say(A.a[0]); await say(A.a[1]);
+    log.push(['honest']);
+  }
+  setState('dormant'); busy = false; $('#chips').classList.remove('busy');
+}
+document.querySelectorAll('.chip').forEach(b => b.onclick = () => ask(b.dataset.q));
+$('#typebox').onsubmit = e => { e.preventDefault(); const v = $('#typein').value.trim(); if (!v) return; $('#typein').value = ''; const k = classify(v); ANSWERS[k] = { ...ANSWERS[k], q: v }; ask(k); };
+
+/* ===================================================================
+   ACT V — closing the loop
+   =================================================================== */
+const loopScene = scene('c-loop', S => {
+  S.stone = makeStone(S.w, S.h, 41);
+  S.flour = newLayer(S.w, S.h); S.fg = S.flour.getContext('2d'); S.r = rng(17);
+  const m = 7, n = 8, mobile = S.w / DPR < 760;
+  const cell = Math.min(S.w * (mobile ? 0.9 : 0.42), S.h * 0.84) / (Math.max(m, n) * 2 * 1.02);
+  const cx = mobile ? S.w * 0.5 : S.w * 0.6, cy = mobile ? S.h * 0.38 : S.h * 0.5;
+  const K = kolamPath(m, n, new Map(), placer(m, n, cx, cy, cell));
+  S.K = K; S.cx = cx; S.cy = cy; S.mobile = mobile; K.dots.forEach(d => flourDot(S.fg, d.x, d.y, cell * 0.12, S.r));
+  S.drawer = new Drawer(S.fg, K.dense, { speed: 40, seed: 19, stopAt: 0.9 });
+  if (S.prevI) S.drawer.drawAll(S.prevI);
+  if (S.closed) { S.drawer.stopAt = 1; S.drawer.drawAll(K.dense.length); }
+}, (S, dt, now) => {
+  const { g, w, h } = S;
+  g.drawImage(S.stone, 0, 0); lightStone(g, w, h, 1, -w * 0.15);
+  if (S.started) { S.drawer.tick(dt); S.prevI = S.drawer.i; }
+  // the camera "pulls up": the closed kolam recedes to make room for the mark
+  const e = S.pullAt ? (k => 1 - Math.pow(1 - k, 3))(Math.min(1, (now - S.pullAt) / 2600)) : 0;
+  const sc = 1 - (S.mobile ? 0.3 : 0.36) * e, tx = (S.mobile ? S.w * 0.5 : S.w * 0.32) - S.cx, ty = (S.mobile ? S.h * 0.3 : S.h * 0.5) - S.cy;
+  g.save(); g.translate(S.cx + tx * e, S.cy + ty * e); g.scale(sc, sc); g.translate(-S.cx, -S.cy);
+  g.drawImage(S.flour, 0, 0);
+  if (S.started && !S.drawer.done) penHead(g, S.drawer.head, now, S.drawer.i >= Math.floor((S.drawer.dense.length - 1) * S.drawer.stopAt) ? 1.25 : 1);
+  if (S.drawer.done && !S.flash) S.flash = now;
+  if (S.flash) {
+    const k = Math.max(0, 1 - (now - S.flash) / 3000);
+    g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.3 + 0.7 * k; g.filter = `blur(${8 * DPR}px) sepia(1) saturate(4) hue-rotate(-10deg)`;
+    g.drawImage(S.flour, 0, 0);
+  }
+  g.restore();
+});
+loopScene.onEnter = r => { if (r > 0.3) loopScene.started = true; };
+$('#haan').onclick = async () => {
+  const card = $('#card'); if (card.classList.contains('done')) return;
+  caption('“Haan.”', 'visitor'); setState('listening'); await sleep(500);
+  card.classList.add('done'); log.push(['action']);
+  loopScene.started = true; const D = loopScene.drawer; D.drawAll(Math.floor((D.dense.length - 1) * 0.88));
+  D.speed = 34; D.stopAt = 1; loopScene.closed = true;
+  await say('Done. Your trial is set up.');
+  while (!loopScene.drawer.done) await sleep(60);
+  card.classList.add('gone'); $('#loopCopy').style.opacity = 0; $('#loopCopy').style.transition = 'opacity 1s';
+  loopScene.pullAt = performance.now();
+  buildReceipt(); $('#finale').classList.add('on');
+  await say('Want me to send you a recap of everything we covered?');
+  setState('dormant');
+};
+$('#notnow').onclick = () => { say('No problem. The line stays open whenever you are ready.').then(() => setState('dormant')); };
+$('#recapBtn').onclick = () => toast('Recap page created · fluidbuddha.com/r/k7q2 · forwards are counted');
+function buildReceipt() {
+  const g = log.filter(x => x[0] === 'grounded'), ack = log.find(x => x[0] === 'ack');
+  const lines = [
+    `Acknowledgement ...... <b>${ack ? (ack[1] / 1000).toFixed(1) + ' s' : '0.7 s'}</b>`,
+    `Grounded answers ..... <b>${g.length || 0}</b>${g.length ? ' (' + g.map(x => x[1] + '%').join(', ') + ' match)' : ''}`,
+    `Honest "I don't know"  <b>${log.filter(x => x[0] === 'honest').length}</b>`,
+    `Loop closed on ....... <b>"haan"</b>`,
+  ];
+  $('#receipt').innerHTML = '<div style="color:#8a847a;margin-bottom:4px">THE CREDITS · only what happened in this visit</div>' + lines.join('<br>');
+}
+</script>
+</body>
+</html>

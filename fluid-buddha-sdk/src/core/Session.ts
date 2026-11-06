@@ -17,6 +17,12 @@ import { LiveLink } from './Live';
 import { TourController, TourStop } from './Tour';
 import { getLang, t } from '../i18n';
 
+/** Plan patches (P2-4) are relayed as a window event: the widget's page
+ *  surface and a server-rendered page each apply the ones for their plan. */
+function relayPlanPatch(detail: unknown): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('fluidbuddha:plan_patch', { detail }));
+}
+
 export interface SessionCallbacks {
   onStatus: (s: ConnectionStatus) => void;
   onUserTranscript: (text: string, interim: boolean) => void;
@@ -271,6 +277,7 @@ export class Session {
         if (env.type === 'render') this.cb.onComponent(env.payload as unknown as ComponentPayload);
         else if (env.type === 'render_page')
           this.cb.onPage?.(env.payload as unknown as PageSpec);
+        else if (env.type === 'plan_patch') relayPlanPatch(env.payload);
         else if (env.type === 'patch')
           this.cb.onPatch(
             String(env.payload.target_sync_id || ''),
@@ -569,6 +576,7 @@ export class Session {
       );
       (data.components || []).forEach((c: ComponentPayload) => this.cb.onComponent(c));
       (data.pages || []).forEach((p: PageSpec) => this.cb.onPage?.(p));
+      (data.plan_patches || []).forEach(relayPlanPatch);
     } catch {
       this.cb.onSystem(t('connError'));
     }

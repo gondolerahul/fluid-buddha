@@ -100,6 +100,18 @@ export interface ComponentPayload {
 export interface PageSection {
   type: string;
   props?: Record<string, unknown>;
+  /** Experience Plan addressing (P0-6): stable region id, manifest component
+   *  id and binding state. Absent on v1.0 payloads. */
+  id?: string;
+  component?: string;
+  state?: 'ready' | 'empty' | 'error';
+}
+
+/** An action a generated page offers (Experience Plan). */
+export interface PageAction {
+  id: string;
+  ref: string;
+  confirm: 'none' | 'card' | 'typed';
 }
 
 /** A full page composed by the agent at runtime (Extreme intelligence). */
@@ -107,6 +119,12 @@ export interface PageSpec {
   sync_id: string;
   title: string;
   sections: PageSection[];
+  /** Present when the page was built from an Experience Plan. */
+  plan_id?: string;
+  actions?: PageAction[];
+  /** The customer's component script when a section is drawn by one of their
+   *  Web Components (`type: "wc:<tag>"`, P0-8). */
+  bundle?: { url: string; integrity: string };
 }
 
 export interface Grounding {

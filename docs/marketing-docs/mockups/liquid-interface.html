@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluidBuddha — THE LIQUID INTERFACE (Concept G mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --void: #050506; --mercury: #c9ced6; --mercury2: #e9edf2; --gold: #c9a24a; --ink: #e9edf2; --muted: #8b9098; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--void); color: var(--ink); font-family: Inter, system-ui, sans-serif; overflow-x: hidden; }
+  canvas#gl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; z-index: 0; }
+  .grain { position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: .07; mix-blend-mode: overlay;
+           background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+  .veil { position: fixed; inset: 0; z-index: 2; pointer-events: none; backdrop-filter: blur(0px); transition: backdrop-filter .15s; }
+  .veil.on { backdrop-filter: blur(12px); }
+  .rim { position: fixed; inset: 0; pointer-events: none; z-index: 50; box-shadow: inset 0 0 0 1px rgba(201,206,214,.10), inset 0 0 60px rgba(201,162,74,.05); animation: breathe 5.5s ease-in-out infinite; transition: box-shadow .6s; }
+  body.speaking .rim { box-shadow: inset 0 0 0 1px rgba(201,162,74,.38), inset 0 0 100px rgba(201,162,74,.16); }
+  body.listening .rim { box-shadow: inset 0 0 0 1px rgba(201,206,214,.45), inset 0 0 90px rgba(201,206,214,.14); }
+  @keyframes breathe { 50% { opacity: .55; } }
+
+  header.top { position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: flex; justify-content: space-between; align-items: center; padding: 22px 32px; }
+  .brand { font: 500 17px Inter, sans-serif; letter-spacing: -0.01em; } .brand i { font-style: normal; color: var(--gold); }
+  .top-right { display: flex; gap: 10px; }
+  .pill { font: 11px 'JetBrains Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border: 1px solid rgba(255,255,255,.12); border-radius: 99px; padding: 7px 12px; background: rgba(5,5,6,.45); backdrop-filter: blur(8px); text-decoration: none; }
+  button.pill { color: var(--ink); cursor: pointer; } button.pill:hover { border-color: var(--mercury); }
+
+  section { position: relative; z-index: 5; min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 6vw 14vh; pointer-events: none; }
+  section * { pointer-events: auto; }
+  .eyebrow { font: 11px 'JetBrains Mono', monospace; letter-spacing: .22em; text-transform: uppercase; color: var(--gold); margin-bottom: 16px; }
+  h1, h2 { font-weight: 300; letter-spacing: -0.045em; line-height: .98; color: var(--mercury2); }
+  h1 { font-size: clamp(56px, 9vw, 150px); }
+  h2 { font-size: clamp(32px, 3.9vw, 62px); max-width: 11em; }
+  h1 span, h2 span { background: linear-gradient(100deg, #9aa3ad 0%, #f4f6f9 35%, #c9a24a 60%, #e9edf2 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { margin-top: 18px; font-size: clamp(16px, 1.35vw, 19px); color: #aeb3bb; max-width: 32em; line-height: 1.55; font-weight: 300; }
+  .swap { transition: opacity .9s, transform .9s cubic-bezier(.2,.7,.2,1); }
+  .swap.out { opacity: 0; transform: translateY(14px); }
+  .begin { margin-top: 26px; display: inline-flex; align-items: center; gap: 12px; font: 12px 'JetBrains Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: var(--mercury); }
+  .begin i { width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #8d949d); box-shadow: 0 0 0 0 rgba(201,206,214,.6); animation: ping 2.2s infinite; }
+  @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(201,206,214,.5); } 100% { box-shadow: 0 0 0 18px rgba(201,206,214,0); } }
+  .scriptline { position: fixed; z-index: 6; font: 12px 'JetBrains Mono', monospace; color: #9fa6b0; letter-spacing: .02em; transform: translate(48px, -50%); transition: opacity 1s; white-space: nowrap; pointer-events: none; }
+  .scriptline b { color: var(--gold); font-weight: 400; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; max-width: 40em; }
+  .chip { font: 14px Inter, sans-serif; color: var(--ink); background: rgba(12,13,15,.5); border: 1px solid rgba(233,237,242,.16); padding: 11px 16px; border-radius: 99px; cursor: pointer; backdrop-filter: blur(10px); transition: border-color .3s, opacity .3s; }
+  .chip:hover { border-color: var(--mercury); }
+  .chip.dare { border-style: dashed; border-color: rgba(201,162,74,.55); }
+  .chip small { display: block; font: 9.5px 'JetBrains Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); margin-bottom: 3px; }
+  .busy .chip, .busy .drop-btn { opacity: .35; pointer-events: none; }
+  .tastes { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
+  .drop-btn { display: inline-flex; align-items: center; gap: 12px; padding: 12px 18px 12px 12px; border-radius: 99px; border: 1px solid rgba(233,237,242,.15); background: rgba(12,13,15,.5);
+              color: var(--ink); font: 14px Inter, sans-serif; cursor: pointer; backdrop-filter: blur(10px); transition: border-color .3s; }
+  .drop-btn i { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset -4px -5px 8px rgba(0,0,0,.45), inset 3px 3px 6px rgba(255,255,255,.55); }
+  .drop-btn:hover, .drop-btn.on { border-color: var(--mercury); }
+  .badge { position: fixed; z-index: 7; left: 50%; top: 15vh; transform: translateX(-50%) translateY(-8px); opacity: 0; transition: opacity .7s, transform .7s; text-align: center; pointer-events: none; }
+  .badge.on { opacity: 1; transform: translateX(-50%); }
+  .badge .m { font: 11px 'JetBrains Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+  .badge .s { margin-top: 8px; display: flex; gap: 6px; justify-content: center; }
+  .badge .s a { font: 12px Inter, sans-serif; color: var(--ink); border: 1px solid rgba(201,162,74,.4); background: rgba(10,10,12,.6); border-radius: 99px; padding: 5px 10px; text-decoration: none; pointer-events: auto; }
+  .dullnote { position: fixed; z-index: 7; left: 50%; top: 16vh; transform: translateX(-50%); font: 300 clamp(22px, 2.4vw, 34px) Inter, sans-serif; letter-spacing: -0.02em; color: #7d828a; opacity: 0; transition: opacity 1.2s; pointer-events: none; white-space: nowrap; }
+  .dullnote.on { opacity: 1; }
+
+  /* labels registered to the crystallised 3D forms */
+  .lbl { position: fixed; z-index: 4; transform: translate(-50%, -50%); text-align: center; pointer-events: none; opacity: 0; transition: opacity .25s; color: #f3f5f8; text-shadow: 0 1px 8px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.9); white-space: nowrap; }
+  .lbl b { display: block; font: 600 clamp(11px, 1.15vw, 17px) Inter, sans-serif; letter-spacing: -0.01em; }
+  .lbl small { display: block; font: 400 clamp(9px, .8vw, 12px) Inter, sans-serif; opacity: .75; margin-top: 2px; }
+  body.eng .lbl b, body.eng .lbl small { font-family: 'JetBrains Mono', monospace; letter-spacing: 0; }
+
+  .captions { position: fixed; left: 50%; bottom: 5vh; transform: translateX(-50%); z-index: 45; width: min(760px, 92vw); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+  .cap { background: rgba(12,13,15,.55); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 10px 16px; font: 15.5px/1.45 Inter, sans-serif; color: var(--mercury2); transition: opacity 1s, transform 1s; text-align: center; }
+  .cap.visitor { color: #aeb5bf; font-style: italic; } .cap.old { opacity: .4; transform: scale(.97); }
+  .cap .w { opacity: 0; transition: opacity .35s; } .cap .w.on { opacity: 1; }
+  .status { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 45; font: 10.5px 'JetBrains Mono', monospace; letter-spacing: .3em; text-transform: uppercase; color: var(--gold); opacity: 0; transition: opacity .5s; }
+  .status.on { opacity: .85; }
+  .truth { position: absolute; left: 6vw; bottom: 2vh; font: 10.5px 'JetBrains Mono', monospace; color: #6f747c; max-width: 72vw; letter-spacing: .04em; }
+  .truth b { color: var(--gold); font-weight: 400; }
+  .nogl { position: fixed; inset: 0; display: none; place-items: center; z-index: 80; color: #aaa; font: 14px Inter; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="grain"></div>
+<div class="veil" id="veil"></div>
+<div class="rim"></div>
+<header class="top">
+  <div class="brand">Fluid<i>Buddha</i></div>
+  <div class="top-right"><a class="pill" href="index.html">Concept G · The Liquid Interface · mockup</a><button class="pill" id="soundBtn">Sound off</button></div>
+</header>
+<div class="status" id="status"></div>
+<div class="captions" id="captions"></div>
+<div class="scriptline" id="scriptline">&lt;script src="…/loader.js" <b>data-key</b>="fbk_…" async&gt;</div>
+<div class="badge" id="badge"><div class="m" id="badgeM">grounded · 89% match · reflected from</div><div class="s" id="badgeS"></div></div>
+<div class="dullnote" id="dullnote">It can't shine with what isn't there.</div>
+<div id="labels"></div>
+<div class="nogl" id="nogl">This mockup needs WebGL2.</div>
+
+<!-- 0 + I. THE DROP → THE SPLASH BECOMES A WEBSITE -->
+<section id="drop">
+  <div class="eyebrow swap" id="e1">Act 0 · The drop</div>
+  <h1 class="swap" id="h1"><span>One drop.</span></h1>
+  <p class="sub swap" id="s1">One line of code, and your website becomes liquid: it pours itself into whatever a visitor asks for.</p>
+  <div class="begin" id="begin"><i></i>Tap the drop to begin, sound on</div>
+  <div class="truth"><b>Product beat:</b> one script tag · the tap primes audio (FR-WEL-07) · the hero is a real server-rendered section, framed in metal</div>
+</section>
+
+<!-- V. IT ONLY REFLECTS WHAT'S REAL -->
+<section id="reflect">
+  <div class="eyebrow">Act V · It only reflects what's real</div>
+  <h2><span>Liquid metal has no light of its own.</span></h2>
+  <p class="sub">The panels hanging in the dark are this website's pages. Ask something, and watch which pages light the answer. Then ask something the site doesn't cover.</p>
+  <div class="chips" id="chips">
+    <button class="chip" data-q="how">How does this work on my site?</button>
+    <button class="chip" data-q="cost">What does it cost?</button>
+    <button class="chip dare" data-q="dare"><small>The honest dare</small>Who will win the IPL this year?</button>
+  </div>
+  <div class="truth"><b>Product beat:</b> the shapeless swell fills the thinking time · it snaps into a typed component (a flowchart) · cited pages flare · below 0.45 confidence the metal goes dull</div>
+</section>
+
+<!-- VI. TASTE -->
+<section id="taste">
+  <div class="eyebrow">Act VI · Taste</div>
+  <h2><span>The metal stays the same. The light changes.</span></h2>
+  <p class="sub">Tell Pragya who you are. The pages that matter to you move forward and brighten, and the room's colour temperature shifts. The site's own cards change shape with them.</p>
+  <div class="tastes" id="tastes">
+    <button class="drop-btn" data-p="eng"><i style="background:radial-gradient(circle at 35% 30%,#f2fbff,#7fa3b8)"></i>Engineering</button>
+    <button class="drop-btn" data-p="fin"><i style="background:radial-gradient(circle at 35% 30%,#fff5dc,#b98d3c)"></i>Finance</button>
+    <button class="drop-btn" data-p="fnd"><i style="background:radial-gradient(circle at 35% 30%,#fff0ea,#c08672)"></i>Founder</button>
+  </div>
+  <div class="truth"><b>Product beat:</b> persona locked on self-identification (or setPersona from the tap, a new SDK call) · data-fb-persona → panel layout, light temperature, corner radius</div>
+</section>
+
+<script>
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const now = () => performance.now();
+
+/* ---------------- Pragya: captions / status / optional voice ---------------- */
+let soundOn = false;
+$('#soundBtn').onclick = () => { soundOn = !soundOn; $('#soundBtn').textContent = soundOn ? 'Sound on' : 'Sound off'; if (!soundOn) speechSynthesis.cancel(); };
+function setState(s) { document.body.classList.remove('listening', 'thinking', 'speaking'); if (s !== 'dormant') document.body.classList.add(s); const st = $('#status'); st.textContent = s === 'dormant' ? '' : s; st.classList.toggle('on', s !== 'dormant'); }
+function caption(text, who = 'pragya') {
+  const box = $('#captions'); [...box.children].forEach(c => c.classList.add('old')); while (box.children.length > 1) box.firstChild.remove();
+  const el = document.createElement('div'); el.className = 'cap ' + who;
+  if (who === 'visitor') el.textContent = text; else el.innerHTML = text.split(' ').map(w => `<span class="w">${w}</span>`).join(' ');
+  box.appendChild(el); setTimeout(() => el.classList.add('old'), 14000); return el;
+}
+function say(text) {
+  return new Promise(res => {
+    setState('speaking'); ripple(0, -2.6, -0.05); // Pragya's voice: a gold ripple from the far side of the pool
+    const el = caption(text); const ws = [...el.querySelectorAll('.w')]; const dur = Math.max(1200, ws.length * 330);
+    ws.forEach((w, i) => setTimeout(() => w.classList.add('on'), (i / ws.length) * dur * 0.92));
+    let done = false; const fin = () => { if (!done) { done = true; res(); } };
+    if (soundOn) { const u = new SpeechSynthesisUtterance(text); const v = speechSynthesis.getVoices().find(x => /en-IN/.test(x.lang)) || speechSynthesis.getVoices().find(x => /en-GB|en-US/.test(x.lang)); if (v) u.voice = v; u.onend = fin; speechSynthesis.speak(u); setTimeout(fin, dur + 6000); }
+    else setTimeout(fin, dur);
+  });
+}
+
+/* ---------------- the studio: twelve light panels, one per page of this site ---------------- */
+const PAGES = ['Home', 'How it works', 'Pricing', 'Install', 'Security', 'Languages', 'Integrations', 'Proof', 'ROI', 'Self-host', 'Trial', 'FAQ'];
+const PATHS = ['/', '/how-it-works', '/pricing', '/install', '/security', '/languages', '/integrations', '/proof', '/roi', '/self-host', '/trial', '/faq'];
+function makeAtlas() {
+  const c = document.createElement('canvas'); c.width = 2048; c.height = 1024; const g = c.getContext('2d');
+  const cw = 512, ch = 1024 / 3;
+  PAGES.forEach((name, i) => {
+    const x = (i % 4) * cw, y = Math.floor(i / 4) * ch;
+    const grd = g.createRadialGradient(x + cw / 2, y + ch / 2, 10, x + cw / 2, y + ch / 2, cw * 0.62);
+    grd.addColorStop(0, '#fffaf0'); grd.addColorStop(0.7, '#efe6d6'); grd.addColorStop(1, '#8a8378');
+    g.fillStyle = grd; g.fillRect(x, y, cw, ch);
+    g.fillStyle = 'rgba(30,28,26,.82)'; g.font = '600 64px Inter'; g.textAlign = 'center'; g.fillText(name, x + cw / 2, y + ch / 2 + 10);
+    g.fillStyle = 'rgba(30,28,26,.5)'; g.font = '400 26px "JetBrains Mono"'; g.fillText('fluidbuddha.com' + PATHS[i], x + cw / 2, y + ch / 2 + 62);
+    g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 10; g.strokeRect(x + 5, y + 5, cw - 10, ch - 10);
+  });
+  return c;
+}
+
+/* ---------------- WebGL2 raymarcher ---------------- */
+const VERT = `#version 300 es
+in vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }`;
+const FRAG = `#version 300 es
+precision highp float;
+out vec4 outColor;
+uniform vec2 uRes; uniform float uTime;
+uniform vec3 uCamPos, uCamTgt; uniform float uFov;
+uniform vec4 uBoxC[6]; uniform vec4 uBoxS[6];
+uniform vec4 uCapA[2]; uniform vec4 uCapB[2];
+uniform vec2 uDrop; uniform vec3 uCrown; uniform vec3 uSwell;
+uniform float uK, uDull, uFlash;
+uniform vec4 uRip[8];
+uniform float uEmit[12]; uniform float uAng[12]; uniform float uPY[12];
+uniform vec3 uTint;
+uniform sampler2D uAtlas;
+
+float smin(float a, float b, float k){ if (k < 1e-4) return min(a, b); float h = max(k - abs(a - b), 0.) / k; return min(a, b) - h * h * k * .25; }
+float sdRoundBox(vec3 p, vec3 b, float r){ vec3 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, max(q.y, q.z)), 0.) - r; }
+float sdCapsule(vec3 p, vec3 a, vec3 b, float r){ vec3 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0., 1.); return length(pa - ba * h) - r; }
+
+float ripH(vec2 xz, out float gold){
+  float h = 0.; gold = 0.;
+  for (int i = 0; i < 8; i++) {
+    vec4 r = uRip[i]; if (r.w == 0.) continue;
+    float age = r.z, d = length(xz - r.xy), front = age * 1.15;
+    if (d > front + .05) continue;
+    float a = abs(r.w) * exp(-age * .85) * exp(-d * .55) * smoothstep(front + .05, front - .35, d);
+    float w = a * sin(d * 17. - age * 10.);
+    h += w; if (r.w < 0.) gold += abs(w);
+  }
+  return h;
+}
+float map(vec3 p){
+  float g; float d = (p.y - ripH(p.xz, g)) * .75;
+  if (uDrop.y > .01) d = smin(d, length(p - vec3(0., uDrop.x, 0.)) - .13 * uDrop.y, .12);
+  if (uCrown.z > .01) {
+    float R = uCrown.x, H = uCrown.y, rr = length(p.xz), ang = atan(p.z, p.x);
+    float top = H * (.72 + .28 * sin(ang * 9.));
+    float wall = max(abs(rr - R) - .022 * uCrown.z, max(-p.y, p.y - top));
+    float sec = 6.2831853 / 9., a2 = mod(ang + sec * .5 + 1.5708 / 9. * 2., sec) - sec * .5;
+    vec3 q = vec3(rr * cos(a2) - R, p.y - H * 1.02, rr * sin(a2));
+    wall = min(wall, length(q) - .04 * uCrown.z);
+    d = smin(d, wall, .07);
+  }
+  if (uSwell.z > .01) {
+    vec3 q = p - vec3(0., uSwell.y, 0.);
+    float n = sin(q.x * 7. + uTime * 2.1) * sin(q.z * 6. - uTime * 1.7) * sin(q.y * 8. + uTime * 1.3) * .045;
+    d = smin(d, length(q * vec3(1., 1.15, 1.)) - uSwell.x + n, .32);
+  }
+  for (int i = 0; i < 6; i++) { vec4 c = uBoxC[i]; if (c.w < .01) continue; vec4 s = uBoxS[i]; d = smin(d, sdRoundBox(p - c.xyz, s.xyz, min(s.w, min(s.x, s.y) - .001)), uK); }
+  for (int i = 0; i < 2; i++) { if (uCapA[i].w < .001) continue; d = smin(d, sdCapsule(p, uCapA[i].xyz, uCapB[i].xyz, uCapA[i].w), uK + .03); }
+  return d;
+}
+vec3 normalAt(vec3 p){ vec2 e = vec2(.0012, -.0012); return normalize(e.xyy * map(p + e.xyy) + e.yyx * map(p + e.yyx) + e.yxy * map(p + e.yxy) + e.xxx * map(p + e.xxx)); }
+
+vec4 env4(vec3 ro, vec3 rd){
+  vec3 col = vec3(.010, .010, .012) + vec3(.018, .018, .02) * max(rd.y, 0.);
+  float best = 1e9;
+  for (int i = 0; i < 12; i++) {
+    float a = uAng[i]; vec3 c = vec3(sin(a) * 6., uPY[i], cos(a) * 6.);
+    vec3 n = normalize(vec3(-c.x, 0., -c.z)); float den = dot(rd, n); if (den > -1e-3) continue;
+    float t = dot(c - ro, n) / den; if (t < 0. || t > best) continue;
+    vec3 hp = ro + rd * t - c; vec3 u = normalize(cross(vec3(0., 1., 0.), n));
+    vec2 uv = vec2(dot(hp, u) / 1.42, hp.y / .78);
+    if (abs(uv.x) > 1. || abs(uv.y) > 1.) continue;
+    best = t; float ci = float(i);
+    vec2 cell = vec2(mod(ci, 4.), floor(ci / 4.));
+    vec2 auv = (cell + vec2(uv.x * .5 + .5, .5 - uv.y * .5)) / vec2(4., 3.);
+    col = texture(uAtlas, auv).rgb * uEmit[i] * uTint;
+  }
+  return vec4(col, best);
+}
+vec3 env(vec3 ro, vec3 rd){ return env4(ro, rd).rgb; }
+// ---- performance: the pool is an analytic plane; we only ray-march inside the box around the forms ----
+bool boxHit(vec3 ro, vec3 rd, out float t0, out float t1){
+  vec3 bmin = vec3(-2.3, -.2, -1.1), bmax = vec3(2.3, 1.9, 1.1);
+  vec3 inv = 1. / rd, a = (bmin - ro) * inv, b = (bmax - ro) * inv, tn = min(a, b), tf = max(a, b);
+  t0 = max(max(tn.x, tn.y), tn.z); t1 = min(min(tf.x, tf.y), tf.z); return t1 > max(t0, 0.);
+}
+float march(vec3 ro, vec3 rd, int steps, out vec3 p){
+  float t0, t1; p = ro; if (!boxHit(ro, rd, t0, t1)) return -1.;
+  float t = max(t0, 0.);
+  for (int i = 0; i < 60; i++) { if (i >= steps) break; p = ro + rd * t; float d = map(p); if (d < .0016) return t; t += d; if (t > t1) break; }
+  return -1.;
+}
+vec3 poolNormal(vec2 xz, out float gold){ float g2; float e = .01; float h = ripH(xz, gold);
+  float hx = ripH(xz + vec2(e, 0.), g2), hz = ripH(xz + vec2(0., e), g2); return normalize(vec3(-(hx - h) / e, 1., -(hz - h) / e)); }
+vec3 envOrPool(vec3 ro, vec3 rd){ // what a reflected ray sees: the studio, or the pool reflecting the studio
+  vec4 e = env4(ro, rd);
+  if (rd.y < -.002 && ro.y > -.01) { float tp = -ro.y / rd.y; if (tp < e.w) { vec3 hp = ro + rd * tp; float g; vec3 n = poolNormal(hp.xz, g);
+    return env(hp, reflect(rd, n)) * .82 * exp(-tp * .12); } }
+  return e.rgb;
+}
+vec3 metal(vec3 c, vec3 n, vec3 v, float gold){
+  float nv = max(dot(n, v), 0.); vec3 F0 = vec3(.93, .92, .89), F = F0 + (1. - F0) * pow(1. - nv, 5.);
+  vec3 film = .5 + .5 * cos(6.2831 * (vec3(0., .33, .67) + (1. - nv) * 1.3 + uTime * .02));
+  vec3 tint = mix(vec3(1.), mix(vec3(.9, .7, .36), vec3(.8, .86, .94), film.x), .22);
+  vec3 col = c * F * tint + vec3(.95, .7, .28) * gold * 2.6;
+  vec3 dullc = vec3(.2, .205, .21) * (.3 + .7 * max(n.y, 0.)) * .55;
+  col = mix(col, dullc, uDull);
+  return col + uFlash * vec3(1., .96, .88) * (.4 + pow(1. - nv, 2.) * 1.8);
+}
+vec3 poolShade(vec3 ro, vec3 rd){ // the open pool: a mirror that also reflects the forms standing in it
+  float g; float tp = -ro.y / rd.y; vec3 hp = ro + rd * tp; vec3 n = poolNormal(hp.xz, g), rf = reflect(rd, n);
+  vec3 q; float th = march(hp + n * .01, rf, 30, q);
+  vec3 e = th > 0. ? envOrPool(q, reflect(rf, normalAt(q))) * .9 : env(hp, rf);
+  return metal(e, n, -rd, g) * exp(-max(tp - 7., 0.) * .22);
+}
+void main(){
+  vec2 uv = (gl_FragCoord.xy * 2. - uRes) / uRes.y;
+  vec3 f = normalize(uCamTgt - uCamPos), r = normalize(cross(f, vec3(0., 1., 0.))), u = cross(r, f);
+  float fl = 1. / tan(uFov * .5);
+  vec3 rd = normalize(f * fl + uv.x * r + uv.y * u), ro = uCamPos;
+  vec3 p, col; float g;
+  float t = march(ro, rd, 56, p);
+  if (t > 0.) {
+    vec3 n = normalAt(p);
+    if (p.y < .03 && n.y > .8 && rd.y < 0.) col = poolShade(ro, rd); // flat pool inside the box: shade it exactly like the open pool
+    else { vec3 rf = reflect(rd, n); ripH(p.xz, g); col = metal(envOrPool(p + n * .01, rf), n, -rd, g); }
+  } else if (rd.y < 0.) col = poolShade(ro, rd);
+  else col = env(ro, rd);
+  col = col / (1. + col * .9);
+  col = pow(col, vec3(1. / 2.2));
+  vec2 q = gl_FragCoord.xy / uRes; col *= .55 + .45 * pow(16. * q.x * q.y * (1. - q.x) * (1. - q.y), .22);
+  outColor = vec4(col, 1.);
+}`;
+
+const cv = $('#gl'); const gl = cv.getContext('webgl2', { antialias: false, powerPreference: 'high-performance' });
+let glLost = false;
+cv.addEventListener('webglcontextlost', e => { e.preventDefault(); glLost = true; $('#nogl').textContent = 'The 3D view paused (the graphics driver reset). Reload the page to resume.'; $('#nogl').style.display = 'grid'; });
+if (!gl) $('#nogl').style.display = 'grid';
+let prog, U = {};
+if (gl) {
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s)); return s; }
+prog = gl.createProgram(); gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG)); gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+['uRes', 'uTime', 'uCamPos', 'uCamTgt', 'uFov', 'uBoxC', 'uBoxS', 'uCapA', 'uCapB', 'uDrop', 'uCrown', 'uSwell', 'uK', 'uDull', 'uFlash', 'uRip', 'uEmit', 'uAng', 'uPY', 'uTint', 'uAtlas'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+}
+let atlasTex;
+function uploadAtlas() { atlasTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, makeAtlas()); gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.uniform1i(U.uAtlas, 0); }
+
+let SCALE = 0.5, frameAvg = 0.016, frameCount = 0;
+function resize() { if (!gl) return; const w = Math.round(innerWidth * SCALE), h = Math.round(innerHeight * SCALE); cv.width = w; cv.height = h; gl.viewport(0, 0, w, h); }
+addEventListener('resize', resize);
+
+/* ---------------- scene state (current values chase targets) ---------------- */
+const HIDDEN = { c: [0, -0.6, 0], s: [0.05, 0.05, 0.03, 0.01], vis: 0 };
+const L = (c, s, txt) => ({ c, s, txt });
+const LAYOUTS = {
+  site: () => { const r = taste.radius; return [
+    L([0, 1.34, 0], [1.26, 0.075, 0.03, Math.min(r, 0.075)], ['FluidBuddha · Product · Pricing · Install', '']),
+    L([-0.87, 0.74, 0], [0.37, 0.3, 0.035, r], taste.cards[0]),
+    L([0, 0.74, 0], [0.37, 0.3, 0.035, r], taste.cards[1]),
+    L([0.87, 0.74, 0], [0.37, 0.3, 0.035, r], taste.cards[2]),
+    L([0, 0.2, 0], [0.34, 0.078, 0.03, Math.min(taste.btnR, 0.078)], [taste.cta, '']),
+    null]; },
+  flow: () => [
+    L([-0.98, 0.58, 0], [0.33, 0.16, 0.04, 0.06], ['One script tag', 'paste it once']),
+    L([0, 0.58, 0], [0.33, 0.16, 0.04, 0.06], ['We read your site', 'crawl · ingest']),
+    L([0.98, 0.58, 0], [0.33, 0.16, 0.04, 0.06], ['A live agent', 'grounded, with sources']),
+    null, null, null],
+  cost: () => [
+    L([-0.86, 0.62, 0], [0.3, 0.36, 0.04, 0.05], ['Free', '₹0 · 100 conversations']),
+    L([0, 0.68, 0], [0.32, 0.42, 0.045, 0.05], ['Growth', '₹33,000 / month']),
+    L([0.86, 0.62, 0], [0.3, 0.36, 0.04, 0.05], ['Scale', '₹1,25,000 / month']),
+    null, null, null],
+  none: () => [null, null, null, null, null, null],
+};
+const taste = { radius: 0.06, btnR: 0.078, cards: [['Talks', 'spoken answers'], ['Shows', 'draws while it speaks'], ['Acts', 'moves your pages']], cta: 'Talk to the site' };
+const cur = { boxes: Array.from({ length: 6 }, () => ({ c: [...HIDDEN.c], s: [...HIDDEN.s], vis: 0, txt: null })),
+  caps: [{ a: [0, -1, 0], b: [0, -1, 0], r: 0 }, { a: [0, -1, 0], b: [0, -1, 0], r: 0 }],
+  k: 0.3, dull: 0, flash: 0, drop: [1.05, 1], crown: [0, 0, 0], swell: [0, -0.4, 0],
+  emit: Array(12).fill(0.02), ang: PAGES.map((_, i) => i * Math.PI / 6), py: PAGES.map((_, i) => 0.9 + (i % 2) * 1.05), tint: [1, 0.95, 0.88],
+  cam: { p: [0, 0.78, 3.0], t: [0, 0.75, 0] } };
+const tgt = JSON.parse(JSON.stringify(cur));
+const rate = { boxes: 3.2, k: 2.5, cam: 1.3, emit: 2.2, ang: 1.6, tint: 3 };
+let layoutName = 'none';
+function setLayout(name, stagger = 0) {
+  layoutName = name; const L = LAYOUTS[name]();
+  L.forEach((b, i) => setTimeout(() => {
+    if (b) { tgt.boxes[i] = { c: b.c, s: b.s, vis: 1, txt: b.txt }; cur.boxes[i].txt = b.txt; }
+    else tgt.boxes[i] = { c: [cur.boxes[i].c[0], -0.6, 0], s: [...cur.boxes[i].s], vis: 0, txt: null };
+  }, i * stagger));
+  if (name === 'flow') { tgt.caps[0] = { a: [-0.62, 0.58, 0], b: [-0.36, 0.58, 0], r: 0.022 }; tgt.caps[1] = { a: [0.36, 0.58, 0], b: [0.62, 0.58, 0], r: 0.022 }; }
+  else tgt.caps = [{ a: [0, -1, 0], b: [0, -1, 0], r: 0 }, { a: [0, -1, 0], b: [0, -1, 0], r: 0 }];
+}
+function setCam(p, t) { tgt.cam = { p, t }; }
+const ripples = [];
+function ripple(x, z, amp) { ripples.push({ x, z, born: now(), amp }); if (ripples.length > 8) ripples.shift(); }
+const lerp = (a, b, k) => a + (b - a) * k;
+
+/* ---------------- labels registered to the 3D forms ---------------- */
+const labelEls = cur.boxes.map(() => { const d = document.createElement('div'); d.className = 'lbl'; $('#labels').appendChild(d); return d; });
+function project(p) {
+  const P = cur.cam.p, T = cur.cam.t; const f = norm(sub(T, P)), r = norm(cross(f, [0, 1, 0])), u = cross(r, f);
+  const d = sub(p, P), z = dot(d, f), fl = 1 / Math.tan(FOV / 2);
+  const x = dot(d, r) / z * fl, y = dot(d, u) / z * fl;
+  return [innerWidth / 2 + x * innerHeight / 2, innerHeight / 2 - y * innerHeight / 2];
+}
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], norm = a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+let FOV = 50 * Math.PI / 180;
+
+/* ---------------- frame loop ---------------- */
+const T0 = now(); let last = T0;
+function frame() {
+  requestAnimationFrame(frame);
+  const t = now(), dt = Math.min(0.05, (t - last) / 1000); last = t;
+  const e = r => 1 - Math.exp(-dt * r);
+  cur.boxes.forEach((b, i) => { const g = tgt.boxes[i]; const k = e(rate.boxes); b.vis = lerp(b.vis, g.vis, k); for (let j = 0; j < 3; j++) b.c[j] = lerp(b.c[j], g.c[j], k); for (let j = 0; j < 4; j++) b.s[j] = lerp(b.s[j], g.s[j], k); });
+  cur.caps.forEach((c, i) => { const g = tgt.caps[i], k = e(rate.boxes); for (let j = 0; j < 3; j++) { c.a[j] = lerp(c.a[j], g.a[j], k); c.b[j] = lerp(c.b[j], g.b[j], k); } c.r = lerp(c.r, g.r, k); });
+  cur.k = lerp(cur.k, tgt.k, e(rate.k)); cur.dull = lerp(cur.dull, tgt.dull, e(2)); cur.flash = lerp(cur.flash, tgt.flash, e(4));
+  for (let j = 0; j < 2; j++) cur.drop[j] = lerp(cur.drop[j], tgt.drop[j], e(j ? 10 : 30));
+  for (let j = 0; j < 3; j++) { cur.crown[j] = lerp(cur.crown[j], tgt.crown[j], e(9)); cur.swell[j] = lerp(cur.swell[j], tgt.swell[j], e(3)); cur.tint[j] = lerp(cur.tint[j], tgt.tint[j], e(rate.tint)); }
+  for (let i = 0; i < 12; i++) { cur.emit[i] = lerp(cur.emit[i], tgt.emit[i], e(rate.emit)); cur.ang[i] = lerp(cur.ang[i], tgt.ang[i], e(rate.ang)); cur.py[i] = lerp(cur.py[i], tgt.py[i], e(rate.ang)); }
+  for (let j = 0; j < 3; j++) { cur.cam.p[j] = lerp(cur.cam.p[j], tgt.cam.p[j], e(rate.cam)); cur.cam.t[j] = lerp(cur.cam.t[j], tgt.cam.t[j], e(rate.cam)); }
+  if (!gl || glLost) return;
+  // adaptive resolution: keep the GPU comfortably inside its frame budget on integrated graphics
+  frameAvg = frameAvg * 0.95 + dt * 0.05;
+  if (++frameCount % 30 === 0) {
+    if (frameAvg > 0.038 && SCALE > 0.34) { SCALE = Math.max(0.34, SCALE * 0.85); resize(); }
+    else if (frameAvg < 0.019 && SCALE < 0.7) { SCALE = Math.min(0.7, SCALE * 1.08); resize(); }
+  }
+  const el = (t - T0) / 1000;
+  gl.uniform2f(U.uRes, cv.width, cv.height); gl.uniform1f(U.uTime, el); gl.uniform1f(U.uFov, FOV);
+  const sway = [Math.sin(el * .25) * .03, Math.sin(el * .19) * .015, 0];
+  gl.uniform3f(U.uCamPos, cur.cam.p[0] + sway[0], cur.cam.p[1] + sway[1], cur.cam.p[2]); gl.uniform3fv(U.uCamTgt, cur.cam.t);
+  const bc = [], bs = [];
+  cur.boxes.forEach(b => { const v = Math.max(0, Math.min(1, b.vis)); bc.push(b.c[0], lerp(-0.45, b.c[1], v), b.c[2], v); bs.push(b.s[0] * (0.35 + 0.65 * v), b.s[1] * (0.35 + 0.65 * v), b.s[2], b.s[3]); });
+  gl.uniform4fv(U.uBoxC, bc); gl.uniform4fv(U.uBoxS, bs);
+  gl.uniform4fv(U.uCapA, cur.caps.flatMap(c => [...c.a, c.r])); gl.uniform4fv(U.uCapB, cur.caps.flatMap(c => [...c.b, 0]));
+  gl.uniform2fv(U.uDrop, cur.drop); gl.uniform3fv(U.uCrown, cur.crown);
+  gl.uniform3f(U.uSwell, cur.swell[0] * (1 + Math.sin(el * 3) * .06), cur.swell[1], cur.swell[2]);
+  gl.uniform1f(U.uK, cur.k); gl.uniform1f(U.uDull, cur.dull); gl.uniform1f(U.uFlash, cur.flash);
+  const rp = []; for (let i = 0; i < 8; i++) { const r = ripples[i]; if (r && (t - r.born) < 5000) rp.push(r.x, r.z, (t - r.born) / 1000, r.amp); else rp.push(0, 0, 0, 0); }
+  gl.uniform4fv(U.uRip, rp);
+  gl.uniform1fv(U.uEmit, cur.emit); gl.uniform1fv(U.uAng, cur.ang); gl.uniform1fv(U.uPY, cur.py); gl.uniform3fv(U.uTint, cur.tint);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // labels appear only once a form has crystallised
+  cur.boxes.forEach((b, i) => {
+    const el2 = labelEls[i]; const crisp = b.vis > 0.93 && cur.k < 0.06 && b.txt && cur.dull < 0.2;
+    if (b.txt) { if (el2._t !== b.txt) { el2.innerHTML = `<b>${b.txt[0]}</b>${b.txt[1] ? `<small>${b.txt[1]}</small>` : ''}`; el2._t = b.txt; }
+      const [x, y] = project([b.c[0], b.c[1], b.c[2] + b.s[2]]); el2.style.left = x + 'px'; el2.style.top = y + 'px'; }
+    el2.style.opacity = crisp ? 1 : 0;
+  });
+  // the install line hangs beside the falling drop
+  const sl = $('#scriptline'); if (!begun && cur.drop[1] > 0.5) { const [x, y] = project([0, cur.drop[0], 0]); sl.style.left = x + 'px'; sl.style.top = y + 'px'; sl.style.opacity = 1; } else sl.style.opacity = 0;
+}
+
+/* ---------------- Act 0 / I: the drop and the splash ---------------- */
+let begun = false;
+async function begin() {
+  if (begun) return; begun = true;
+  $('#begin').style.opacity = 0;
+  tgt.drop = [0.0, 1]; rate.k = 2.5;
+  await sleep(750);
+  tgt.drop = [0, 0]; cur.drop[1] = 0; tgt.crown = [0.62, 0.42, 1]; cur.crown = [0.06, 0.02, 1];
+  ripple(0, 0, 0.05);
+  await sleep(560);
+  tgt.flash = 1.2; await sleep(110); tgt.flash = 0;           // the crown freezes, a specular flash runs round the rim
+  tgt.crown = [0.62, 0.42, 0]; tgt.k = 0.32;                  // …and the metal is swapped for the interface it becomes
+  setLayout('site', 120);
+  await sleep(900); tgt.k = 0.02;                              // crystallise
+  tgt.emit = Array(12).fill(1.0); rate.emit = 0.9;             // the studio is revealed: every reflection is a page
+  setCam([-0.95, 1.0, 4.9], [-0.8, 0.42, 0]);
+  $('#e1').classList.add('out'); $('#h1').classList.add('out'); $('#s1').classList.add('out');
+  await sleep(900);
+  $('#h1').style.fontSize = 'clamp(44px, 6vw, 96px)'; $('#e1').textContent = 'Act I · The splash becomes a website'; $('#h1').innerHTML = '<span>Liquid until you ask.</span>';
+  $('#s1').textContent = "Every reflection in the metal is a page of this website. It only reflects what's real.";
+  $('#e1').classList.remove('out'); $('#h1').classList.remove('out'); $('#s1').classList.remove('out');
+  await say("Hi, I'm Pragya. Everything you see here reflects this website, and only this website.");
+  setState('dormant'); rate.emit = 2.2;
+}
+$('#drop').addEventListener('pointerdown', e => { if (!e.target.closest('a,button')) begin(); });
+
+/* ---------------- section direction ---------------- */
+let section = 'drop';
+function enter(id) {
+  section = id;
+  if (busy) return;
+  if (id === 'drop') { if (begun) { setLayout('site', 80); tgt.k = 0.02; setCam([-0.95, 1.0, 4.9], [-0.8, 0.42, 0]); } else setCam([0, 0.78, 3.0], [0, 0.75, 0]); tgt.emit = Array(12).fill(begun ? 1 : 0.02); tgt.dull = 0; }
+  if (id === 'reflect') { begun = true; tgt.drop = [0, 0]; tgt.k = 0.3; setLayout('none'); setCam([-1.05, 1.4, 4.3], [-0.9, 0.42, 0]); tgt.emit = Array(12).fill(0.55); $('#badge').classList.remove('on'); }
+  if (id === 'taste') { begun = true; tgt.drop = [0, 0]; tgt.k = 0.25; setLayout('site', 90); setTimeout(() => { tgt.k = 0.02; }, 700); setCam([-0.95, 1.0, 4.9], [-0.8, 0.45, 0]); tgt.emit = Array(12).fill(0.9); $('#badge').classList.remove('on'); }
+}
+['drop', 'reflect', 'taste'].forEach(id => new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && section !== id) enter(id); }), { rootMargin: '-48% 0px -48% 0px' }).observe(document.getElementById(id)));
+
+/* ---------------- Act V: it only reflects what's real ---------------- */
+const ANS = {
+  how: { q: 'How does this work on my site?', layout: 'flow', pct: 89, cite: [1, 3], ack: 'Good question. Let me show you.',
+    a: ['You add one script tag. I read your pages and build my knowledge from them.', 'Then I answer from your content, and show my sources.'] },
+  cost: { q: 'What does it cost?', layout: 'cost', pct: 91, cite: [2, 7], ack: 'Sure, here is how it is priced.',
+    a: ['Growth is ₹33,000 a month for 2,000 conversations.', 'There is a free plan with 100 conversations to start.'] },
+  dare: { q: 'Who will win the IPL this year?', layout: null, ack: 'Let me look.',
+    a: ["I don't have that on this site.", 'I can connect you with the team.'] },
+};
+let busy = false;
+async function ask(key) {
+  if (busy) return; busy = true; $('#chips').classList.add('busy');
+  const A = ANS[key]; begun = true; tgt.drop = [0, 0];
+  $('#badge').classList.remove('on'); $('#dullnote').classList.remove('on'); tgt.dull = 0;
+  caption('“' + A.q + '”', 'visitor'); setState('listening');
+  for (let i = 0; i < 4; i++) { ripple((Math.random() - .5) * .4, 2.2, 0.035); await sleep(210); }  // the visitor's voice: silver capillary ripples
+  setState('thinking'); tgt.k = 0.3; setLayout('none'); tgt.emit = Array(12).fill(0.45);
+  tgt.swell = [0.3, 0.18, 1];                                                            // a shapeless swell fills the thinking time
+  await say(A.ack); setState('thinking'); await sleep(500);
+  if (A.layout) {
+    tgt.swell = [0.05, -0.4, 0]; cur.swell[2] = 0.3;
+    rate.k = 40; tgt.k = 0.012; rate.boxes = 14; setLayout(A.layout);                         // one cold snap, under 120 ms
+    await sleep(160); rate.k = 2.5; rate.boxes = 3.2;
+    A.cite.forEach(i => tgt.emit[i] = 3.2);                                                    // the cited pages flare
+    // bring the cited pages round to stand behind the answer, so you can see what it reflects
+    const front = [Math.PI - 0.55, Math.PI + 0.55], rest = PAGES.map((_, i) => i).filter(i => !A.cite.includes(i));
+    A.cite.forEach((pi, j) => { tgt.ang[pi] = front[j]; tgt.py[pi] = 1.3; });
+    rest.forEach((pi, j) => { tgt.ang[pi] = -1.6 + j * (3.2 / (rest.length - 1)); tgt.py[pi] = 0.9 + (j % 2) * 1.05; });
+    $('#badgeM').textContent = `grounded · ${A.pct}% match · reflected from`;
+    $('#badgeS').innerHTML = A.cite.map(i => `<a href="#">${PAGES[i]} ↗</a>`).join('');
+    $('#badge').classList.add('on');
+    await say(A.a[0]); await say(A.a[1]);
+  } else {
+    tgt.emit = Array(12).fill(0.02);                                                           // no panel lights
+    await sleep(900); tgt.dull = 1;                                                            // nothing to reflect: the metal goes dull…
+    await sleep(700); tgt.swell = [0.04, -0.45, 0];                                            // …cannot hold a shape, and slumps
+    $('#dullnote').classList.add('on');
+    await say(A.a[0]); await say(A.a[1]);
+    await sleep(1500); tgt.dull = 0; tgt.emit = Array(12).fill(0.55); $('#dullnote').classList.remove('on');
+  }
+  setState('dormant'); busy = false; $('#chips').classList.remove('busy');
+}
+document.querySelectorAll('.chip').forEach(b => b.onclick = () => ask(b.dataset.q));
+
+/* ---------------- Act VI: taste changes the light, not the metal ---------------- */
+const TASTE = {
+  eng: { say: "I'm looking at this from the engineering side.", pages: [4, 9, 6], tint: [0.74, 0.86, 1.05], radius: 0.006, btnR: 0.01,
+    cards: [['One WebSocket', 'audio · UI · commands'], ['Self-host', 'offline signed licence'], ['SSO + audit', 'OIDC · TOTP · 1-year log']], cta: 'Read the docs',
+    line: 'Then here is the machinery: one socket, your identity provider, and a self-hosted edition.' },
+  fin: { say: "I'm looking at this from the finance side.", pages: [2, 7, 8], tint: [1.08, 0.84, 0.6], radius: 0.035, btnR: 0.035,
+    cards: [['₹16.50', 'per conversation · Growth'], ['Holdout', 'measured lift · collecting'], ['ROI', 'illustrative · your numbers']], cta: 'Request a quote',
+    line: "Then let's talk numbers: cost per conversation, and how you would prove the lift." },
+  fnd: { say: "I'm a founder.", pages: [3, 10, 1], tint: [1.04, 0.92, 0.82], radius: 0.3, btnR: 0.078,
+    cards: [['One line', 'any site'], ['Live today', 'from your URL'], ['Free start', '100 conversations']], cta: 'Start a trial',
+    line: "Then here's the short version: one line of code, live this afternoon." },
+};
+async function setTaste(p) {
+  if (busy) return; busy = true; $('#tastes').classList.add('busy');
+  begun = true; tgt.drop = [0, 0];
+  const P = TASTE[p]; document.querySelectorAll('.drop-btn').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  document.body.classList.toggle('eng', p === 'eng');
+  caption('“' + P.say + '”', 'visitor'); setState('listening'); await sleep(500);
+  const v = $('#veil'); v.classList.add('on'); setTimeout(() => v.classList.remove('on'), 300);   // the 300 ms blurred veil
+  // the pages that matter drift forward and brighten; the rest recede into the dark
+  const front = [Math.PI - 0.62, Math.PI, Math.PI + 0.62], rest = PAGES.map((_, i) => i).filter(i => !P.pages.includes(i));
+  P.pages.forEach((pi, j) => { tgt.ang[pi] = front[j]; tgt.py[pi] = 1.35 + (j === 1 ? 0.25 : 0); tgt.emit[pi] = 2.2; });
+  rest.forEach((pi, j) => { tgt.ang[pi] = -1.4 + j * (2.8 / (rest.length - 1)); tgt.py[pi] = 0.9 + (j % 2) * 1.05; tgt.emit[pi] = 0.35; });
+  tgt.tint = P.tint;
+  Object.assign(taste, { radius: P.radius, btnR: P.btnR, cards: P.cards, cta: P.cta }); setLayout('site', 60); tgt.k = 0.02;
+  setState('thinking'); await sleep(600);
+  await say(P.line); setState('dormant'); busy = false; $('#tastes').classList.remove('busy');
+}
+document.querySelectorAll('.drop-btn').forEach(b => b.onclick = () => setTaste(b.dataset.p));
+
+/* ---------------- boot ---------------- */
+(async () => {
+  await Promise.all([document.fonts.load('600 64px Inter'), document.fonts.load('400 26px "JetBrains Mono"')]).catch(() => {});
+  if (gl) uploadAtlas();
+  resize(); requestAnimationFrame(frame);
+  // the drop hangs, turning gently, until it is tapped
+  (function bob() { if (!begun) { tgt.drop = [1.05 + Math.sin(now() / 700) * 0.03, 1]; setTimeout(bob, 50); } })();
+})();
+window.__li = { cur, tgt, begin, ask, setTaste, ripple, frame, setScale: s => { SCALE = s; resize(); } };
+</script>
+</body>
+</html>

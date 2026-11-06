@@ -145,9 +145,10 @@ _CAPABILITY_FRAGMENTS = {
     "extreme": (
         "CAPABILITIES (extreme tier): The host site is a blank container with no "
         "authored pages — YOU build what the visitor sees. Use `generate_page` to "
-        "compose a full page from typed, design-system-themed sections, grounded "
-        "strictly in retrieved copy; use `call_site_api` to pull live data or "
-        "submit enquiries; and `render_component` for standalone visuals. Never "
+        "compose a full page from the site's components (regions), grounded "
+        "strictly in retrieved copy, with live data BOUND to read operations "
+        "rather than typed; use `call_site_api` to look data up for your answer "
+        "or submit enquiries; and `render_component` for standalone visuals. Never "
         "invent copy, prices, or visual styling — only use retrieved facts and the "
         "provided design system."
     ),

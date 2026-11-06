@@ -96,6 +96,27 @@ Outside an experiment it does nothing. The visitor id is an anonymous random
 string; without `localStorage` the visitor isn't part of the experiment and
 gets the agent. If enrolment fails (network, CORS), so does everyone else.
 
+## Generated regions on your own pages
+
+Wrap a part of a page in `<fb-region>` and FluidBuddha fills it for each visitor's
+likely goal (worked out from where they landed and how they arrived, before they say
+anything). Your own content stays until a region is ready, and stays if one can't be
+made; search engines always see your own content.
+
+```html
+<fb-region name="hero">
+  <h1>Your own hero</h1>   <!-- shown until (and unless) a generated one replaces it -->
+</fb-region>
+```
+
+Declare the region (`hero`) in the console's **Regions** tab. All regions on a page are
+fetched in one request; the first visitor for a new goal triggers a background build
+and later visitors get it instantly. A region already in view never changes after the
+visitor starts scrolling or clicking. With the widget's script on the page nothing else
+is needed; standalone, give the element `data-api` and `data-key`. React and Vue users
+can write `<FbRegion name="hero">…</FbRegion>` (`@fluidbuddha/react`, `@fluidbuddha/vue`).
+Each fill fires a `fluidbuddha:region` event.
+
 ## Navigation on single-page apps
 
 When the agent takes the visitor to another page, the widget doesn't reload a
@@ -181,13 +202,22 @@ npm run serve:demo         # builds, serves demo/ at http://localhost:4000
 - `dist/fluid-buddha-particles.global.js` — the Design Level 2 particle field
   (Three.js). **Host it next to `fluid-buddha.global.js`**: the core fetches it
   from the same folder, only when Level 2 starts.
-- `dist/fluid-buddha.mjs` (+ `dist/chunks/`) — ESM for bundlers; Three.js is a
-  split chunk loaded by dynamic import.
+- `dist/fluid-buddha-regions.global.js` — the generated-regions controller, fetched
+  from the same folder only on pages that use `<fb-region>`. **Host it next to
+  `fluid-buddha.global.js`** too.
+- `dist/fluid-buddha-patcher.global.js` — the Extreme page renderer and plan patcher,
+  fetched the first time the agent draws or edits a page. **Host it next to
+  `fluid-buddha.global.js`.**
+- `dist/fluid-buddha-composed.global.js` — the script of a server-rendered composed page
+  (Phase 2): hydrates its interactive sections, sends its forms, applies the agent's
+  edits. Loaded by the page itself (`/g/…` or `@fluidbuddha/next`).
+- `dist/fluid-buddha.mjs` (+ `dist/chunks/`) — ESM for bundlers; Three.js, the regions
+  controller and the page renderer are split chunks loaded by dynamic import.
 - `dist/fluid-buddha.cjs` — CommonJS (Three.js inline).
 - `dist/index.d.ts` — TypeScript types.
 
 > Bundle size: the script-tag core (all design levels' UI, no Three.js) is
-> ~141 kB minified, ~39 kB gzipped; about a third of that is the stylesheet.
+> ~37 kB gzipped (the page renderer, regions and patches load on demand); about a third of that is the stylesheet.
 > Level 2 adds the ~465 kB (~120 kB gzipped) particles file. `npm test`
 > fails if the gzipped core grows past 42 kB. If the particles file can't be
 > loaded, Level 2 still works, with the halo instead of the smoke field.

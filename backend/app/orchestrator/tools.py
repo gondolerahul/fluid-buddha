@@ -154,18 +154,52 @@ GENERATE_PAGE = ToolSpec(
     name="generate_page",
     description=(
         "Compose and render a FULL page at runtime (Extreme tier — the host site "
-        "has no authored pages). Ground ALL copy in `query_cortex` results and "
-        "keep visual styling to the brand design system (the frontend themes it "
-        "automatically). Provide an ordered list of typed sections."
+        "has no authored pages) as an Experience Plan: ordered regions, each one "
+        "component from the PAGE COMPONENTS list with its props. Write short copy "
+        "grounded in `query_cortex` results; for live data (prices, plans, "
+        "records) BIND a prop to a read operation instead of writing values: "
+        "{\"bind\": \"api:<operationId>\", \"path\": \"$.items[*]\"}. Visual "
+        "styling comes from the brand design system automatically."
     ),
     parameters={
         "type": "object",
         "properties": {
             "title": {"type": "string"},
+            "regions": {
+                "type": "array",
+                "description": "Ordered regions; each {id?, component, props}. A "
+                               "prop is a literal or a binding {bind, path?, "
+                               "params?, transform?}. See PAGE COMPONENTS and "
+                               "BINDABLE DATA in context.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "component": {"type": "string"},
+                        "props": {"type": "object"},
+                    },
+                    "required": ["component"],
+                },
+            },
+            "actions": {
+                "type": "array",
+                "description": "Optional actions the page offers; each {id, ref: "
+                               "'action:<name>' | 'api:<operationId>', confirm?}. "
+                               "A prop 'action' refers to one by id.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "ref": {"type": "string"},
+                        "confirm": {"type": "string", "enum": ["none", "card", "typed"]},
+                    },
+                    "required": ["id", "ref"],
+                },
+            },
             "sections": {
                 "type": "array",
-                "description": "Ordered sections; each {type, props}. See the "
-                               "PAGE SECTIONS list in context for types + props.",
+                "description": "Legacy form: ordered {type, props} sections of the "
+                               "built-in types. Prefer `regions`.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -176,7 +210,37 @@ GENERATE_PAGE = ToolSpec(
                 },
             },
         },
-        "required": ["title", "sections"],
+        "required": ["title"],
+    },
+)
+
+PATCH_PLAN = ToolSpec(
+    name="patch_plan",
+    description=(
+        "Edit the composed page that is ON SCREEN instead of building a new one: add, "
+        "replace, remove or move regions by id. Use the same components, props and "
+        "bindings rules as generate_page."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "ops": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "op": {"type": "string", "enum": ["add", "replace", "remove", "move"]},
+                        "region": {"type": "string"},
+                        "component": {"type": "string"},
+                        "props": {"type": "object"},
+                        "before": {"type": "string"},
+                        "animation": {"type": "string", "enum": ["fade", "highlight", "count_up"]},
+                    },
+                    "required": ["op", "region"],
+                },
+            },
+        },
+        "required": ["ops"],
     },
 )
 

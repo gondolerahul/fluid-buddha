@@ -131,6 +131,7 @@ class CognitiveLoop:
             pii=state.pii,
             lang=state.lang,
             seen=state.lang_seen,
+            on_screen_plan=state.page_plan,
         )
 
     async def react(self, entry: dict, persona, site_key: str, lang: str = "en") -> str:
@@ -190,6 +191,7 @@ class CognitiveLoop:
                 pii=state.pii,
                 lang=state.lang,
                 seen=state.lang_seen,
+                on_screen_plan=state.page_plan,
             )
         else:
             think = await self.lean.respond(
