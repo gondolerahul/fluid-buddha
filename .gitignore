@@ -34,3 +34,6 @@ pnpm-debug.log*
 Thumbs.db
 *.swp
 *.swo
+
+# Licence signing keys (M3-5): the private key never goes in the repo.
+.licence-keys/

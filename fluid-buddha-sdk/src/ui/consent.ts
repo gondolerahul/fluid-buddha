@@ -5,6 +5,7 @@
 // audio until the widget reports it.
 
 import { Privacy } from '../protocol';
+import { t } from '../i18n';
 
 /** Bump when the wording changes materially, so visitors are asked again. */
 export const CONSENT_VERSION = '1';
@@ -38,15 +39,11 @@ function safeUrl(url: string | null | undefined): string | null {
 }
 
 /** What the prompt says, from the site's privacy settings. */
-export function consentCopy(p: Privacy, agentName = 'The assistant'): string {
-  const parts = [
-    `${agentName} listens through your microphone only while voice is on, to understand your questions.`,
-    'Your audio is not stored.',
-  ];
-  if (p.redacts_pii) parts.push('Emails, phone and card numbers are masked before anything is saved.');
-  if (p.retention_days && p.retention_days > 0)
-    parts.push(`Transcripts are kept for ${p.retention_days} days to improve answers.`);
-  else if (p.retention_days === 0) parts.push('Transcripts are kept to improve answers.');
+export function consentCopy(p: Privacy, agentName = t('theAssistant')): string {
+  const parts = [t('consentListens', { name: agentName }), t('consentNoAudio')];
+  if (p.redacts_pii) parts.push(t('consentMasked'));
+  if (p.retention_days && p.retention_days > 0) parts.push(t('consentKeptDays', { days: p.retention_days }));
+  else if (p.retention_days === 0) parts.push(t('consentKept'));
   return parts.join(' ');
 }
 
@@ -65,7 +62,7 @@ export function consentPrompt(root: ShadowRoot, p: Privacy, agentName?: string):
 
     const title = document.createElement('h2');
     title.id = 'fb-consent-title';
-    title.textContent = 'Talk by voice?';
+    title.textContent = t('consentTitle');
     const body = document.createElement('p');
     body.textContent = consentCopy(p, agentName);
     card.append(title, body);
@@ -76,7 +73,7 @@ export function consentPrompt(root: ShadowRoot, p: Privacy, agentName?: string):
       link.href = policy;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
-      link.textContent = 'Privacy policy';
+      link.textContent = t('privacyPolicy');
       card.append(link);
     }
 
@@ -85,11 +82,11 @@ export function consentPrompt(root: ShadowRoot, p: Privacy, agentName?: string):
     const deny = document.createElement('button');
     deny.type = 'button';
     deny.className = 'fb-consent-deny';
-    deny.textContent = 'Type instead';
+    deny.textContent = t('typeInstead');
     const allow = document.createElement('button');
     allow.type = 'button';
     allow.className = 'fb-consent-allow';
-    allow.textContent = 'Allow microphone';
+    allow.textContent = t('allowMic');
     actions.append(deny, allow);
     card.append(actions);
     backdrop.append(card);

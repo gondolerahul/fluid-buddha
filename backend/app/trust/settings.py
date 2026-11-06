@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 TRANSCRIPT_RETENTION_DAYS = (0, 30, 90, 180, 365)
 LEAD_RETENTION_DAYS = (0, 90, 180, 365, 730)
+# How long a shared recap link works (M2-6).
+RECAP_DAYS = (7, 30, 90, 180, 365)
+DEFAULT_RECAP_DAYS = 90
 DEFAULT_TRANSCRIPT_DAYS = 90
+# How long a returning visitor's memory is kept after their last visit (M3-3).
+MEMORY_DAYS = (30, 90, 180, 365)
+DEFAULT_MEMORY_DAYS = 180
 
 
 @dataclass
@@ -20,6 +26,10 @@ class Privacy:
     privacy_policy_url: Optional[str] = None
     transcript_retention_days: int = DEFAULT_TRANSCRIPT_DAYS   # 0 = keep
     lead_retention_days: int = 0                               # 0 = keep
+    recap_days: int = DEFAULT_RECAP_DAYS
+    # Remember returning visitors who opt in (M3-3), and for how long.
+    memory_enabled: bool = False
+    memory_days: int = DEFAULT_MEMORY_DAYS
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -35,7 +45,7 @@ class Privacy:
 
 
 _COLS = ("redact_pii, consent_required, privacy_policy_url, "
-         "transcript_retention_days, lead_retention_days")
+         "transcript_retention_days, lead_retention_days, recap_days, memory_enabled, memory_days")
 
 
 async def get_privacy(db: AsyncSession, site_key: str) -> Privacy:
@@ -47,14 +57,17 @@ async def get_privacy(db: AsyncSession, site_key: str) -> Privacy:
 async def save_privacy(db: AsyncSession, site_key: str, p: Privacy) -> Privacy:
     await db.execute(text(
         f"INSERT INTO site_privacy (site_key, {_COLS}) VALUES "
-        "(:s, :rp, :cr, :url, :td, :ld) "
+        "(:s, :rp, :cr, :url, :td, :ld, :rd, :me, :md) "
         "ON CONFLICT (site_key) DO UPDATE SET redact_pii=EXCLUDED.redact_pii, "
         "consent_required=EXCLUDED.consent_required, "
         "privacy_policy_url=EXCLUDED.privacy_policy_url, "
         "transcript_retention_days=EXCLUDED.transcript_retention_days, "
-        "lead_retention_days=EXCLUDED.lead_retention_days, updated_at=now()"
+        "lead_retention_days=EXCLUDED.lead_retention_days, "
+        "recap_days=EXCLUDED.recap_days, memory_enabled=EXCLUDED.memory_enabled, "
+        "memory_days=EXCLUDED.memory_days, updated_at=now()"
     ), {"s": site_key, "rp": p.redact_pii, "cr": p.consent_required,
         "url": p.privacy_policy_url, "td": p.transcript_retention_days,
-        "ld": p.lead_retention_days})
+        "ld": p.lead_retention_days, "rd": p.recap_days, "me": p.memory_enabled,
+        "md": p.memory_days})
     await db.commit()
     return p

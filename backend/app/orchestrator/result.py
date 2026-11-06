@@ -91,6 +91,9 @@ class TurnResult:
     pages: list[PageSpec] = field(default_factory=list)
     patches: list[ComponentPatch] = field(default_factory=list)
     leads: list[Any] = field(default_factory=list)   # LeadIn from capture_lead
+    # Actions the agent proposed, awaiting the visitor (M2-8): the transport
+    # stores each as a run and returns it to the widget's confirmation card.
+    proposals: list[Any] = field(default_factory=list)
     grounding: Grounding = field(default_factory=Grounding)
     # Cost analytics (req F): LLM tier + tokens/tool-calls this turn spent.
     llm_kind: str = "thinker"

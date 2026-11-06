@@ -1,68 +1,42 @@
 // Generative UI canvas (arch §4.1). Maps DATA component payloads to safe,
 // pre-built renderers — the LLM never emits raw HTML. After a card paints it
 // calls onRendered(sync_id) so the jitter buffer can release the synced audio.
+//
+// The renderers load on demand (bodies.ts): until they arrive a card shows its
+// caption and a placeholder, and onRendered waits for the real drawing.
 
 import { ComponentPayload } from '../../protocol';
-import { buildFlowchart } from './flowchart';
-import { buildRoiCalculator } from './roiCalculator';
-import { buildComparisonTable } from './comparisonTable';
-import { buildWorkflowDiagram } from './workflowDiagram';
-import { buildComponentDiagram } from './componentDiagram';
-import { buildGraph } from './graph';
-import { buildChart } from './chart';
-import { buildMindMap } from './mindMap';
-import { buildTimeline } from './timeline';
-import { buildSankey } from './sankey';
-import { buildConfigurator } from './configurator';
-import { buildScenarioSimulator } from './scenarioSimulator';
-import { buildTabs } from './tabs';
+import type { BuildBody } from './bodies';
 import { RenderContext } from './interactive';
+import { loadBodies } from './load';
 
 const nextFrame: (cb: () => void) => void =
   typeof requestAnimationFrame === 'function'
     ? (cb) => requestAnimationFrame(cb)
     : (cb) => setTimeout(cb, 0);
 
-function buildBody(
-  payload: ComponentPayload,
-  patch?: Record<string, unknown>,
-  ctx?: RenderContext,
-): HTMLElement {
-  const state = patch ? { ...payload.initial_state, ...patch } : payload.initial_state;
-  switch (payload.component_type) {
-    case 'flowchart':
-      return buildFlowchart(state);
-    case 'workflow':
-      return buildWorkflowDiagram(state);
-    case 'component_diagram':
-      return buildComponentDiagram(state);
-    case 'graph':
-      return buildGraph(state);
-    case 'chart':
-      return buildChart(state);
-    case 'roi_calculator':
-      return buildRoiCalculator(state);
-    case 'table':
-      return buildComparisonTable(state);
-    case 'mind_map':
-      return buildMindMap(state, ctx);
-    case 'timeline':
-      return buildTimeline(state);
-    case 'sankey':
-      return buildSankey(state);
-    case 'configurator':
-      return buildConfigurator(state, ctx);
-    case 'scenario_simulator':
-      return buildScenarioSimulator(state, ctx);
-    case 'tabs':
-      return buildTabs(state, ctx);
-    default: {
-      const d = document.createElement('div');
-      d.className = 'empty';
-      d.textContent = `Unknown component: ${payload.component_type}`;
-      return d;
-    }
-  }
+let bodies: BuildBody | undefined;
+let loading: Promise<BuildBody> | undefined;
+
+/** Hand the renderers over directly (the recap bundle already has them). */
+export function provideBodies(b: BuildBody): void {
+  bodies = b;
+}
+
+/** Fetch the renderers now (a conversation started), so the first diagram
+ *  doesn't wait for them. Safe to call often. */
+export function preloadComponents(): Promise<BuildBody> {
+  if (bodies) return Promise.resolve(bodies);
+  loading =
+    loading ||
+    loadBodies().then(
+      (b) => (bodies = b),
+      (err) => {
+        loading = undefined; // retry on the next card
+        throw err;
+      },
+    );
+  return loading;
 }
 
 export class Canvas {
@@ -76,7 +50,8 @@ export class Canvas {
     private readonly onState?: (syncId: string, patch: Record<string, unknown>) => void,
   ) {}
 
-  private buildCard(payload: ComponentPayload, patch?: Record<string, unknown>): HTMLElement {
+  /** The card, and a promise that settles once its body is drawn. */
+  private buildCard(payload: ComponentPayload, patch?: Record<string, unknown>): [HTMLElement, Promise<void>] {
     const card = document.createElement('div');
     card.className = 'card';
     if (payload.explanation_text) {
@@ -87,26 +62,35 @@ export class Canvas {
     }
     const ctx: RenderContext = {
       syncId: payload.sync_id,
-      reportState: this.onState
-        ? (p) => this.onState!(payload.sync_id, p)
-        : undefined,
+      reportState: this.onState ? (p) => this.onState!(payload.sync_id, p) : undefined,
     };
-    card.appendChild(buildBody(payload, patch, ctx));
-    return card;
+    const draw = (b: BuildBody) => {
+      card.querySelector('.card-wait')?.remove();
+      card.appendChild(b(payload, patch, ctx));
+    };
+    if (bodies) {
+      draw(bodies);
+      return [card, Promise.resolve()];
+    }
+    const wait = document.createElement('div');
+    wait.className = 'card-wait empty';
+    card.appendChild(wait);
+    return [card, preloadComponents().then(draw, () => undefined)];
   }
 
   add(payload: ComponentPayload): void {
     if (this.cards.has(payload.sync_id)) return;
-    const card = this.buildCard(payload);
+    const [card, drawn] = this.buildCard(payload);
     this.container.appendChild(card);
     this.cards.set(payload.sync_id, { card, payload });
-    nextFrame(() => this.onRendered(payload.sync_id));
+    // A failed load still releases the synced speech.
+    drawn.then(() => nextFrame(() => this.onRendered(payload.sync_id)));
   }
 
   applyPatch(syncId: string, patch: Record<string, unknown>): void {
     const entry = this.cards.get(syncId);
     if (!entry) return;
-    const replacement = this.buildCard(entry.payload, patch);
+    const [replacement] = this.buildCard(entry.payload, patch);
     entry.card.replaceWith(replacement);
     this.cards.set(syncId, { card: replacement, payload: entry.payload });
   }

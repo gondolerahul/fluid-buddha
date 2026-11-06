@@ -1,5 +1,23 @@
 # FluidBuddha — development handoff
 
+> **Update, 5 November 2026 — Milestone 2 is built** (branch `m2/foundations`, local
+> commits, not pushed). M2-0 … M2-11 and the follow-ups that close their "left" items
+> are recorded in the Progress table of [m2-m3-plan.md](m2-m3-plan.md); what remains
+> needs outside accounts or people (its Part E). Things that changed how you run it:
+>
+> - **Migrations up to `0025`.** Console sign-in is now a server-side session in an
+>   httpOnly cookie with a CSRF token; tokens issued before ask people to sign in once
+>   more. Two-factor, lockout and session timeouts are configured in `backend/.env`
+>   (`SESSION_*`, `LOGIN_*`, see `.env.example`).
+> - Tests pin session cookies to `Secure`, so `http://testserver` clients never send
+>   them back (`backend/tests/conftest.py`); `tests/test_security.py` checks cookies over https.
+> - Install surfaces live in `integrations/` (own CI job); backups and restore drills
+>   in `backend/scripts/`; policies and the SOC 2 control matrix in `docs/compliance/`.
+> - Running the backend dev server while the test suite runs can make
+>   `tests/test_live.py` flaky (they share the database and the live bus); stop it first.
+>
+> Next: M3 (Part D order: M3-4 BYO model first).
+
 *As of 4 November 2026 · `phase1/beta` is merged into `main`; follow-up work is on branch `phase1/finish` (local)*
 
 This is the starting point for whoever continues the work. It says what exists,

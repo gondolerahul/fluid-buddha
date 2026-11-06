@@ -20,7 +20,7 @@
 //  (L3).
 // ════════════════════════════════════════════════════════════════════════════
 
-export const STYLES = `
+export const CORE_STYLES = `
 :host {
   /* — configurable anchor — */
   --fb-accent: #c9a24a;
@@ -476,6 +476,9 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .tabs-tab:active { transform: scale(.96); }
 .tabs-panel { font-size: 13px; line-height: 1.5; color: var(--fb-fg); white-space: pre-wrap; }
 
+`;
+
+export const L2_STYLES = `
 /* ════════════════════════════════════════════════════════════════════
    DESIGN LEVEL 2 — "The Presence": an Aura you step inside.
    The volumetric smoke field (ParticleField) is the star; the HUD is a
@@ -608,6 +611,9 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .l2-send:active { transform: scale(.93); }
 .l2-send svg { width: 20px; height: 20px; }
 
+`;
+
+export const L3_STYLES = `
 /* ════════════════════════════════════════════════════════════════════
    DESIGN LEVEL 3 — "The Atmosphere": an Aura dissolved into the page.
    No widget. The agent is the light in the room: a breathing edge-aura, a
@@ -722,6 +728,9 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
   .l2-input, .l3-caps { bottom: calc(26px + env(safe-area-inset-bottom, 0px)); }
 }
 
+`;
+
+export const EXTREME_STYLES = `
 /* ════════════════════════════════════════════════════════════════════
    EXTREME — runtime-generated full-page surface. Themed by the site's
    design tokens (--ds-*), with molten-obsidian fallbacks.
@@ -783,7 +792,17 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .fbpage-field input:focus, .fbpage-field textarea:focus { border-color: var(--ds-color-primary, var(--fb-accent)); }
 .fbpage-media { max-width: 100%; border-radius: var(--ds-radius, 16px); }
 .fbpage-caption { font-size: .85rem; opacity: .6; margin-top: 6px; }
+.fbpage-quote { margin: 0; } .fbpage-quote blockquote { margin: 0 0 10px; font-size: 1.02rem; line-height: 1.55; }
+.fbpage-quote figcaption { opacity: .7; font-size: .88rem; }
+.fbpage-logos { display: flex; flex-wrap: wrap; gap: 28px; align-items: center; opacity: .85; }
+.fbpage-logos img { height: 34px; max-width: 160px; object-fit: contain; }
+.fbpage-qa { margin-bottom: 10px; } .fbpage-qa summary { cursor: pointer; font-weight: 600; } .fbpage-qa p { margin: 10px 0 0; opacity: .85; }
+.fbpage-scroll { overflow-x: auto; } .fbpage-table { border-collapse: collapse; width: 100%; }
+.fbpage-table th, .fbpage-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.12); }
 
+`;
+
+export const COMMON_STYLES = `
 /* ════════════════════════════════════════════════════════════════════
    ACCESSIBILITY — focus rings, contrast, reduced motion (non-negotiable).
    ════════════════════════════════════════════════════════════════════ */
@@ -825,7 +844,8 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .fb-consent-card p { margin: 0; font-size: 0.88rem; line-height: 1.5; color: var(--fb-muted); }
 .fb-consent-card a { font-size: 0.84rem; color: var(--fb-gold-bright); }
 .fb-consent-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
-.fb-consent-actions button {
+.fb-consent-actions button, .fb-consent-actions a {
+  text-decoration: none;
   font: inherit; font-size: 0.86rem; padding: 8px 14px; border-radius: 10px; cursor: pointer;
   border: 1px solid var(--fb-border); background: transparent; color: var(--fb-fg);
 }
@@ -835,4 +855,47 @@ table.cmp th { color: var(--fb-accent); font-weight: 600; }
 .fb-consent-actions button:focus-visible, .fb-consent-card a:focus-visible {
   outline: 2px solid var(--fb-gold-bright); outline-offset: 2px;
 }
+/* ---- Action confirmation (M2-8): the consent dialog's look ---- */
+.fb-action-rows { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 0.88rem; }
+.fb-action-rows dt { color: var(--fb-muted); }
+.fb-action-rows dd { margin: 0; }
+/* ---- Proactive nudge (M2-3): a message bubble by the launcher ---- */
+.fb-nudge {
+  position: fixed; right: 24px; bottom: 96px; z-index: calc(var(--fb-z-base) + 5);
+  display: flex; align-items: flex-start; gap: 4px; max-width: min(300px, calc(100vw - 48px));
+  padding: 4px; border-radius: 14px; background: var(--fb-surface); color: var(--fb-fg);
+  border: 1px solid var(--fb-border); box-shadow: 0 14px 34px rgba(0,0,0,0.4);
+  animation: fb-nudge-in .35s ease-out;
+}
+:host([data-position="bottom-left"]) .fb-nudge { right: auto; left: 24px; }
+.fb-nudge button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.fb-nudge-msg { padding: 8px 6px 8px 10px; text-align: left; font-size: 0.88rem; line-height: 1.45; }
+.fb-nudge-x { padding: 4px 8px; font-size: 1.1rem; line-height: 1; color: var(--fb-muted); }
+.fb-nudge button:focus-visible { outline: 2px solid var(--fb-gold-bright); outline-offset: 2px; border-radius: 8px; }
+@keyframes fb-nudge-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .fb-nudge { animation: none; } }
+/* ---- A voice call with a person (M2-2) ---- */
+.fb-callbar {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  z-index: calc(var(--fb-z-base) + 90); display: flex; gap: 12px; align-items: center;
+  padding: 8px 8px 8px 16px; border-radius: 999px; font-size: 0.88rem;
+  background: var(--fb-surface); color: var(--fb-fg); border: 1px solid var(--fb-border);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+}
+.fb-callbar button {
+  font: inherit; font-size: 0.84rem; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  border: 0; background: #d64545; color: #fff; font-weight: 600;
+}
+.fb-callbar button:focus-visible { outline: 2px solid var(--fb-gold-bright); outline-offset: 2px; }
 `;
+
+/** The stylesheet for one widget: the shared material and Level 1 surfaces
+ *  (other levels reuse some of them) plus only the parts this design level
+ *  and intelligence tier use. Level 3 builds on Level 2's input styles. */
+export function stylesFor(design: string, extreme: boolean): string {
+  return CORE_STYLES
+    + (design === 'level2' || design === 'level3' ? L2_STYLES : '')
+    + (design === 'level3' ? L3_STYLES : '')
+    + (extreme ? EXTREME_STYLES : '')
+    + COMMON_STYLES;
+}

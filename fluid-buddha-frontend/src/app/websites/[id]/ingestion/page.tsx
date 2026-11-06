@@ -5,6 +5,7 @@ import { Api, ApiError, IngestionStatus } from "@/lib/api";
 import { Spinner, StatusBadge, fmtDate, useToast } from "@/components/ui";
 import { AddSourceModal } from "@/components/AddSourceModal";
 import { CrawlCard } from "@/components/CrawlCard";
+import { EditOnly } from "@/components/Permission";
 
 export default function IngestionPage() {
   const id = String(useParams().id);
@@ -58,7 +59,7 @@ export default function IngestionPage() {
 
   return (
     <div className="fade-in">
-      <CrawlCard id={id} onIngested={load} />
+      <EditOnly><CrawlCard id={id} onIngested={load} /></EditOnly>
 
       <div className="grid grid-3" style={{ marginBottom: 22 }}>
         <Stat label="Knowledge nodes" value={data ? String(data.document_count) : "—"} hint="Ingested into the agent's memory" />
@@ -70,9 +71,11 @@ export default function IngestionPage() {
               {pending > 0 ? `${pending} source${pending > 1 ? "s" : ""} ready to ingest` : "All sources ingested"}
             </p>
           </div>
-          <button className="btn btn-primary" disabled={running || pending === 0} onClick={run}>
-            {running ? <Spinner /> : "Run ingestion"}
-          </button>
+          <EditOnly>
+            <button className="btn btn-primary" disabled={running || pending === 0} onClick={run}>
+              {running ? <Spinner /> : "Run ingestion"}
+            </button>
+          </EditOnly>
         </div>
       </div>
 
@@ -87,8 +90,10 @@ export default function IngestionPage() {
           <div className="row" style={{ gap: 8 }}>
             <input ref={fileRef} type="file" hidden accept=".pdf,.docx,.txt,.md,.markdown,.html,.csv,.json"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
-            <button className="btn" onClick={() => fileRef.current?.click()}>Upload file</button>
-            <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Add text / URL</button>
+            <EditOnly>
+              <button className="btn" onClick={() => fileRef.current?.click()}>Upload file</button>
+              <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Add text / URL</button>
+            </EditOnly>
           </div>
         </div>
 
@@ -115,7 +120,7 @@ export default function IngestionPage() {
                   <td><StatusBadge status={s.status} /></td>
                   <td className="mono">{s.nodes || "—"}</td>
                   <td className="muted" style={{ fontSize: "0.82rem" }}>{fmtDate(s.created_at)}</td>
-                  <td><button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(s.id)}>Delete</button></td>
+                  <td><EditOnly><button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(s.id)}>Delete</button></EditOnly></td>
                 </tr>
               ))}
             </tbody>

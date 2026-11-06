@@ -10,15 +10,49 @@
 //
 // The arm is cached for a few hours, so repeat page views render at once; the
 // server is asked again in the background to pick up a new run or a stop.
+//
+// Variant tests (M2-4) use the same enrolment: the arm is then a variant key
+// ('a'..'d') or 'holdout', and comes with the variant's `overrides`. The answer
+// also carries the site's `defaults` (its greeting and design level).
 
-import { FluidBuddhaConfig } from './config';
+import { DesignLevel, FluidBuddhaConfig } from './config';
 
-export type Arm = 'agent' | 'holdout';
+/** 'agent' | 'holdout' for a holdout run; 'a'..'d' | 'holdout' for a test. */
+export type Arm = string;
+
+export interface Overrides {
+  greeting?: string;
+  triggers?: string[];
+  tour?: boolean;
+  persona?: string;
+  design?: DesignLevel;
+}
+
+interface Defaults {
+  greeting?: string | null;
+  design?: DesignLevel | null;
+  /** The site's brand colour, for embeds that don't set one (M2-10). */
+  accent?: string | null;
+  /** The site's languages (M2-7). */
+  languages?: string[] | null;
+  widget_language?: string | null;
+  greeting_hi?: string | null;
+  /** Suggestion chips from the site's template (M2-9). */
+  starters?: string[] | null;
+  starters_hi?: string[] | null;
+  /** The agent's name from the site's profile. */
+  agent_name?: string | null;
+  /** Returning-visitor memory (M3-3). */
+  memory?: { offered?: boolean; remembered?: boolean; welcome_back?: string | null;
+    welcome_back_hi?: string | null } | null;
+}
 
 interface Enrolment {
   experiment_id: string;
   arm: Arm;
   goal_path: string | null;
+  overrides?: Overrides;
+  defaults?: Defaults;
   at: number;
 }
 
@@ -68,6 +102,8 @@ export class Experiment {
   private readonly store = storage();
   readonly visitorId: string | null;
   private enrolment: Enrolment | null = null;
+  /** The site's defaults when no experiment runs. */
+  private siteDefaults: Defaults = {};
   private goalTimer = 0;
   private lastPath = '';
   private readonly onNav = () => this.checkGoal();
@@ -79,6 +115,18 @@ export class Experiment {
       this.store.setItem(VISITOR_KEY, vid);
     }
     this.visitorId = vid;
+  }
+
+  get id(): string | null {
+    return this.enrolment?.experiment_id ?? null;
+  }
+
+  get overrides(): Overrides {
+    return this.enrolment?.overrides || {};
+  }
+
+  get defaults(): Defaults {
+    return this.enrolment?.defaults || this.siteDefaults;
   }
 
   /** Experiments run only for keyed (tenant) sites and visitors with storage. */
@@ -125,14 +173,16 @@ export class Experiment {
       });
       if (!res.ok) return null;
       const data = (await res.json()) as Partial<Enrolment>;
-      if (!data.experiment_id || (data.arm !== 'agent' && data.arm !== 'holdout')) {
+      this.siteDefaults = data.defaults || {};
+      if (!data.experiment_id || typeof data.arm !== 'string' || !data.arm) {
         this.enrolment = null;
         this.store?.removeItem(this.cacheKey);
         return null;
       }
       this.enrolment = {
         experiment_id: data.experiment_id, arm: data.arm,
-        goal_path: data.goal_path ?? null, at: Date.now(),
+        goal_path: data.goal_path ?? null, overrides: data.overrides || {},
+        defaults: this.siteDefaults, at: Date.now(),
       };
       this.store?.setItem(this.cacheKey, JSON.stringify(this.enrolment));
       return data.arm;

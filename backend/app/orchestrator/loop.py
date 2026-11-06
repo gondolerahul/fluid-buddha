@@ -56,7 +56,8 @@ class CognitiveLoop:
 
     async def route(self, user_text: str, state: ConversationState):
         """Fast path only — returns the ack/persona for immediate TTS."""
-        return await self.router.route(user_text, state.history, state.site_key)
+        return await self.router.route(user_text, state.history, state.site_key,
+                                       lang=state.lang, seen=state.lang_seen)
 
     @staticmethod
     def needs_heavy(transcript: str, intent: str = "general",
@@ -92,7 +93,7 @@ class CognitiveLoop:
 
     async def think_lean(
         self, user_text: str, state: ConversationState, bridge: CortexBridge, persona,
-        related=None, probe: bool = False,
+        related=None, probe: bool = False, search: str = "",
     ):
         """Fast conversational path — one retrieval + one generation, no tools."""
         return await self.lean.respond(
@@ -105,6 +106,9 @@ class CognitiveLoop:
             section=state.viewport,
             related=related,
             probe=probe,
+            lang=state.lang,
+            seen=state.lang_seen,
+            search=search,
         )
 
     async def think(
@@ -125,14 +129,16 @@ class CognitiveLoop:
             probe=probe,
             on_screen=state.components,
             pii=state.pii,
+            lang=state.lang,
+            seen=state.lang_seen,
         )
 
-    async def react(self, entry: dict, persona, site_key: str) -> str:
+    async def react(self, entry: dict, persona, site_key: str, lang: str = "en") -> str:
         """Short live reaction to a visitor's component interaction."""
         return await self.thinker.react(
             component_type=entry.get("component_type", ""),
             state=entry.get("state", {}),
-            persona=persona, site_key=site_key,
+            persona=persona, site_key=site_key, lang=lang,
         )
 
     async def welcome(self, state: ConversationState, bridge: CortexBridge):
@@ -145,6 +151,7 @@ class CognitiveLoop:
             page=state.page,
             section=state.viewport,
             sections=state.sections,
+            lang=state.lang,
         )
 
     async def run_turn(
@@ -152,7 +159,8 @@ class CognitiveLoop:
         related=None,
     ) -> TurnResult:
         """Full synchronous turn (used by the HTTP /chat path)."""
-        route = await self.router.route(user_text, state.history, state.site_key)
+        route = await self.router.route(user_text, state.history, state.site_key,
+                                        lang=state.lang, seen=state.lang_seen)
         result = TurnResult(intent=route.intent, ack=route.ack)
 
         # Adaptive persona switch — only on a confident, changed read (Req 3.6.2).
@@ -180,6 +188,8 @@ class CognitiveLoop:
                 probe=probe,
                 on_screen=state.components,
                 pii=state.pii,
+                lang=state.lang,
+                seen=state.lang_seen,
             )
         else:
             think = await self.lean.respond(
@@ -192,6 +202,9 @@ class CognitiveLoop:
                 section=state.viewport,
                 related=related,
                 probe=probe,
+                lang=state.lang,
+                seen=state.lang_seen,
+                search=route.query_en,
             )
         result.answer_text = think.answer_text
         result.components.extend(think.components)
@@ -200,6 +213,7 @@ class CognitiveLoop:
         result.pages.extend(think.pages)
         result.patches.extend(think.patches)
         result.leads.extend(think.leads)
+        result.proposals.extend(think.proposals)
         for p in think.patches:
             state.update_component_state(p.target_sync_id, p.patch)
         result.grounding = think.grounding

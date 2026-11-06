@@ -19,6 +19,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import session_scope
+from app.memory import store as memory_store
+from app.recaps import store as recap_store
 from app.trust.settings import DEFAULT_TRANSCRIPT_DAYS
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,32 @@ async def _purge(db: AsyncSession, table: str, time_col: str, col: str,
     return res.rowcount or 0
 
 
+async def purge_episodes(db: AsyncSession) -> int:
+    """CORTEX episode nodes older than each site's transcript window (their
+    empty day/month groups go too). Episodic trees are keyed by the site's
+    entity id, so the window is applied site by site."""
+    from app.config import site_entity_id
+
+    rows = (await db.execute(text(
+        "SELECT w.site_key, COALESCE(p.transcript_retention_days, :d) AS days FROM tenant_websites w "
+        "LEFT JOIN site_privacy p USING (site_key)"), {"d": DEFAULT_TRANSCRIPT_DAYS})).all()
+    removed = 0
+    for site_key, days in rows:
+        if not days:
+            continue
+        removed += (await db.execute(text(
+            "DELETE FROM cortex_nodes n USING cortex_trees t WHERE n.tree_id = t.id "
+            "AND t.memory_domain = 'episodic' AND t.entity_id = :eid AND n.node_type = 'episode' "
+            "AND n.created_at < (now() AT TIME ZONE 'UTC') - make_interval(days => :days)"),
+            {"eid": site_entity_id(site_key), "days": int(days)})).rowcount or 0
+    if removed:
+        await db.execute(text(
+            "DELETE FROM cortex_nodes g USING cortex_trees t WHERE g.tree_id = t.id "
+            "AND t.memory_domain = 'episodic' AND g.node_type = 'episode_group' "
+            "AND NOT EXISTS (SELECT 1 FROM cortex_nodes c WHERE c.parent_id = g.id)"))
+    return removed
+
+
 async def purge_expired(db: AsyncSession) -> dict[str, int]:
     removed = {
         "conversations": await _purge(db, "conversations", "last_at",
@@ -51,6 +79,20 @@ async def purge_expired(db: AsyncSession) -> dict[str, int]:
                                            DEFAULT_TRANSCRIPT_DAYS,
                                            "AND t.kind = 'turn' AND t.status = 'auto'"),
         "leads": await _purge(db, "leads", "created_at", "lead_retention_days", 0),
+        # What people said during a takeover (M2-2) is part of the transcript.
+        "live_messages": await _purge(db, "live_messages", "at",
+                                      "transcript_retention_days", DEFAULT_TRANSCRIPT_DAYS),
+        # Shared recap links past their expiry (M2-6); a recap also goes with
+        # its conversation (ON DELETE CASCADE), so erasure removes it too.
+        "recaps": await recap_store.purge_expired(db),
+        # Action runs (M2-8) hold the visitor's details, like the transcript.
+        "action_runs": await _purge(db, "action_runs", "created_at",
+                                    "transcript_retention_days", DEFAULT_TRANSCRIPT_DAYS),
+        # Returning-visitor memories past the site's memory_days (M3-3).
+        "visitor_memories": await memory_store.purge_expired(db),
+        # The agent's long-term episodic memory (CORTEX episodes) holds what
+        # visitors asked: it follows the transcript window too (WS8).
+        "cortex_episodes": await purge_episodes(db),
     }
     await db.commit()
     return removed
@@ -58,6 +100,24 @@ async def purge_expired(db: AsyncSession) -> dict[str, int]:
 
 async def erase_visitor(db: AsyncSession, site_key: str, email: str) -> dict[str, int]:
     email = (email or "").strip().lower()
+    # Actions they asked for (M2-8): by the email they gave, or in a
+    # conversation that goes below.
+    runs = (await db.execute(text(
+        "DELETE FROM action_runs r WHERE r.site_key = :s AND (lower(r.inputs->>'email') = :e "
+        "OR r.session_id IN (SELECT c.session_id FROM conversations c JOIN leads l "
+        "ON l.conversation_id = c.id WHERE l.site_key = :s AND lower(l.email) = :e))"
+    ), {"s": site_key, "e": email})).rowcount or 0
+    # Their remembered-visitor memory (M3-3), found through their conversations.
+    memories = (await db.execute(text(
+        "DELETE FROM visitor_memories m USING conversations c, leads l "
+        "WHERE l.site_key = :s AND lower(l.email) = :e AND c.id = l.conversation_id "
+        "AND m.site_key = c.site_key AND m.visitor_id = c.visitor_id"
+    ), {"s": site_key, "e": email})).rowcount or 0
+    await db.execute(text(
+        "DELETE FROM live_messages m USING conversations c, leads l "
+        "WHERE l.site_key = :s AND lower(l.email) = :e AND c.id = l.conversation_id "
+        "AND m.site_key = c.site_key AND m.session_id = c.session_id"
+    ), {"s": site_key, "e": email})
     convs = (await db.execute(text(
         "DELETE FROM conversations WHERE site_key=:s AND id IN "
         "(SELECT conversation_id FROM leads WHERE site_key=:s AND lower(email)=:e "
@@ -67,7 +127,7 @@ async def erase_visitor(db: AsyncSession, site_key: str, email: str) -> dict[str
         "DELETE FROM leads WHERE site_key=:s AND lower(email)=:e"
     ), {"s": site_key, "e": email})).rowcount or 0
     await db.commit()
-    return {"leads": leads, "conversations": convs}
+    return {"leads": leads, "conversations": convs, "action_runs": runs, "memories": memories}
 
 
 async def retention_sweep_loop(interval_s: float) -> None:

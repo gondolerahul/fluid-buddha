@@ -4,10 +4,9 @@ from __future__ import annotations
 import hmac
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from sqlalchemy import text
+from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.db import engine
 from app.observability import metrics
 
 router = APIRouter(tags=["health"])
@@ -19,21 +18,22 @@ async def healthz() -> dict:
 
 
 @router.get("/readyz")
-async def readyz(request: Request) -> dict:
+async def readyz(request: Request) -> JSONResponse:
+    """Every dependency (M3-6): 503 when a critical one fails or the replica
+    is draining, so the load balancer sends visitors elsewhere."""
+    from app.observability.health import check_all
+
     rt = request.app.state.runtime
-    db_ok = True
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-    except Exception:
-        db_ok = False
-    return {
-        "status": "ok" if db_ok else "degraded",
-        "db": db_ok,
+    result = await check_all(request.app)
+    body = {
+        **result,
+        "db": result["checks"]["db"]["ok"],
         "mock_ai": rt.settings.mock_ai,
         "fast_model": rt.settings.fast_model,
         "heavy_model": rt.settings.heavy_model,
     }
+    code = 503 if result["status"] in ("fail", "draining") else 200
+    return JSONResponse(body, status_code=code, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/metrics", include_in_schema=False)

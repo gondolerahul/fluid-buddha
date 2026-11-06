@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from functools import lru_cache
+from typing import Optional
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -72,6 +73,7 @@ class Settings(BaseSettings):
     # fallback engine); ``tts_gemini_voice`` is a Gemini prebuilt voice name.
     tts_model: str = "gemini-3.1-flash-tts-preview"
     tts_voice: str = "en-US-Neural2-F"
+    tts_voice_hi: str = "hi-IN-Neural2-A"   # legacy Cloud TTS voice for Hindi (M2-7)
     tts_gemini_voice: str = "Aoede"
     tts_sample_rate: int = 24000
 
@@ -87,7 +89,31 @@ class Settings(BaseSettings):
     # (enforced in _require_strong_secret).
     jwt_secret: str = _DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
-    jwt_expire_min: int = 60 * 24 * 7  # access token lifetime (7 days)
+    jwt_expire_min: int = 60 * 24 * 7  # unused since M2-11 (tokens end with their session)
+
+    # ---- Console sessions and sign-in protection (M2-11) ----
+    session_idle_minutes: int = 60            # signed out after this long without a request
+    session_absolute_hours: int = 12          # and after this long whatever happens
+    session_cookie_samesite: str = "lax"      # "none" if console and API are on different sites
+    session_cookie_secure: Optional[bool] = None   # default: secure outside dev
+    session_cookie_domain: str = ""
+    login_max_attempts: int = 10              # wrong passwords/codes in a row before a lockout
+    login_lockout_minutes: int = 15
+    access_review_check_seconds: int = 6 * 3600   # quarterly review emails (0 = off)
+    memory_build_seconds: int = 120           # returning-visitor memories (M3-3; 0 = off)
+    # Self-hosted installs (M3-5): enforce the licence; where it comes from when
+    # none is installed in the console (a key, or a file holding one).
+    self_hosted: bool = False
+    # Graceful shutdown (M3-6): how long voice sessions get to finish their
+    # answer and move before the replica closes them.
+    drain_seconds: float = 25.0
+    # The public status page (M3-6): its name, how often it measures, and the
+    # token operators post incidents with (unset = no posting).
+    status_title: str = "FluidBuddha"
+    status_probe_seconds: int = 60
+    status_token: str = ""
+    licence_key: str = ""
+    licence_file: str = ""
 
     # ---- Sync / UX ----
     ui_filler_delay_ms: int = 1500
@@ -115,6 +141,48 @@ class Settings(BaseSettings):
     # ---- Trust layer (WS8) ----
     # How often visitor data past each site's retention window is deleted.
     retention_sweep_minutes: int = 60         # 0 = off
+
+    # ---- Email (M2-0): plain SMTP, any provider ----
+    # Without SMTP_HOST, dev environments log each email instead of sending it;
+    # other environments refuse to queue email (so nothing is silently lost).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_security: str = "starttls"           # starttls | ssl | none
+    smtp_from: str = "FluidBuddha <no-reply@localhost>"
+    smtp_timeout_seconds: float = 20.0
+    email_outbox_interval_seconds: int = 15   # how often queued email is sent; 0 = off
+    # Insights v2 (M2-5): how often new visitor turns are classified, and how
+    # often accounts are checked for a due weekly digest. 0 = off.
+    insights_classify_seconds: int = 20
+    # Where the widget's built files are served from (the recap page loads the
+    # SDK's recap bundle from here, M2-6).
+    widget_sdk_base: str = "http://localhost:4000/dist"
+    digest_check_seconds: int = 600
+    # Base URL of the console, for links in emails (invitations, digests).
+    console_url: str = "http://localhost:3001"
+
+    # ---- Teams and single sign-on (M2-1) ----
+    # This backend's public base URL: SSO redirect URIs are built from it
+    # (register <PUBLIC_API_URL>/auth/sso/callback with the identity provider).
+    public_api_url: str = "http://localhost:8080"
+    # "Sign in with Google" (a Google Cloud OAuth client, type Web application).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Proving an SSO domain: TXT records are read over DNS-over-HTTPS.
+    dns_over_https_url: str = "https://dns.google/resolve"
+    # ---- Live takeover and voice handoff (M2-2) ----
+    # STUN servers browsers use to find their public address (comma-separated).
+    stun_urls: str = "stun:stun.l.google.com:19302"
+    # Our coturn relay, e.g. "turn:turn.example.com:3478?transport=udp,
+    # turn:turn.example.com:3478?transport=tcp", and the secret it shares with us.
+    turn_urls: str = ""
+    turn_secret: str = ""
+    turn_ttl_seconds: int = 3600
+    # Fernet key(s) for stored secrets (app/security/secrets.py); comma-separated
+    # to rotate, newest first. Empty: derived from JWT_SECRET (dev only).
+    secrets_key: str = ""
 
     # ---- Self-serve onboarding (WS9) ----
     crawl_max_pages: int = 50                 # hard cap per crawl
@@ -147,6 +215,10 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
+    # Razorpay API for customer payment actions (M2-8); a fake server in local checks.
+    razorpay_api_base: str = "https://api.razorpay.com/v1"
+    # How often unpaid payment links are checked with Razorpay (0 = off).
+    action_payments_seconds: int = 300
     # Plan prices are in this currency's minor unit. INR is the default; USD
     # needs international payments enabled on the Razorpay account.
     billing_currency: str = "INR"

@@ -57,9 +57,18 @@ export class VoiceClient {
         /* ignore malformed frames */
       }
     };
-    this.ws.onclose = () => {
+    this.ws.onclose = (ev?: CloseEvent) => {
       this.handlers.onStatus('closed');
-      if (!this.manualClose) this.retry();
+      if (this.manualClose) return;
+      // The server is restarting or moving us (M3-6: 1012 service restart,
+      // 1013 try again later): reconnect soon, to a healthy replica, without
+      // counting it as a failure. The jitter spreads a whole replica's visitors.
+      if (ev && (ev.code === 1012 || ev.code === 1013)) {
+        this.retries = 0;
+        setTimeout(() => this.connect(), 400 + Math.random() * 1600);
+        return;
+      }
+      this.retry();
     };
     this.ws.onerror = () => this.ws?.close();
   }

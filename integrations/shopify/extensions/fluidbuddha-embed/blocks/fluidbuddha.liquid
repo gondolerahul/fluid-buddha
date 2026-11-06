@@ -1,0 +1,100 @@
+{%- comment -%}
+  FluidBuddha app embed (M2-10). Switched on in the theme editor:
+  Online Store → Themes → Customize → App embeds → FluidBuddha agent.
+
+  The install code from the FluidBuddha console carries the server and the
+  widget key ("https://fbk_…@agent.example.com"). The embed adds the server's
+  loader script with the key; the agent's look, knowledge and language come
+  from the console.
+{%- endcomment -%}
+{%- liquid
+  assign code = block.settings.install_code | strip
+  assign parts = code | split: '://'
+  assign scheme = parts | first
+  assign rest = parts | last
+  assign at = rest | split: '@'
+  assign key = at | first
+  assign server = at | last | split: '/' | join: '/'
+  assign key_prefix = key | slice: 0, 4
+
+  assign ok = false
+  if parts.size == 2 and at.size == 2 and key_prefix == 'fbk_' and server != blank
+    if scheme == 'https' or scheme == 'http'
+      assign ok = true
+    endif
+  endif
+  if code contains ' ' or code contains '"' or code contains '<' or code contains '?' or code contains '#'
+    assign ok = false
+  endif
+
+  assign show = true
+  if request.page_type == 'cart' and block.settings.show_on_cart == false
+    assign show = false
+  endif
+  if request.page_type contains 'customers/' and block.settings.show_on_account == false
+    assign show = false
+  endif
+-%}
+{%- if ok and show -%}
+  <link rel="preconnect" href="{{ scheme }}://{{ server | split: '/' | first | escape }}" crossorigin>
+  <script
+    src="{{ scheme }}://{{ server | escape }}/widget/loader.js"
+    data-key="{{ key | escape }}"
+    {%- if block.settings.position != 'default' %} data-position="{{ block.settings.position | escape }}"{% endif -%}
+    {%- if block.settings.lang != 'auto' %} data-lang="{{ block.settings.lang | escape }}"{% endif %}
+    async
+  ></script>
+{%- elsif code != blank and request.design_mode -%}
+  <script>console.warn('FluidBuddha: the install code is not valid. Copy it from the FluidBuddha console: your website → Install → Shopify.');</script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "t:name",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "install_code",
+      "label": "t:settings.install_code.label",
+      "info": "t:settings.install_code.info",
+      "placeholder": "https://fbk_…@your-fluidbuddha-server"
+    },
+    {
+      "type": "select",
+      "id": "position",
+      "label": "t:settings.position.label",
+      "options": [
+        { "value": "default", "label": "t:settings.position.default" },
+        { "value": "bottom-right", "label": "t:settings.position.right" },
+        { "value": "bottom-left", "label": "t:settings.position.left" }
+      ],
+      "default": "default"
+    },
+    {
+      "type": "select",
+      "id": "lang",
+      "label": "t:settings.lang.label",
+      "info": "t:settings.lang.info",
+      "options": [
+        { "value": "auto", "label": "t:settings.lang.auto" },
+        { "value": "en", "label": "t:settings.lang.en" },
+        { "value": "hi", "label": "t:settings.lang.hi" }
+      ],
+      "default": "auto"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_on_cart",
+      "label": "t:settings.show_on_cart.label",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_on_account",
+      "label": "t:settings.show_on_account.label",
+      "default": false
+    }
+  ]
+}
+{% endschema %}

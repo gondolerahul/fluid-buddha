@@ -1,0 +1,41 @@
+# The install's two names (M3-5). Caddy gets and renews their certificates
+# itself (Let's Encrypt), or uses your own: see README.md → TLS.
+{
+	email {$ACME_EMAIL:admin@localhost}
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+(common) {
+	encode zstd gzip
+	log {
+		output stdout
+		format json
+	}
+}
+
+# The API, the widget's socket, hosted campaign and recap pages, and the
+# widget's own files under /sdk/.
+{$API_DOMAIN} {
+	import common
+	{$CADDY_TLS}
+	handle_path /sdk/* {
+		root * /srv/sdk
+		header Cache-Control "public, max-age=300"
+		header Access-Control-Allow-Origin "*"
+		header Cross-Origin-Resource-Policy "cross-origin"
+		file_server
+	}
+	handle {
+		reverse_proxy backend:8080 {
+			# Voice sessions are long-lived WebSockets; let them drain on reload.
+			stream_close_delay 5m
+		}
+	}
+}
+
+# The console.
+{$CONSOLE_DOMAIN} {
+	import common
+	{$CADDY_TLS}
+	reverse_proxy console:3000
+}

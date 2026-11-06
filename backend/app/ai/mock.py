@@ -66,11 +66,40 @@ def _infer_persona(text: str) -> Optional[str]:
     return None
 
 
+def _custom_names(tools) -> set[str]:
+    """The site's own component names in render_component's enum (M2-8)."""
+    from app.orchestrator.components import KNOWN_COMPONENTS
+    for t in tools or []:
+        if t.name == "render_component":
+            enum = t.parameters["properties"]["component_type"].get("enum", [])
+            return {n for n in enum if n not in KNOWN_COMPONENTS}
+    return set()
+
+
+# A few Hindi words → English, so the mock router can give an English search
+# query for a Hindi question (M2-7). Real models translate.
+_GLOSSARY = {
+    "कीमत": "price", "क़ीमत": "price", "दाम": "price", "प्राइसिंग": "pricing",
+    "इंटीग्रेशन": "integration", "इंटीग्रेट": "integrate", "सुरक्षा": "security",
+    "डेमो": "demo", "ट्रायल": "trial", "टीम": "team", "भर्ती": "hiring",
+    "कैसे": "how", "क्या": "what", "काम": "work", "करता": "does", "करती": "does",
+    "kya": "what", "kaise": "how", "kitna": "how much", "kitne": "how much",
+    "daam": "price", "kimat": "price", "keemat": "price",
+}
+_HINDI_REPLY = "Answer in natural, conversational Hindi"
+
+
+def _to_english(text: str) -> str:
+    words = [_GLOSSARY.get(w.strip("?।,.!").lower(), w) for w in text.split()]
+    return " ".join(w for w in words if w.isascii()) or text
+
+
 class MockLLMClient(LLMClient):
     """Rule-based stand-in for Gemini that still exercises tool calling."""
 
     def __init__(self, model: str = "mock-gemini") -> None:
         self.model = model
+        self._custom_names: set[str] = set()
 
     async def generate(
         self,
@@ -91,7 +120,8 @@ class MockLLMClient(LLMClient):
         # --- Live component reaction (no tools, deterministic quip) ----------
         if not tools and "interacting with" in system.lower():
             return LLMResponse(
-                text="At those numbers, the return looks compelling.",
+                text=("इन आँकड़ों पर रिटर्न अच्छा दिखता है।" if "Say it in Hindi" in system
+                      else "At those numbers, the return looks compelling."),
                 model=used_model,
             )
 
@@ -120,6 +150,8 @@ class MockLLMClient(LLMClient):
                 "person company", "-person",
             ))
             confidence = 0.0 if not persona else (0.92 if explicit else 0.65)
+            if "ack: write it in Hindi" in system:
+                ack = "एक पल, मैं देखती हूँ।"
             payload = {
                 "intent": intent,
                 "persona": persona,
@@ -127,10 +159,14 @@ class MockLLMClient(LLMClient):
                 "persona_explicit": explicit and persona is not None,
                 "ack": ack,
             }
+            if "query_en" in system:
+                payload["query_en"] = _to_english(user_text)
             return LLMResponse(text=json.dumps(payload), model=used_model)
 
         has_cortex = any(m.role == "tool" and m.tool_name == "query_cortex" for m in messages)
-        has_action = any(m.role == "tool" and m.tool_name in _ACTION_TOOLS for m in messages)
+        has_action = any(m.role == "tool" and (m.tool_name in _ACTION_TOOLS
+                                               or str(m.tool_name).startswith("action_"))
+                         for m in messages)
 
         # --- Heavy Thinker turn 1: ground first ------------------------------
         if "query_cortex" in tool_names and not has_cortex:
@@ -140,6 +176,7 @@ class MockLLMClient(LLMClient):
             )
 
         # --- Heavy Thinker turn 2: client actions ----------------------------
+        self._custom_names = _custom_names(tools)
         if has_cortex and not has_action:
             calls = self._patch_on_screen(user_text, tool_names, system) \
                 or self._decide_actions(low, tool_names)
@@ -147,7 +184,10 @@ class MockLLMClient(LLMClient):
                 return LLMResponse(tool_calls=calls, model=used_model)
 
         # --- Final spoken answer (grounded) ----------------------------------
-        return LLMResponse(text=self._compose_answer(user_text, messages), model=used_model)
+        answer = self._compose_answer(user_text, messages)
+        if _HINDI_REPLY in system:   # M2-7: a Hindi sentence, sources stay English
+            answer = "यह रहा जवाब: " + answer
+        return LLMResponse(text=answer, model=used_model)
 
     @staticmethod
     def _patch_on_screen(user_text: str, tool_names: set[str], system: str) -> list[ToolCall]:
@@ -166,6 +206,23 @@ class MockLLMClient(LLMClient):
 
     def _decide_actions(self, low: str, tool_names: set[str]) -> list[ToolCall]:
         calls: list[ToolCall] = []
+        # A site's actions (M2-8): a request that names what the action does.
+        email_m = _EMAIL_RE.search(low)
+        wants = re.search(r"\b(pay|buy|purchase|subscribe|quote|trial|book|meeting|schedule|"
+                          r"sign me up|request)\b", low)
+        for name in sorted(n for n in tool_names if n.startswith("action_") and wants):
+            words = [w for w in name[len("action_"):].split("_") if len(w) > 2]
+            if not any(w in low for w in words) and not (
+                    "pay" in low and any(w in name for w in ("pay", "plan", "buy"))):
+                continue
+            args: dict = {}
+            if email_m:
+                args["email"] = email_m.group(0)
+            plan = re.search(r"\b(?:the )?(\w+) plan\b", low)
+            if plan:
+                args["plan"] = plan.group(1)
+            args["details"] = low[:200]
+            return [ToolCall(name, args)]
         email = _EMAIL_RE.search(low)
         if email and "capture_lead" in tool_names:
             calls.append(ToolCall("capture_lead", {"email": email.group(0)}))
@@ -196,7 +253,14 @@ class MockLLMClient(LLMClient):
             }))
             return calls
         if "render_component" in tool_names:
-            if any(k in low for k in _EXEC_KEYWORDS):
+            custom = re.search(r"\bshow me (?:the |a |our )?([a-z][a-z0-9_ ]{1,39}?)\b(?: for (\d+))?$", low)
+            if custom and custom.group(1).replace(" ", "_") in self._custom_names:
+                n = int(custom.group(2)) if custom.group(2) else None
+                calls.append(ToolCall("render_component", {
+                    "component_type": custom.group(1).replace(" ", "_"),
+                    "initial_state": {"seats": n} if n else {},
+                    "explanation_text": "Here it is."}))
+            elif any(k in low for k in _EXEC_KEYWORDS):
                 calls.append(ToolCall("render_component", {
                     "component_type": "roi_calculator",
                     "initial_state": {"seats": 10, "monthly_cost": 10000, "hours_saved": 320},
@@ -258,7 +322,8 @@ class MockASR:
     """Placeholder ASR. Real transcripts come via the AUDIO `end` override in
     mock mode; this only fires if raw audio is streamed with no transcript."""
 
-    async def transcribe_stream(self, audio: AsyncIterator[bytes]) -> AsyncIterator[TranscriptEvent]:
+    async def transcribe_stream(self, audio: AsyncIterator[bytes],
+                                languages: Sequence[str] = ()) -> AsyncIterator[TranscriptEvent]:
         async for _ in audio:
             pass
         yield TranscriptEvent(text="", is_final=True, confidence=0.0)
@@ -271,7 +336,7 @@ class MockTTS:
     def __init__(self, sample_rate: int = 24000) -> None:
         self.sample_rate = sample_rate
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+    async def synthesize_stream(self, text: str, language: str = "") -> AsyncIterator[bytes]:
         words = max(1, len(text.split()))
         total_seconds = min(12.0, max(0.6, words * 0.32))
         chunk_seconds = 0.2

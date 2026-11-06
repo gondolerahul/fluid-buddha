@@ -225,15 +225,19 @@ class VertexASR:
         self._settings = settings
 
     async def transcribe_stream(
-        self, audio: AsyncIterator[bytes]
+        self, audio: AsyncIterator[bytes], languages: Sequence[str] = ()
     ) -> AsyncIterator[TranscriptEvent]:
+        """``languages``: the expected one first, then up to three others the
+        recogniser may pick instead (M2-7: en-IN / hi-IN)."""
         from google.cloud import speech_v1 as speech
 
         client = speech.SpeechAsyncClient()
+        langs = list(languages) or [self._settings.asr_language]
         config = speech.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=16000,
-            language_code=self._settings.asr_language,
+            language_code=langs[0],
+            alternative_language_codes=langs[1:4],
             enable_automatic_punctuation=True,
         )
         streaming_config = speech.StreamingRecognitionConfig(
@@ -255,6 +259,7 @@ class VertexASR:
                     text=alt.transcript,
                     is_final=result.is_final,
                     confidence=getattr(alt, "confidence", 1.0) or 1.0,
+                    language=str(getattr(result, "language_code", "") or ""),
                 )
 
 
@@ -289,7 +294,9 @@ class GeminiTTS:
             location=settings.vertex_location,
         )
 
-    def _config(self):
+    def _config(self, language: str = ""):
+        """``language``: a BCP-47 code (e.g. hi-IN) to pin the spoken language;
+        empty lets the model follow the text (M2-7)."""
         from google.genai import types
 
         return types.GenerateContentConfig(
@@ -299,16 +306,17 @@ class GeminiTTS:
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
                         voice_name=self._voice
                     )
-                )
+                ),
+                language_code=language or None,
             ),
         )
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+    async def synthesize_stream(self, text: str, language: str = "") -> AsyncIterator[bytes]:
         frames = PcmFramer(self.sample_rate)
         sent = False
         try:
             stream = await self._client.aio.models.generate_content_stream(
-                model=self._model, contents=text, config=self._config()
+                model=self._model, contents=text, config=self._config(language)
             )
             async for resp in stream:
                 for data in _audio_parts(resp):
@@ -321,7 +329,7 @@ class GeminiTTS:
             logger.info("Gemini TTS streaming unavailable (%s); using one-shot", exc)
             frames = PcmFramer(self.sample_rate)  # drop any partial stream
             resp = await self._client.aio.models.generate_content(
-                model=self._model, contents=text, config=self._config()
+                model=self._model, contents=text, config=self._config(language)
             )
             for data in _audio_parts(resp):
                 for frame in frames.push(data):
@@ -384,13 +392,17 @@ class VertexTTS:
         self._settings = settings
         self.sample_rate = settings.tts_sample_rate
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+    async def synthesize_stream(self, text: str, language: str = "") -> AsyncIterator[bytes]:
         from google.cloud import texttospeech_v1 as tts
 
         client = tts.TextToSpeechAsyncClient()
-        voice = tts.VoiceSelectionParams(
-            language_code=self._settings.asr_language, name=self._settings.tts_voice
-        )
+        if language == "hi-IN":
+            voice = tts.VoiceSelectionParams(language_code="hi-IN",
+                                             name=self._settings.tts_voice_hi)
+        else:
+            voice = tts.VoiceSelectionParams(
+                language_code=self._settings.asr_language, name=self._settings.tts_voice
+            )
         audio_config = tts.AudioConfig(
             audio_encoding=tts.AudioEncoding.LINEAR16,
             sample_rate_hertz=self.sample_rate,

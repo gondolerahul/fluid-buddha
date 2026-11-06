@@ -11,7 +11,7 @@ replicas within the profile cache TTL (app/orchestrator/profile.py).
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
@@ -57,6 +57,30 @@ class ProfileUpdate(BaseModel):
     closing_use_case: Optional[str] = Field(None, max_length=800)
     routes: Optional[list[str]] = Field(None, max_length=500)
     dynamic_prefixes: Optional[list[str]] = Field(None, max_length=20)
+    greeting: Optional[str] = Field(None, max_length=300)
+    default_persona: Optional[str] = Field(None, max_length=40)
+    tour_enabled: Optional[bool] = None
+    competitors: Optional[list[str]] = Field(None, max_length=30)
+    cta_label: Optional[str] = Field(None, max_length=60)
+    cta_url: Optional[str] = Field(None, max_length=500)
+    languages: Optional[list[Literal["en", "hi"]]] = Field(None, max_length=2)
+    widget_language: Optional[Literal["auto", "en", "hi"]] = None
+    greeting_hi: Optional[str] = Field(None, max_length=300)
+    starter_questions: Optional[list[str]] = Field(None, max_length=4)
+    starter_questions_hi: Optional[list[str]] = Field(None, max_length=4)
+    currency: Optional[str] = Field(None, pattern=r"^[A-Za-z]{3}$")
+    guardrails: Optional[list[str]] = Field(None, max_length=10)
+    preferred_components: Optional[list[str]] = Field(None, max_length=8)
+    lead_fields: Optional[list[str]] = Field(None, max_length=6)
+    tour_outline: Optional[list[str]] = Field(None, max_length=9)
+    safety: Optional[Literal["", "medical"]] = None
+
+    @field_validator("cta_url")
+    @classmethod
+    def _https(cls, v: Optional[str]) -> Optional[str]:
+        if v and not v.strip().startswith("https://"):
+            raise ValueError("the call-to-action link must start with https://")
+        return v
 
     @field_validator("personas")
     @classmethod

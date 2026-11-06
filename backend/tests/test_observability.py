@@ -269,8 +269,9 @@ def test_memory_store_expires_caps_and_keeps_sites_apart():
         for i in range(3):
             await store.save(f"s{i}", ConversationState(site_key="a"))
         assert await backend.get(sid) is None and len(backend._states) == 2  # capped
-        backend.ttl_s = 0
-        await asyncio.sleep(0.01)
+        # Any idle time at all is past a negative TTL (Windows' monotonic clock
+        # ticks every ~16 ms, so "TTL 0 + a short sleep" was flaky there).
+        backend.ttl_s = -1
         assert await backend.get("s2") is None                           # idle: expired
     asyncio.run(go())
 

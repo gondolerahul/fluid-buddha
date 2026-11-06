@@ -106,8 +106,12 @@
     const params = new URLSearchParams(location.search);
     const design = params.get('design') || 'level1';
     document.querySelectorAll('.levels a').forEach((a) => a.classList.toggle('on', a.dataset.l === design));
+    // ?backend=ws://… ?key=fbk_… ?lang=hi point the demo at another backend,
+    // a console site's widget key, or a language (M2-7).
     window.FluidBuddha.init({
-      backend: 'ws://localhost:8080',
+      backend: params.get('backend') || 'ws://localhost:8080',
+      key: params.get('key') || '',
+      lang: params.get('lang') || 'auto',
       site: 'hirebuddha',
       accent: params.get('accent') || '#c9a24a',
       intelligence: 'advance',

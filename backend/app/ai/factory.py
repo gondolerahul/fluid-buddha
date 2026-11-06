@@ -18,6 +18,16 @@ class AIEngines:
 
 
 def build_engines(settings: Settings) -> AIEngines:
+    """The platform's engines; the LLM is wrapped so a website whose account
+    brought its own model provider (M3-4) is answered by it."""
+    from app.ai.providers import RoutingLLM
+
+    engines = _platform_engines(settings)
+    engines.llm = RoutingLLM(engines.llm, settings)
+    return engines
+
+
+def _platform_engines(settings: Settings) -> AIEngines:
     if settings.mock_ai:
         from app.ai.mock import MockASR, MockLLMClient, MockTTS
 

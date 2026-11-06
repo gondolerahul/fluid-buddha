@@ -81,6 +81,7 @@ function AddWebsiteModal({
   const [intelligence, setIntelligence] = useState("advance");
   const [design, setDesign] = useState("level1");
   const [accent, setAccent] = useState("#c9a24a");
+  const [template, setTemplate] = useState("");
   const [busy, setBusy] = useState(false);
   const router = useRouter();
 
@@ -88,7 +89,8 @@ function AddWebsiteModal({
     e.preventDefault();
     setBusy(true);
     try {
-      const site = await Api.createWebsite({ name, domain: domain || null, intelligence, design, accent });
+      const site = await Api.createWebsite({ name, domain: domain || null, intelligence, design, accent,
+        template: template || null });
       setName(""); setDomain("");
       // With a domain, go straight to crawling it (WS9).
       if (site.domain) router.push(`/websites/${site.id}/ingestion`);
@@ -112,6 +114,16 @@ function AddWebsiteModal({
           <label className="label">Domain <span className="faint">(optional)</span></label>
           <input className="input" value={domain} onChange={(e) => setDomain(e.target.value)}
             placeholder="store.acme.com" />
+        </div>
+        <div className="field">
+          <label className="label">Start from <span className="faint">(personas, starter questions, rules, triggers)</span></label>
+          <select className="select" value={template} aria-label="Start from" onChange={(e) => setTemplate(e.target.value)}>
+            <option value="">A blank agent</option>
+            <option value="saas">B2B SaaS</option>
+            <option value="education">Education</option>
+            <option value="real_estate">Real estate</option>
+            <option value="healthcare">Healthcare (no medical advice)</option>
+          </select>
         </div>
         <div className="grid grid-2" style={{ gap: 14 }}>
           <div className="field">

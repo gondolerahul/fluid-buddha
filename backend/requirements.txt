@@ -11,8 +11,11 @@ pydantic-settings>=2.3
 
 # ---- Auth (tenant register/login, JWT bearer) ----
 pyjwt>=2.8
+cryptography>=43   # SSO ID-token signatures (RS/ES/PS) and stored-secret encryption
 bcrypt>=4.0   # used directly (no passlib) to avoid its bcrypt-version probing
 email-validator>=2.0  # pydantic EmailStr
+tzdata>=2024.1   # IANA time zones for zoneinfo (weekly digest at 9:00 local); Windows and slim images lack them
+PyYAML>=6.0   # vertical template packs (app/templates/*.yaml, M2-9)
 
 # ---- Database (cortex requires Postgres + pgvector) ----
 SQLAlchemy[asyncio]>=2.0
@@ -35,3 +38,7 @@ pypdf>=6.0
 google-genai>=1.0.0            # Gemini LLM + embeddings (Vertex backend)
 google-cloud-speech>=2.26      # streaming ASR
 google-cloud-texttospeech>=2.16  # streaming TTS
+
+# ---- Bring your own model (M3-4): Claude and OpenAI / Azure OpenAI ----
+anthropic>=2.5
+openai>=3.46

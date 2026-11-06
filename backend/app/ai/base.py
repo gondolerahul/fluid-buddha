@@ -31,6 +31,10 @@ class ChatMessage:
     tool_result: Any = None
     # For role == 'model': the function calls this turn issued.
     tool_calls: Optional[list["ToolCall"]] = None
+    # For role == 'model': the provider's own record of the turn (e.g. Claude's
+    # content blocks with their thinking blocks), replayed verbatim by the
+    # engine that produced it; other engines ignore it (M3-4).
+    raw: Any = None
 
 
 @dataclass
@@ -49,6 +53,9 @@ class ToolCall:
     # function call and MUST be replayed on the model turn or the next request
     # 400s. None for providers/models that don't use it (e.g. Gemini 2.x, mock).
     thought_signature: Optional[bytes] = None
+    # The provider's id for this call (Claude ``tool_use.id``, OpenAI
+    # ``tool_call.id``), echoed on its result. None where unused (Vertex, mock).
+    id: Optional[str] = None
 
 
 @dataclass
@@ -61,6 +68,11 @@ class LLMResponse:
     # provider usage metadata; the mock leaves them 0 and callers estimate.
     input_tokens: int = 0
     output_tokens: int = 0
+    # Which provider answered (M3-4: "vertex", "anthropic", "openai",
+    # "azure_openai", "mock") and its native turn record for replay (see
+    # ``ChatMessage.raw``).
+    provider: str = ""
+    raw: Any = None
 
 
 @runtime_checkable
@@ -99,6 +111,7 @@ class TranscriptEvent:
     text: str
     is_final: bool
     confidence: float = 1.0
+    language: str = ""      # the recogniser's language for this result, if it says
 
 
 @runtime_checkable
@@ -106,7 +119,7 @@ class ASREngine(Protocol):
     """Streaming speech-to-text. Consumes PCM16 mono audio chunks."""
 
     async def transcribe_stream(
-        self, audio: AsyncIterator[bytes]
+        self, audio: AsyncIterator[bytes], languages: Sequence[str] = ()
     ) -> AsyncIterator[TranscriptEvent]: ...
 
 
@@ -116,4 +129,4 @@ class TTSEngine(Protocol):
 
     sample_rate: int
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]: ...
+    async def synthesize_stream(self, text: str, language: str = "") -> AsyncIterator[bytes]: ...

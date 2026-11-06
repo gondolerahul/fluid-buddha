@@ -18,6 +18,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.security import secrets as stored
 from app.trust.pii import SENSITIVE, redact
 
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
@@ -133,7 +134,19 @@ def lead_dict(r: Any) -> dict[str, Any]:
         "delivered_at": r["delivered_at"].isoformat() if r["delivered_at"] else None,
         "delivery_error": r["delivery_error"],
         "created_at": r["created_at"].isoformat(),
+        # Paid through a payment action (M2-8), in paise.
+        "paid_at": r["paid_at"].isoformat() if r.get("paid_at") else None,
+        "paid_amount": r.get("paid_amount"),
+        # The conversation's recap link, if the visitor asked for one (M2-6).
+        "recap": ({"views": r["recap_views"], "forwards": max(0, (r["recap_viewers"] or 0) - 1),
+                   "last_viewed_at": r["recap_last"].isoformat() if r["recap_last"] else None}
+                  if r.get("recap_views") is not None else None),
     }
+
+
+_WITH_RECAP = ("l.*, r.views AS recap_views, r.viewers AS recap_viewers, "
+                "r.last_viewed_at AS recap_last FROM leads l "
+                "LEFT JOIN recaps r ON r.conversation_id = l.conversation_id")
 
 
 async def list_leads(db: AsyncSession, site_key: str, *, limit: int = 50,
@@ -141,13 +154,13 @@ async def list_leads(db: AsyncSession, site_key: str, *, limit: int = 50,
     total = (await db.execute(text("SELECT count(*) FROM leads WHERE site_key = :s"),
                               {"s": site_key})).scalar() or 0
     rows = (await db.execute(text(
-        "SELECT * FROM leads WHERE site_key = :s ORDER BY created_at DESC "
+        f"SELECT {_WITH_RECAP} WHERE l.site_key = :s ORDER BY l.created_at DESC "
         "LIMIT :lim OFFSET :off"), {"s": site_key, "lim": limit, "off": offset})).mappings().all()
     return [lead_dict(r) for r in rows], int(total)
 
 
 async def get_lead(db: AsyncSession, site_key: str, lead_id: uuid.UUID) -> Optional[dict]:
-    row = (await db.execute(text("SELECT * FROM leads WHERE id = :id AND site_key = :s"),
+    row = (await db.execute(text(f"SELECT {_WITH_RECAP} WHERE l.id = :id AND l.site_key = :s"),
                             {"id": lead_id, "s": site_key})).mappings().first()
     return lead_dict(row) if row else None
 
@@ -173,14 +186,40 @@ def new_secret() -> str:
     return "whsec_" + secrets.token_urlsafe(24)
 
 
+# The signing secret and the Slack webhook URL (itself a credential) are stored
+# encrypted (M2-11, app/security/secrets.py).
+def _seal(value: Optional[str]) -> Optional[str]:
+    return stored.encrypt(value) if value else value
+
+
+def _open(value: Optional[str]) -> Optional[str]:
+    if not value or not value.startswith("gAAAAA"):
+        return value   # empty, or written before encryption (migration 0024 converts)
+    return stored.decrypt(value)
+
+
+def _readable(row: Any) -> dict[str, Any]:
+    out = dict(row)
+    for k in ("webhook_secret", "slack_webhook_url"):
+        out[k] = _open(out.get(k))
+    return out
+
+
 async def get_integrations(db: AsyncSession, site_key: str) -> dict[str, Any]:
     """The site's integration settings (created with a signing secret on first read)."""
     row = (await db.execute(text(
         "INSERT INTO site_integrations (site_key, webhook_secret) VALUES (:s, :sec) "
         "ON CONFLICT (site_key) DO UPDATE SET site_key = EXCLUDED.site_key "
         "RETURNING webhook_url, webhook_secret, slack_webhook_url, hot_lead_score, cost_alert_usd"
-    ), {"s": site_key, "sec": new_secret()})).mappings().one()
-    return dict(row)
+    ), {"s": site_key, "sec": _seal(new_secret())})).mappings().one()
+    return _readable(row)
+
+
+async def slack_webhook(db: AsyncSession, site_key: str) -> Optional[str]:
+    raw = (await db.execute(text(
+        "SELECT slack_webhook_url FROM site_integrations WHERE site_key = :s"),
+        {"s": site_key})).scalar()
+    return _open(raw)
 
 
 async def save_integrations(db: AsyncSession, site_key: str, *, webhook_url: Optional[str],
@@ -197,6 +236,6 @@ async def save_integrations(db: AsyncSession, site_key: str, *, webhook_url: Opt
         + (", webhook_secret = :sec" if rotate_secret else "") +
         " WHERE site_key = :s "
         "RETURNING webhook_url, webhook_secret, slack_webhook_url, hot_lead_score, cost_alert_usd"
-    ), {"w": webhook_url, "sl": slack_webhook_url, "h": hot_lead_score, "c": cost_alert_usd,
-        "sec": new_secret(), "s": site_key})).mappings().one()
-    return dict(row)
+    ), {"w": webhook_url, "sl": _seal(slack_webhook_url), "h": hot_lead_score, "c": cost_alert_usd,
+        "sec": _seal(new_secret()), "s": site_key})).mappings().one()
+    return _readable(row)

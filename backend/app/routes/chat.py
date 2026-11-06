@@ -16,10 +16,15 @@ from pydantic import BaseModel, Field
 
 from typing import Any
 
+from app.ai.providers import current_site
 from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
+from app.experiments.apply import session_settings
 from app.design.system import ensure_design
-from app.orchestrator.profile import ensure_profile
+from app.live import visitor as live
+from app.memory import store as memory
+from app.orchestrator.profile import ensure_profile, profile_for
+from app.routes.actions import ensure_extras, proposal_cards
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.state import normalize_sections
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
@@ -38,7 +43,8 @@ def _ui_sid() -> str:
 
 
 async def _record_conversation(state, sid: str, question: str, answer: str, intent,
-                               grounding, *, served_from_cache: bool, leads=()) -> None:
+                               grounding, *, served_from_cache: bool, leads=(),
+                               components=()) -> None:
     """Append the turn to this session's transcript (Insights, WS10; best-effort),
     then save any lead the agent captured in it (WS7)."""
     from app.insights.store import record_turn as record_conversation_turn
@@ -49,9 +55,12 @@ async def _record_conversation(state, sid: str, question: str, answer: str, inte
                 question=question, answer=answer, intent=intent,
                 persona=state.persona, page=state.page,
                 grounding=grounding, served_from_cache=served_from_cache,
+                components=list(components), lang=state.lang_seen,
+                visitor_id=state.visitor_id,
             )
     except Exception as exc:
         logger.warning("conversation record failed: %s", exc)
+    await live.agent_turn(state.site_key, sid, question, answer)
     if leads:
         from app.leads.capture import save_captured
         await save_captured(state.site_key, sid, state.persona, list(leads))
@@ -69,6 +78,13 @@ class ChatRequest(BaseModel):
     page: str | None = None         # current route, for grounding/context
     # scroll targets on the page: ["plans"] or [{"id","label"}]
     sections: list[Any] | None = None
+    # The visitor's test variant, {"id", "arm"} (M2-4): sets the persona a new
+    # conversation starts in.
+    exp: dict[str, Any] | None = None
+    # The widget's language, 'en' or 'hi' (M2-7).
+    lang: str | None = None
+    # The anonymous visitor id (M3-3): remembered only if they opted in.
+    visitor: str | None = Field(None, max_length=64)
 
 
 @router.post("/chat")
@@ -95,9 +111,42 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     # Load the site's agent profile (name, personas, sitemap) for the prompts.
     await ensure_profile(resolved.site_key)
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
+    await ensure_extras(resolved.site_key)  # the site's actions + components (M2-8)
+    current_site.set(resolved.site_key)     # its own model provider, if any (M3-4)
 
     sid, state = await sessions.load(req.session_id, site_key=resolved.site_key)
+    # A returning visitor who asked to be remembered (M3-3).
+    visitor = memory.valid_visitor(req.visitor)
+    if visitor and state.visitor_id != visitor and resolved.website is not None:
+        async with session_scope() as mdb:
+            mem = await memory.get(mdb, resolved.site_key, visitor)
+            if mem is not None:
+                await memory.seen(mdb, resolved.site_key, visitor)
+                await mdb.commit()
+        state.visitor_id = visitor
+        if mem is not None:
+            state.remember(visitor, mem)
+    if req.session_id != sid and not req.icp:
+        start = await session_settings(resolved.site_key, req.exp)
+        if start["persona"]:
+            state.persona = start["persona"]
+    await live.present(resolved.site_key, sid, "text", persona=req.icp or state.persona,
+                       page=req.page or state.page, announce=req.session_id != sid)
     try:
+        # A person has taken over this conversation (M2-2): the message goes to
+        # them, and the widget polls /chat/live for their replies.
+        takeover = await live.taken_over(resolved.site_key, sid)
+        if takeover is not None:
+            state.pii.enabled = privacy.redact_pii
+            masked = state.pii.mask(req.message)
+            msg = await live.visitor_said(resolved.site_key, sid, req.message,
+                                          state.pii.stored(masked))
+            return {"text": "", "ack": "", "intent": "takeover", "persona": state.persona,
+                    "actions": [], "components": [], "pages": [], "patches": [],
+                    "grounding": None, "session_id": sid,
+                    "takeover": {"name": takeover.operator_name, "after": msg["id"]}}
+        # Back with the agent: it learns what was said while a person had it.
+        await live.catch_up(state, resolved.site_key, sid)
         with span("chat.turn", site=resolved.site_key):
             return await _turn(req, rt, t0, resolved, privacy, sid, state)
     finally:
@@ -123,6 +172,38 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     pii.enabled = privacy.redact_pii
     message = pii.mask(req.message)
     personal = message != req.message
+    # This turn's reply language (M2-7), from what the visitor wrote and the
+    # site's languages.
+    enabled = profile_for(state.site_key).languages
+    if req.lang in ("en", "hi"):
+        state.ui_lang = req.lang
+    state.pick_language(message, enabled)
+
+    # "Forget me" (M3-3): deletes the visitor's memory here; no agent turn.
+    if memory.wants_forget(req.message) and req.visitor:
+        async with session_scope() as mdb:
+            gone = await memory.forget(mdb, state.site_key, req.visitor)
+            await mdb.commit()
+        state.visitor_id = None
+        state.memory_loaded = False
+        text = (memory.FORGOT if gone else memory.NOTHING)["hi" if state.lang == "hi" else "en"]
+        return {"text": text, "ack": "", "intent": "forget_me", "persona": state.persona,
+                "actions": [], "components": [], "pages": [], "patches": [], "grounding": None,
+                "session_id": sid, "lang": state.lang, "proposals": [], "memory": "forgotten"}
+    # Medical safety (M2-9): advice and emergencies get a fixed answer,
+    # before any cache or model, and are never cached.
+    if profile_for(state.site_key).safety == "medical":
+        from app.trust.safety import check, reply
+        verdict = check(message)
+        if verdict:
+            text = reply(verdict, state.lang)
+            state.add_turn(message, text)
+            await _record_conversation(state, sid, pii.stored(message), text, f"safety_{verdict}",
+                                       {"confidence": 1.0, "found": True, "sources": []},
+                                       served_from_cache=False)
+            return {"text": text, "ack": "", "intent": f"safety_{verdict}", "persona": state.persona,
+                    "actions": [], "components": [], "pages": [], "patches": [],
+                    "grounding": None, "session_id": sid, "lang": state.lang, "proposals": []}
     # A mid-conversation follow-up is answered fresh and never cached (WS5).
     followup = depends_on_history(message, state.history)
 
@@ -139,7 +220,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
                 cache = rt.episodic(cdb, state.site_key)
                 hits = await cache.query(
                     transcript=message, persona=state.persona,
-                    page=state.page, top_k=settings.episodic_top_k,
+                    page=state.page, top_k=settings.episodic_top_k, lang=state.lang,
                 )
                 # A pinned answer (WS8) replays before the "enough data" gate.
                 best = hits[0] if hits else None
@@ -166,7 +247,8 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
         except Exception as exc:
             logger.debug("usage record (cached) skipped: %s", exc)
         await _record_conversation(state, sid, req.message, replay.answer_text, "cached",
-                                   replay.grounding, served_from_cache=True)
+                                   replay.grounding, served_from_cache=True,
+                                   components=replay.components)
         return {
             "text": replay.answer_text, "ack": "", "intent": "cached",
             "persona": state.persona, "actions": replay.actions,
@@ -174,7 +256,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
             "pages": [], "patches": [],
             # The original answer's sources (WS8); older rows predate storing them.
             "grounding": replay.grounding or {"confidence": 1.0, "found": True, "sources": []},
-            "session_id": sid,
+            "session_id": sid, "lang": state.lang,
         }
 
     async with session_scope() as db:
@@ -189,7 +271,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     personal = personal or contains_pii(result.answer_text)
     if (settings.conversation_cache_enabled and result.answer_text
             and not result.patches and not result.leads and not personal
-            and not followup):
+            and not followup and not result.proposals):
         try:
             async with session_scope() as db:
                 await rt.episodic(db, state.site_key).record(
@@ -197,7 +279,7 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
                     components=[c.to_dict() for c in result.components],
                     actions=[a.to_dict() for a in result.actions],
                     persona=state.persona, page=state.page, channel="text",
-                    grounding=result.grounding.to_dict(),
+                    grounding=result.grounding.to_dict(), lang=state.lang,
                 )
         except Exception as exc:
             logger.warning("chat record failed: %s", exc)
@@ -221,10 +303,55 @@ async def _turn(req: ChatRequest, rt, t0: float, resolved, privacy, sid: str,
     await _record_conversation(state, sid, pii.stored(message),
                                pii.stored(result.answer_text), result.intent,
                                result.grounding.to_dict(), served_from_cache=False,
-                               leads=result.leads)
+                               leads=result.leads,
+                               components=[c.to_dict() for c in result.components])
 
     payload = result.to_message_dict()
     payload["text"] = PiiVault.spoken(payload["text"])
     payload["ack"] = PiiVault.spoken(payload["ack"])
     payload["session_id"] = sid
+    payload["lang"] = state.lang
+    # Actions awaiting the visitor's confirmation (M2-8).
+    payload["proposals"] = await proposal_cards(state.site_key, sid, result.proposals)
     return payload
+
+
+# ---- live takeover on the text path (M2-2) ---------------------------------------
+
+_POLL_S = 25.0
+
+
+@router.get("/chat/live")
+async def chat_live(request: Request, session_id: str, after: int = 0,
+                    key: str | None = None, site: str = "hirebuddha") -> dict:
+    """What the person who took over said since message ``after`` (long poll,
+    up to 25 s), and whether they still have the conversation. Used by the
+    widget's text mode; the voice socket gets the same as pushed events."""
+    import asyncio
+
+    from app.live import store as live_store
+    from app.live.bus import bus, session_topic
+
+    try:
+        async with session_scope() as rdb:
+            resolved = await resolve_public_site(rdb, key=key, site=site, intelligence=None,
+                                                 origin=request.headers.get("origin"))
+    except PublicAccessError as exc:
+        raise HTTPException(status_code=403, detail=exc.reason)
+
+    async def snapshot() -> dict:
+        async with session_scope() as db:
+            msgs = [m for m in await live_store.messages(db, resolved.site_key, session_id)
+                    if m["id"] > after and m["sender"] != "visitor"]
+            tk = await live_store.active(db, resolved.site_key, session_id)
+        return {"messages": msgs, "takeover": {"name": tk.operator_name} if tk else None}
+
+    async with bus.subscribe(session_topic(resolved.site_key, session_id)) as q:
+        first = await snapshot()
+        if first["messages"] or first["takeover"] is None:
+            return first
+        try:
+            await asyncio.wait_for(q.get(), timeout=_POLL_S)
+        except asyncio.TimeoutError:
+            pass
+    return await snapshot()

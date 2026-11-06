@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from urllib.parse import quote
 import logging
 import time
 import uuid
@@ -78,8 +79,15 @@ async def _post(url: str, body: bytes, headers: dict[str, str],
 def _slack_text(lead: dict[str, Any]) -> str:
     who = lead.get("name") or lead["email"]
     at = f" at {lead['company']}" if lead.get("company") else ""
-    return (f"Hot lead (score {lead['score']}): {who}{at} <mailto:{lead['email']}|{lead['email']}>\n"
+    text = (f"Hot lead (score {lead['score']}): {who}{at} <mailto:{lead['email']}|{lead['email']}>\n"
             f"{(lead.get('summary') or '')[:400]}")
+    if lead.get("source") == "conversation":   # they may still be on the site (M2-2)
+        console = get_settings().console_url.rstrip("/")
+        # Straight to this visitor's conversation when we know it (M2-2 follow-up).
+        sid = lead.get("session_id")
+        link = f"{console}/live?session={quote(str(sid), safe='')}" if sid else f"{console}/live"
+        text += f"\n<{link}|Join the conversation in the live inbox>"
+    return text
 
 
 async def deliver_lead(lead: dict[str, Any], *,

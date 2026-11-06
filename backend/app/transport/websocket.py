@@ -21,14 +21,22 @@ import uuid
 import zlib
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from typing import Any, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.db import session_scope
+from app.experiments.apply import session_settings
+from app.live import store as live_store
+from app.live import visitor as live
+from app.live.bus import bus as live_bus, session_topic, site_topic
+from app.live.store import HEARTBEAT_S
 from app.orchestrator.loop import bump_probe, should_probe, THINKER_SWITCH_CONFIDENCE
 from app.orchestrator.result import ClientAction, Grounding
 from app.design.system import ensure_design
-from app.orchestrator.profile import ensure_profile
+from app.i18n.detect import detect, speech_code
+from app.i18n.strings import say
+from app.orchestrator.profile import ensure_profile, profile_for
 from app.orchestrator.rewrite import depends_on_history
 from app.orchestrator.tour_store import load_plan
 from app.tenancy.public_access import PublicAccessError, resolve_public_site
@@ -59,12 +67,11 @@ _MAX_UTTERANCE_BYTES = 16000 * 2 * 60
 
 # Spoken before a replayed (cached) answer so a cache hit sounds like a fresh
 # turn: ack first, then the answer (D-8). Few, fixed phrases so their audio is
-# itself served from the audio cache after the first synthesis.
-_REPLAY_ACKS = ("Sure.", "Good question.", "Happy to explain.")
-
-
-def _replay_ack(transcript: str) -> str:
-    return _REPLAY_ACKS[zlib.crc32(transcript.encode("utf-8")) % len(_REPLAY_ACKS)]
+# itself served from the audio cache after the first synthesis. In the reply's
+# language (M2-7).
+def _replay_ack(transcript: str, lang: str = "en") -> str:
+    acks = say("replay_acks", lang)
+    return acks[zlib.crc32(transcript.encode("utf-8")) % len(acks)]
 
 
 def _sid(prefix: str) -> str:
@@ -82,7 +89,7 @@ def split_for_tts(text: str, min_chars: int = 24) -> list[str]:
     text = (text or "").strip()
     if not text:
         return []
-    parts = re.split(r"(?<=[.!?…])\s+", text)
+    parts = re.split(r"(?<=[.!?…।])\s+", text)   # । ends a Hindi sentence
     out: list[str] = []
     buf = ""
     for s in parts:
@@ -101,13 +108,20 @@ def split_for_tts(text: str, min_chars: int = 24) -> list[str]:
     return out or [text]
 
 
+# Cleanups that must outlive a cancelled socket task (kept referenced).
+_CLEANUPS: set[asyncio.Future] = set()
+
+
 class VoiceSession:
     def __init__(
         self, ws: WebSocket, runtime, site_key: str = "hirebuddha",
         intelligence: str = "advance", tier_locked: bool = False,
-        binary_audio: bool = False,
+        binary_audio: bool = False, visitor: Optional[str] = None,
     ) -> None:
         self.ws = ws
+        # The widget's anonymous visitor id, from the socket URL (M3-3).
+        self._visitor = visitor
+        self._memory: Optional[dict] = None
         # The client asked for TTS audio as binary frames (WS5).
         self.binary_audio = binary_audio
         self.rt = runtime
@@ -115,6 +129,8 @@ class VoiceSession:
         # When the tier is server-resolved from a widget key, the client may not
         # change it mid-session via STATE/sync (docs/defects.md D-1).
         self._tier_locked = tier_locked
+        # An action card waiting for the visitor: (run id, when shown) — M2-8 follow-up.
+        self._pending_run: Optional[tuple[str, float]] = None
         self.state = ConversationState(
             site_key=site_key, intelligence=normalize_intelligence(intelligence)
         )
@@ -123,6 +139,8 @@ class VoiceSession:
         self._response_task: asyncio.Task | None = None
         self._persona_emitted: str | None = None
         self._greeted = False
+        # The site's (or the visitor's test variant's) fixed greeting (M2-4).
+        self._opener: str | None = None
         self._last_utt_text = ""
         self._last_utt_at = 0.0
         # True only while the ANSWER (not the ack) is being spoken — barge-in
@@ -148,6 +166,12 @@ class VoiceSession:
         self._turn_path = "fresh"
         self._first_audio_ms: float | None = None
         self._first_answer_ms: float | None = None
+        # Live takeover (M2-2): who has taken over (None = the agent answers),
+        # when a voice call with them started, and the background tasks that
+        # listen for them and keep this visitor listed as live.
+        self._operator: str | None = None
+        self._call_started: float | None = None
+        self._live_tasks: list[asyncio.Task] = []
 
     # ---- low-level send -------------------------------------------------
     async def send(self, channel: str, type_: str, payload=None, sync_id=None) -> None:
@@ -156,7 +180,17 @@ class VoiceSession:
     # ---- lifecycle ------------------------------------------------------
     async def run(self) -> None:
         await self.ws.accept()
+        from app.transport import drain
+        if drain.draining():
+            # This replica is shutting down (M3-6): the widget tries another.
+            await self.send(Channel.EVENTS, "reconnect", {"reason": "server_restart"})
+            await self.ws.close(code=drain.TRY_AGAIN_LATER)
+            return
+        drain.register(self)
         log_session_id.set(self.session_id[:8])  # on every log line of this socket
+        # The site's own model provider, if its account brought one (M3-4).
+        from app.ai.providers import current_site
+        current_site.set(self.state.site_key)
         try:
             async with session_scope() as db:
                 self.privacy = await get_privacy(db, self.state.site_key)
@@ -164,6 +198,7 @@ class VoiceSession:
             logger.warning("ws[%s]: privacy settings unavailable: %s",
                            self.session_id[:8], exc)
         self.state.pii = PiiVault(enabled=self.privacy.redact_pii)
+        await self._recognise(self._visitor)
         await self.send(Channel.EVENTS, "ready", {
             "session_id": self.session_id,
             "privacy": self.privacy.public(),
@@ -173,6 +208,10 @@ class VoiceSession:
                 "audio_frames": "binary" if self.binary_audio else "json",
             },
         })
+        await live.present(self.state.site_key, self.session_id, "voice",
+                           persona=self.state.persona, page=self.state.page, announce=True)
+        self._live_tasks = [asyncio.create_task(self._live_loop()),
+                            asyncio.create_task(self._heartbeat())]
         try:
             while True:
                 msg = await self.ws.receive()
@@ -189,8 +228,135 @@ class VoiceSession:
                     await self._dispatch(env)
         except WebSocketDisconnect:
             logger.info("ws disconnect session=%s", self.session_id)
+        except RuntimeError as exc:   # closed by a drain mid-receive
+            logger.info("ws closed session=%s: %s", self.session_id, exc)
         finally:
+            drain.unregister(self)
             await self._cancel_response()
+            for t in self._live_tasks:
+                t.cancel()
+            # Shielded: if this task is being cancelled (server shutdown), the
+            # visitor is still marked gone and any takeover ended.
+            leave = asyncio.ensure_future(self._leave_live())
+            _CLEANUPS.add(leave)
+            leave.add_done_callback(_CLEANUPS.discard)
+            try:
+                await asyncio.shield(leave)
+            except asyncio.CancelledError:
+                pass
+
+    async def drain(self, timeout: float) -> bool:
+        """Shutting down (M3-6): finish the answer being spoken, then move the
+        visitor to another replica. True if the answer had to be cut short."""
+        from app.transport import drain
+        try:
+            await self.send(Channel.EVENTS, "reconnect", {"reason": "server_restart"})
+        except Exception:
+            pass
+        cut = await drain.wait_for_turn(self._response_task, timeout)
+        try:
+            await self.ws.close(code=drain.SERVICE_RESTART)
+        except Exception:
+            pass
+        return cut
+
+    # ---- live takeover (M2-2) ---------------------------------------------
+    async def _heartbeat(self) -> None:
+        while True:
+            await asyncio.sleep(HEARTBEAT_S)
+            await live.present(self.state.site_key, self.session_id, "voice",
+                               persona=self.state.persona, page=self.state.page)
+
+    async def _live_loop(self) -> None:
+        async with live_bus.subscribe(session_topic(self.state.site_key, self.session_id)) as q:
+            while True:
+                _, ev = await q.get()
+                try:
+                    await self._on_live(ev)
+                except Exception as exc:   # one bad event mustn't stop the listener
+                    logger.warning("ws[%s]: live event failed: %s", self.session_id[:8], exc)
+
+    async def _on_live(self, ev: dict) -> None:
+        kind = ev.get("type")
+        name = ev.get("operator_name") or self._operator or "A team member"
+        if kind == "takeover_started":
+            self._operator = name
+            await self._cancel_response()          # the agent stops mid-answer
+            await self.send(Channel.EVENTS, "operator_joined", {"name": name})
+        elif kind == "operator_message":
+            await self.send(Channel.EVENTS, "operator_message",
+                            {"name": name, "text": ev.get("text", "")})
+        elif kind == "takeover_ended":
+            self._operator = None
+            self._call_started = None
+            await live.catch_up(self.state, self.state.site_key, self.session_id)
+            await self.send(Channel.EVENTS, "operator_left", {"name": name})
+        elif kind == "action_outcome":
+            # The visitor confirmed or cancelled an action (M2-8): the agent knows.
+            self._pending_run = None
+            self.state.add_turn(f"(I confirmed: {ev.get('label', '')})",
+                                f"({ev.get('status', '')}: {ev.get('message', '')})")
+        elif kind in ("call_offer", "call_ice", "call_hangup"):
+            if kind == "call_hangup":
+                await self._call_ended("The team member hung up")
+            payload = {k: v for k, v in ev.items() if k in ("sdp", "candidate", "ice_servers")}
+            await self.send(Channel.EVENTS, kind, {"name": name, **payload})
+
+    async def _on_call_signal(self, type_: str, payload: dict) -> None:
+        """The visitor's side of a voice call with a person (WebRTC signalling)."""
+        if not self._operator:
+            return
+        event = {"type": type_, "session_id": self.session_id}
+        if type_ == "call_answer":
+            self._call_started = time.monotonic()
+            event["sdp"] = payload.get("sdp")
+        elif type_ == "call_ice":
+            event["candidate"] = payload.get("candidate")
+        elif type_ == "call_decline":
+            await self._call_ended("The visitor declined the call")
+        elif type_ == "call_hangup":
+            await self._call_ended("The visitor hung up")
+        await live_bus.publish(site_topic(self.state.site_key), event)
+
+    async def _call_ended(self, why: str) -> None:
+        started, self._call_started = self._call_started, None
+        if started is not None:
+            minutes = max(1, round((time.monotonic() - started) / 60))
+            why = f"Voice call ended after {minutes} min"
+        try:
+            async with session_scope() as db:
+                await live_store.add_message(db, self.state.site_key, self.session_id,
+                                             "system", why)
+        except Exception as exc:
+            logger.warning("ws[%s]: call note failed: %s", self.session_id[:8], exc)
+
+    async def _to_operator(self, transcript: str) -> bool:
+        """While a person has taken over, the visitor's words go to them."""
+        if not self._operator and not await live.taken_over(self.state.site_key,
+                                                            self.session_id):
+            return False
+        masked = self.state.pii.mask(transcript)
+        await self.send(Channel.STATE, "transcript", {"text": transcript})
+        await live.visitor_said(self.state.site_key, self.session_id, transcript,
+                                self.state.pii.stored(masked))
+        return True
+
+    async def _leave_live(self) -> None:
+        """The visitor left: end any takeover so the operator isn't left waiting."""
+        tk = None
+        try:
+            async with session_scope() as db:
+                tk = await live_store.end(db, self.state.site_key, self.session_id)
+                if tk is not None:
+                    await live_store.add_message(db, self.state.site_key, self.session_id,
+                                                 "system", "The visitor left")
+            if tk is not None:
+                await live_bus.publish(site_topic(self.state.site_key), {
+                    "type": "takeover_ended", "session_id": self.session_id,
+                    "reason": "visitor_left"})
+        except Exception as exc:
+            logger.warning("ws[%s]: leaving live failed: %s", self.session_id[:8], exc)
+        await live.left(self.state.site_key, self.session_id)
 
     async def _dispatch(self, env: dict) -> None:
         channel = env.get("channel")
@@ -198,6 +364,8 @@ class VoiceSession:
         payload = env.get("payload") or {}
 
         if channel == Channel.AUDIO:
+            if self._call_started is not None:
+                return   # on a call with a person: the agent doesn't listen
             if self.privacy.consent_required and self._consent_at is None:
                 await self._ask_consent()
                 return
@@ -227,6 +395,9 @@ class VoiceSession:
             await self._on_hello(payload)
         elif channel == Channel.EVENTS and type_ == "tour_say":
             await self._on_tour_say(payload)
+        elif channel == Channel.EVENTS and type_ in ("call_answer", "call_ice", "call_decline",
+                                                     "call_hangup"):
+            await self._on_call_signal(type_, payload)
         elif channel == Channel.STATE:
             if type_ == "barge_in":
                 await self._on_barge_in(payload)
@@ -284,13 +455,33 @@ class VoiceSession:
 
         final = ""
         try:
-            async for ev in self.rt.engines.asr.transcribe_stream(chunks()):
+            langs = self._asr_languages()
+            asr = self.rt.engines.asr
+            stream = (asr.transcribe_stream(chunks(), langs) if len(langs) > 1
+                      else asr.transcribe_stream(chunks()))
+            async for ev in stream:
                 if ev.is_final and ev.text:
                     final = ev.text
         except Exception as exc:  # ASR failure shouldn't kill the socket
             prom.ENGINE_ERRORS.labels("asr").inc()
             logger.warning("ASR failed: %s", exc)
         return final
+
+    def _asr_languages(self) -> list[str]:
+        """What to listen for (M2-7): on a Hindi site, the conversation's
+        language first and the other as an alternative the recogniser may pick."""
+        if "hi" not in profile_for(self.state.site_key).languages:
+            return [self.rt.settings.asr_language]
+        first = speech_code(self.state.lang)
+        return [first, "en-IN" if first == "hi-IN" else "hi-IN"]
+
+    async def _set_language(self, transcript: str) -> None:
+        """This turn's reply language; tells the widget when it changes, so its
+        own speech recognition listens for the right language."""
+        before = self.state.lang
+        self.state.pick_language(transcript, profile_for(self.state.site_key).languages)
+        if self.state.lang != before:
+            await self.send(Channel.EVENTS, "language", {"lang": self.state.lang})
 
     # ---- turn handling --------------------------------------------------
     async def _budget_blocked(self) -> bool:
@@ -312,6 +503,8 @@ class VoiceSession:
         return False
 
     async def _on_utterance(self, transcript: str) -> None:
+        if await self._to_operator(transcript):
+            return
         if await self._budget_blocked():
             return
         sid = self.session_id[:8]
@@ -345,9 +538,33 @@ class VoiceSession:
         self._greeted = True
         await self._cancel_response()
 
-        # Only offer the tour if the client hasn't opted out (data-tour="false");
-        # otherwise the visitor still gets the spoken welcome.
-        if payload.get("tour", True) is not False:
+        # A Hindi widget on a site that answers in Hindi starts in Hindi (M2-7).
+        profile = profile_for(self.state.site_key)
+        self.state.start_language(payload.get("lang"), profile.languages)
+
+        # The greeting, starting persona and tour switch: the visitor's test
+        # variant, else the site's defaults (M2-4). In Hindi: the site's Hindi
+        # greeting, else a welcome the model writes in Hindi.
+        start = await session_settings(self.state.site_key, payload.get("exp"))
+        if self.state.lang == "hi":
+            self._opener = profile.greeting_hi or None
+        else:
+            self._opener = start["greeting"]
+        if start["persona"] and not payload.get("persona"):
+            self.state.persona = start["persona"]
+        # A returning visitor who asked to be remembered (M3-3): welcomed back.
+        from app.memory import store as memory
+        mem = await self._recognise(payload.get("visitor") or self.state.visitor_id)
+        if mem is not None:
+            back = memory.greeting(mem, self.state.lang)
+            if back:
+                self._opener = back
+
+        # Only offer the tour if the client hasn't opted out (data-tour="false")
+        # and the site hasn't switched it off; otherwise the visitor still gets
+        # the spoken welcome. A returning visitor welcomed back has had it.
+        welcomed_back = mem is not None and memory.greeting(mem, self.state.lang) is not None
+        if payload.get("tour", True) is not False and start["tour"] and not welcomed_back:
             plan = await self._load_tour()
             if plan is not None:
                 self._tour_plan = plan
@@ -412,6 +629,9 @@ class VoiceSession:
             logger.exception("ws[%s]: tour_say failed: %s", self.session_id[:8], exc)
 
     async def _welcome(self) -> None:
+        if self._opener:
+            await self._say_opener(self._opener)
+            return
         try:
             async with session_scope() as db:
                 bridge = self.rt.bridge(db, self.state.site_key)
@@ -427,13 +647,32 @@ class VoiceSession:
             self._spawn(self._record_turn(
                 question="(visitor arrived on the page)",
                 answer_text=think.answer_text, components=think.components,
-                actions=think.actions, channel="welcome",
+                actions=think.actions, channel="welcome", lang=self.state.lang,
             ))
         except asyncio.CancelledError:
             await self.send(Channel.EVENTS, "interrupted", {})
             raise
         except Exception as exc:
             logger.exception("welcome failed: %s", exc)
+
+    async def _say_opener(self, text: str) -> None:
+        """The site's fixed greeting, spoken as written (no model call)."""
+        try:
+            self._answer_speaking = True
+            try:
+                await self._speak(text, _sid("welcome"))
+            finally:
+                self._answer_speaking = False
+            self.state.add_turn("(visitor arrived on the page)", text)
+            self._spawn(self._record_turn(
+                question="(visitor arrived on the page)", answer_text=text,
+                components=[], actions=[], channel="welcome", lang=self.state.lang,
+            ))
+        except asyncio.CancelledError:
+            await self.send(Channel.EVENTS, "interrupted", {})
+            raise
+        except Exception as exc:
+            logger.exception("opener failed: %s", exc)
 
     async def _respond(self, heard: str) -> None:
         # PII masking (WS8): from here on the router, the thinker, the history
@@ -445,6 +684,15 @@ class VoiceSession:
         # A mid-conversation follow-up ("how much is it?") only makes sense in
         # this conversation: answer it fresh and don't cache it (WS5).
         followup = depends_on_history(transcript, self.state.history)
+        await self._set_language(transcript)
+        if await self._voice_answer(heard):
+            return
+        if await self._forget_request(heard):
+            return
+        if await self._recap_request(heard):
+            return
+        if await self._safety_reply(heard, transcript):
+            return
 
         # Cache-first (Feature 2): if we've answered a near-identical question for
         # this persona before and have enough history, replay it verbatim
@@ -458,6 +706,106 @@ class VoiceSession:
                 await self._respond_fresh(heard, transcript, personal, followup)
         finally:
             self._turn_t0 = None  # later speech (a reaction, the tour) isn't this turn
+
+    async def _voice_answer(self, heard: str) -> bool:
+        """A spoken yes/no while an action's card is open (M2-8 follow-up): the
+        widget presses the card's button, which confirms through the usual path."""
+        pending = self._pending_run
+        if not pending or time.monotonic() - pending[1] > 15 * 60:
+            return False
+        from app.actions.voice import answer
+        yes = answer(heard)
+        if yes is None:
+            return False
+        self._pending_run = None
+        await self.send(Channel.STATE, "transcript", {"text": heard})
+        await self.send(Channel.EVENTS, "action_answer", {"run_id": pending[0], "confirm": yes})
+        return True
+
+    async def _recognise(self, visitor: Any) -> Optional[dict]:
+        """The widget's anonymous visitor id (M3-3): the conversation is linked
+        to it while they have opted into memory (the record checks), and a
+        returning visitor's memory goes into the history. Once per socket."""
+        from app.memory import store as memory
+        visitor = memory.valid_visitor(visitor)
+        if not visitor or not self._tier_locked:
+            return None
+        if self.state.visitor_id == visitor:
+            return self._memory
+        self.state.visitor_id = visitor
+        try:
+            async with session_scope() as mdb:
+                self._memory = await memory.get(mdb, self.state.site_key, visitor)
+                if self._memory is not None:
+                    await memory.seen(mdb, self.state.site_key, visitor)
+                    await mdb.commit()
+        except Exception as exc:
+            logger.warning("ws[%s]: visitor memory unavailable: %s", self.session_id[:8], exc)
+            self._memory = None
+        if self._memory is not None:
+            self.state.remember(visitor, self._memory)
+        return self._memory
+
+    async def _forget_request(self, heard: str) -> bool:
+        """"Forget me" said out loud (M3-3): the memory goes, and the visitor hears so."""
+        from app.memory import store as memory
+        if not self._tier_locked or not memory.wants_forget(heard):
+            return False
+        gone = False
+        if self.state.visitor_id:
+            async with session_scope() as mdb:
+                gone = await memory.forget(mdb, self.state.site_key, self.state.visitor_id)
+                await mdb.commit()
+        self.state.visitor_id = None
+        self.state.memory_loaded = False
+        text = (memory.FORGOT if gone else memory.NOTHING)["hi" if self.state.lang == "hi" else "en"]
+        await self.send(Channel.STATE, "transcript", {"text": heard})
+        await self.send(Channel.EVENTS, "memory_forgotten", {})
+        self._answer_speaking = True
+        try:
+            await self._speak(text, _sid("utt"))
+        finally:
+            self._answer_speaking = False
+        return True
+
+    async def _recap_request(self, heard: str) -> bool:
+        """"Send me this" said out loud (M2-6 follow-up): the widget makes the
+        recap (the same call as a typed request), so no agent turn. Only for a
+        registered website (key), where recaps exist."""
+        from app.recaps.intent import email_in, wants_recap
+        if not self._tier_locked or not wants_recap(heard):
+            return False
+        await self.send(Channel.STATE, "transcript", {"text": heard})
+        await self.send(Channel.EVENTS, "recap_request", {"email": email_in(heard)})
+        return True
+
+    async def _safety_reply(self, heard: str, transcript: str) -> bool:
+        """Medical safety (M2-9): advice and emergencies get a fixed answer,
+        spoken without a model call, and are never cached."""
+        if profile_for(self.state.site_key).safety != "medical":
+            return False
+        from app.trust.safety import check, reply
+        verdict = check(transcript)
+        if not verdict:
+            return False
+        text = reply(verdict, self.state.lang)
+        try:
+            await self.send(Channel.STATE, "transcript", {"text": heard})
+            self._answer_speaking = True
+            try:
+                await self._speak(text, _sid("utt"))
+            finally:
+                self._answer_speaking = False
+        except asyncio.CancelledError:
+            await self.send(Channel.EVENTS, "interrupted", {})
+            raise
+        self.state.add_turn(transcript, text)
+        self._last_utt_text = ""
+        self._spawn(self._record_conversation(
+            question=self.state.pii.stored(transcript), answer=text, intent=f"safety_{verdict}",
+            grounding={"confidence": 1.0, "found": True, "sources": []}, served_from_cache=False,
+            lang=self.state.lang_seen))
+        return True
 
     async def _respond_fresh(self, heard: str, transcript: str, personal: bool,
                              followup: bool) -> None:
@@ -493,7 +841,7 @@ class VoiceSession:
             heavy = self.rt.loop.needs_heavy(transcript, route.intent, self.state)
             think_task = asyncio.create_task(
                 self._think(transcript, persona, heavy,
-                            related=self._related, probe=probe)
+                            related=self._related, probe=probe, search=route.query_en)
             )
 
             await self._speak(pii.spoken(route.ack), _sid("ack"))
@@ -522,9 +870,17 @@ class VoiceSession:
                 if self.state.update_component_state(p.target_sync_id, p.patch) is not None:
                     await self.send(Channel.DATA, "patch", p.to_dict(), p.target_sync_id)
 
-            # 4. Emit EVENTS (DOM commands)
+            # 4. Emit EVENTS (DOM commands), and any action awaiting the
+            #    visitor's confirmation (M2-8)
             for action in think.actions:
                 await self._emit_action(action)
+            if think.proposals:
+                from app.routes.actions import proposal_cards
+                for card in await proposal_cards(self.state.site_key, self.session_id,
+                                                 think.proposals):
+                    await self.send(Channel.EVENTS, "action_proposal", card, _sid("evt"))
+                    # The visitor may answer it out loud (M2-8 follow-up).
+                    self._pending_run = (card["id"], time.monotonic())
 
             # 5. Stream the grounded answer as TTS, synced to its component
             self._answer_speaking = True  # now interruptible by a real barge-in
@@ -544,11 +900,12 @@ class VoiceSession:
             # A patch targets this session's components, and a captured lead holds
             # one visitor's contact details, so neither turn may be replayed.
             personal = personal or contains_pii(think.answer_text)
-            if not think.patches and not think.leads and not personal and not followup:
+            if (not think.patches and not think.leads and not personal and not followup
+                    and not think.proposals):
                 self._spawn(self._record_turn(
                     question=transcript, answer_text=think.answer_text,
                     components=think.components, actions=think.actions,
-                    channel="voice", grounding=think.grounding,
+                    channel="voice", grounding=think.grounding, lang=self.state.lang,
                 ))
             # Record cost/performance for this generated voice turn (req F/G).
             self._spawn(self._record_usage(
@@ -560,7 +917,8 @@ class VoiceSession:
                 question=pii.stored(transcript), answer=pii.stored(think.answer_text),
                 intent=route.intent,
                 grounding=think.grounding.to_dict(), served_from_cache=False,
-                leads=think.leads,
+                leads=think.leads, components=[c.to_dict() for c in think.components],
+                lang=self.state.lang_seen,
             ))
         except asyncio.CancelledError:
             logger.info("ws[%s]: turn CANCELLED before completion (barge-in or "
@@ -570,7 +928,7 @@ class VoiceSession:
         except Exception as exc:
             prom.ENGINE_ERRORS.labels("llm").inc()
             logger.exception("ws[%s]: response failed: %s", self.session_id[:8], exc)
-            await self.send(Channel.EVENTS, "error", {"message": "Something went wrong."})
+            await self.send(Channel.EVENTS, "error", {"message": say("error", self.state.lang)})
         finally:
             # Never leave the concurrently-started thinker running orphaned (e.g.
             # a barge-in cancelled us mid-ack).
@@ -582,7 +940,7 @@ class VoiceSession:
                     pass
 
     async def _think(self, transcript: str, persona, heavy: bool = True,
-                     related=None, probe: bool = False):
+                     related=None, probe: bool = False, search: str = ""):
         """Run the chosen reasoning path in its own DB session so it executes
         concurrently with the spoken ack. ``heavy`` selects the grounded tool
         loop; otherwise the lean single-shot path answers (Hybrid). ``related``
@@ -590,10 +948,10 @@ class VoiceSession:
         in a qualifying question."""
         with prom.timed("think_heavy" if heavy else "think_lean"):
             return await self._think_in_session(transcript, persona, heavy,
-                                                related=related, probe=probe)
+                                                related=related, probe=probe, search=search)
 
     async def _think_in_session(self, transcript: str, persona, heavy: bool,
-                                related=None, probe: bool = False):
+                                related=None, probe: bool = False, search: str = ""):
         async with session_scope() as db:
             bridge = self.rt.bridge(db, self.state.site_key)
             if heavy:
@@ -603,6 +961,7 @@ class VoiceSession:
                 )
             return await self.rt.loop.think_lean(
                 transcript, self.state, bridge, persona, related=related, probe=probe,
+                search=search,
             )
 
     async def _emit_action(self, action: ClientAction) -> None:
@@ -687,15 +1046,20 @@ class VoiceSession:
         streams live TTS and persists it for next time (Feature 2 audio cache).
         A TTS failure ends the segment silently; the text is already shown."""
         use_cache = self.rt.settings.audio_cache_enabled
+        # Spoken in Hindi when written in Hindi (M2-7); English as before.
+        language = "hi-IN" if detect(seg_text) == "hi" else ""
         buf = bytearray()
         try:
             if use_cache:
-                cached = await self._audio_cache_get(seg_text)
+                cached = await self._audio_cache_get(seg_text, language)
                 if cached is not None:
                     for frame in self._frames(cached):
                         q.put_nowait(frame)
                     return
-            async for chunk in self.rt.engines.tts.synthesize_stream(seg_text):
+            tts = self.rt.engines.tts
+            stream = (tts.synthesize_stream(seg_text, language) if language
+                      else tts.synthesize_stream(seg_text))
+            async for chunk in stream:
                 if chunk:
                     buf.extend(chunk)
                     q.put_nowait(bytes(chunk))
@@ -709,7 +1073,7 @@ class VoiceSession:
         finally:
             q.put_nowait(None)
         if use_cache and buf:
-            await self._audio_cache_put(seg_text, bytes(buf))
+            await self._audio_cache_put(seg_text, bytes(buf), language)
 
     def _frames(self, pcm: bytes) -> list[bytes]:
         """Re-chunk cached PCM into ~0.2s frames so playback ramps like live TTS."""
@@ -744,24 +1108,24 @@ class VoiceSession:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
-    async def _audio_cache_get(self, seg_text: str):
+    async def _audio_cache_get(self, seg_text: str, language: str = ""):
         try:
             async with session_scope() as db:
                 cache = self.rt.audio_cache(db)
-                return await cache.get(cache.key(seg_text))
+                return await cache.get(cache.key(seg_text, language))
         except Exception:
             return None
 
-    async def _audio_cache_put(self, seg_text: str, pcm: bytes) -> None:
+    async def _audio_cache_put(self, seg_text: str, pcm: bytes, language: str = "") -> None:
         try:
             async with session_scope() as db:
                 cache = self.rt.audio_cache(db)
-                await cache.put(cache.key(seg_text), self.state.site_key, pcm)
+                await cache.put(cache.key(seg_text, language), self.state.site_key, pcm)
         except Exception:
             pass
 
     async def _record_turn(self, *, question, answer_text, components, actions,
-                           channel, grounding=None) -> None:
+                           channel, grounding=None, lang: str = "en") -> None:
         if not self.rt.settings.conversation_cache_enabled or not answer_text:
             return
         try:
@@ -773,12 +1137,14 @@ class VoiceSession:
                     actions=[a.to_dict() for a in actions],
                     persona=self.state.persona, page=self.state.page, channel=channel,
                     grounding=grounding.to_dict() if grounding is not None else None,
+                    lang=lang,
                 )
         except Exception as exc:
             logger.warning("ws[%s]: record_turn failed: %s", self.session_id[:8], exc)
 
     async def _record_conversation(self, *, question, answer, intent, grounding,
-                                   served_from_cache, leads=()) -> None:
+                                   served_from_cache, leads=(), components=(),
+                                   lang: str = "en") -> None:
         """Append the turn to this session's transcript (Insights, WS10), then
         save any lead the agent captured in it (WS7)."""
         from app.insights.store import record_turn as record_conversation_turn
@@ -789,11 +1155,13 @@ class VoiceSession:
                     channel="voice", question=question, answer=answer, intent=intent,
                     persona=self.state.persona, page=self.state.page,
                     grounding=grounding, served_from_cache=served_from_cache,
-                    consent_at=self._consent_at,
+                    consent_at=self._consent_at, components=list(components),
+                    lang=lang, visitor_id=self.state.visitor_id,
                 )
         except Exception as exc:
             logger.warning("ws[%s]: conversation record failed: %s",
                            self.session_id[:8], exc)
+        await live.agent_turn(self.state.site_key, self.session_id, question, answer)
         if leads:
             from app.leads.capture import save_captured
             await save_captured(self.state.site_key, self.session_id,
@@ -856,7 +1224,7 @@ class VoiceSession:
                 cache = self.rt.episodic(db, self.state.site_key)
                 hits = await cache.query(
                     transcript=transcript, persona=self.state.persona,
-                    page=self.state.page, top_k=st.episodic_top_k,
+                    page=self.state.page, top_k=st.episodic_top_k, lang=self.state.lang,
                 )
                 total = await cache.count(persona=self.state.persona)
         except Exception as exc:
@@ -883,7 +1251,7 @@ class VoiceSession:
         logger.info("ws[%s]: REPLAY (score=%.3f, %d components) for %r",
                     self.session_id[:8], best.score, len(best.components),
                     transcript[:80])
-        ack = _replay_ack(transcript)
+        ack = _replay_ack(transcript, self.state.lang)
         try:
             await self.send(Channel.STATE, "transcript", {"text": transcript})
             await self._speak(ack, _sid("ack"))
@@ -924,6 +1292,8 @@ class VoiceSession:
         self._spawn(self._record_conversation(
             question=transcript, answer=best.answer_text, intent="cached",
             grounding=best.grounding, served_from_cache=True,
+            components=list(getattr(best, "components", None) or []),
+            lang=self.state.lang_seen,
         ))
 
     async def _emit_cached_action(self, action: dict) -> None:
@@ -970,7 +1340,8 @@ class VoiceSession:
         if not entry:
             return
         try:
-            text = await self.rt.loop.react(entry, self.state.persona, self.state.site_key)
+            text = await self.rt.loop.react(entry, self.state.persona, self.state.site_key,
+                                            self.state.lang)
         except Exception as exc:
             logger.warning("ws[%s]: react failed: %s", self.session_id[:8], exc)
             return
@@ -1045,9 +1416,12 @@ async def voice_ws(websocket: WebSocket) -> None:
     # Load the site's agent profile (name, personas, sitemap) for the prompts.
     await ensure_profile(resolved.site_key)
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
+    from app.routes.actions import ensure_extras
+    await ensure_extras(resolved.site_key)  # the site's actions + components (M2-8)
     session = VoiceSession(
         websocket, runtime, site_key=resolved.site_key,
         intelligence=resolved.intelligence, tier_locked=resolved.tier_locked,
         binary_audio=websocket.query_params.get("audio") == "binary",
+        visitor=websocket.query_params.get("visitor"),
     )
     await session.run()

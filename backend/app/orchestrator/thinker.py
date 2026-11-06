@@ -93,6 +93,9 @@ class ThinkResult:
     # Contact details the visitor shared (capture_lead); saved by the transport
     # once the turn is recorded, so the lead links to its conversation.
     leads: list[Any] = field(default_factory=list)
+    # Actions proposed this turn (M2-8): (Action, checked inputs). Stored as
+    # runs by the transport; nothing happens until the visitor confirms.
+    proposals: list[Any] = field(default_factory=list)
     grounding: Grounding = field(default_factory=Grounding)
     # Cost analytics (req F): which LLM tier ran + the tokens/tool-calls it spent.
     llm_kind: str = "thinker"        # 'fast' (lean) | 'thinker' (heavy)
@@ -122,12 +125,15 @@ class HeavyThinker:
         probe: bool = False,
         on_screen: Optional[dict[str, dict]] = None,
         pii: Optional[PiiVault] = None,
+        lang: str = "en",
+        seen: str = "en",
     ) -> ThinkResult:
         extreme_brief = build_extreme_brief(site_key) if intelligence == "extreme" else None
         system = build_thinker_system(
             persona, site_key, intelligence=intelligence,
             page=page, section=section, sections=sections,
             extreme_brief=extreme_brief, related=related, probe=probe,
+            lang=lang, seen=seen,
         )
         gated_tools = tools_for(intelligence, site_key)
         on_screen = dict(on_screen or {})
@@ -175,7 +181,7 @@ class HeavyThinker:
                 break
 
             # Replay the model's tool-call turn (required for Vertex ordering).
-            messages.append(ChatMessage(role="model", tool_calls=resp.tool_calls))
+            messages.append(ChatMessage(role="model", tool_calls=resp.tool_calls, raw=resp.raw))
             productive = False  # did this turn do anything other than over-budget search?
             for call in resp.tool_calls:
                 over_budget = (
@@ -282,9 +288,14 @@ class HeavyThinker:
         if name in COMPONENT_TOOLS:
             if name == "render_component":
                 sync_id = _sync_id("ui")
-                ctype, st = normalize_component(
-                    args.get("component_type", "table"), args.get("initial_state", {}) or {}
-                )
+                try:
+                    ctype, st = normalize_component(
+                        args.get("component_type", "table"), args.get("initial_state", {}) or {},
+                        site_key=site_key,
+                    )
+                except ValueError as exc:   # a custom component's props didn't fit
+                    return {"ok": False, "error": str(exc),
+                            "hint": "Pass initial_state matching the component's props."}
                 result.components.append(ComponentPayload(
                     sync_id=sync_id,
                     component_type=ctype,
@@ -322,6 +333,27 @@ class HeavyThinker:
                             "VALID ROUTES, or answer without navigating.",
                 }
             return {"ok": True}
+
+        if name.startswith("action_"):
+            from app.actions.fields import InputError, validate_inputs
+            from app.actions.store import actions_for
+            action = next((a for a in actions_for(site_key) if a.tool_name == name), None)
+            if action is None:
+                return {"ok": False, "error": "unknown action"}
+            if any(p[0].name == action.name for p in result.proposals):
+                return {"ok": False, "error": "already proposed this turn"}
+            # The model saw placeholders; the action gets what the visitor typed.
+            if pii is not None:
+                args = pii.unmask_args(args)
+            try:
+                inputs = validate_inputs(action.fields, args)
+            except InputError as exc:
+                return {"ok": False, "error": str(exc),
+                        "hint": "Ask the visitor for what's missing, then call it again."}
+            result.proposals.append((action, inputs))
+            return {"ok": True, "status": "waiting_for_the_visitor",
+                    "note": "Nothing has happened yet. Tell the visitor to check the details "
+                            "on screen and press Confirm; never say it is done."}
 
         if name == "capture_lead":
             from app.leads.store import LeadError, LeadIn
@@ -368,12 +400,12 @@ class HeavyThinker:
 
     async def react(
         self, *, component_type: str, state: dict,
-        persona: Optional[str] = None, site_key: str = "hirebuddha",
+        persona: Optional[str] = None, site_key: str = "hirebuddha", lang: str = "en",
     ) -> str:
         """A short, live spoken reaction to the visitor interacting with a
         component. Ungrounded by design (it comments on the numbers they're
         exploring), so it uses the fast model and no tools."""
-        system = build_reaction_system(persona, site_key, component_type, state)
+        system = build_reaction_system(persona, site_key, component_type, state, lang)
         try:
             resp = await self._llm.generate(
                 system=system,
@@ -401,6 +433,7 @@ class HeavyThinker:
         page: Optional[str] = None,
         section: Optional[str] = None,
         sections: Optional[list[dict]] = None,
+        lang: str = "en",
     ) -> ThinkResult:
         """Agent-initiated greeting that introduces the current page (Req 3.x,
         voice-first onboarding). Grounded via the same query_cortex loop."""
@@ -423,4 +456,6 @@ class HeavyThinker:
             page=page,
             section=section,
             sections=sections,
+            lang=lang,
+            seen=lang,
         )

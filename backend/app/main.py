@@ -1,14 +1,16 @@
 """FastAPI application entrypoint."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.audit import AuditMiddleware
 from app.config import get_settings
 from app.cors import ScopedCORSMiddleware
+from app.licence.guard import LicenceGuard
+from app.security.headers import SecurityHeadersMiddleware
 from app.db import dispose_engine, init_db
 from app.logging_config import configure_logging
 from app.observability.errors import setup_sentry
@@ -27,15 +29,29 @@ from app.routes import (
     ingestion,
     insights,
     leads,
+    live,
     onboarding,
     privacy,
+    sso,
+    team,
     tours,
+    triggers,
+    digest,
+    recaps,
+    actions,
+    templates,
     websites,
+    model_provider,
+    agent_access,
+    campaigns,
+    licence,
+    status as status_page,
+    memory,
     widget,
 )
 from app.runtime import build_runtime
 from app.transport import websocket as ws_transport
-from app.trust.retention import retention_sweep_loop
+from app.jobs import build_scheduler
 
 settings = get_settings()
 configure_logging(settings.log_level, settings.log_format)
@@ -50,12 +66,19 @@ async def lifespan(app: FastAPI):
     await init_db()
     app.state.runtime = build_runtime()
     logger.info("A2UI orchestrator ready (mock_ai=%s)", settings.mock_ai)
-    # Delete visitor data past each site's retention window (WS8).
-    sweep = (asyncio.create_task(retention_sweep_loop(settings.retention_sweep_minutes * 60))
-             if settings.retention_sweep_minutes > 0 else None)
+    # Periodic jobs (M2-0): retention sweep (WS8), email outbox, …
+    scheduler = build_scheduler(settings)
+    scheduler.start()
+    app.state.scheduler = scheduler
+    from app.observability import health
+    health.current_app = app
+    # On SIGTERM, voice sessions move to another replica first (M3-6).
+    from app.transport import drain
+    drain.reset()
+    drain.install_signal_hook(settings.drain_seconds)
     yield
-    if sweep:
-        sweep.cancel()
+    await drain.drain(settings.drain_seconds)
+    await scheduler.stop()
     await dispose_engine()
 
 
@@ -64,11 +87,18 @@ app = FastAPI(title="A2UI Orchestrator", version="0.1.0", lifespan=lifespan)
 # The public widget and the admin API share this app but not a CORS policy:
 # CORS_ORIGINS covers the widget surface, ADMIN_CORS_ORIGINS the console-only
 # /auth + /tenant routes (docs/defects.md D-21).
+# Self-hosted installs: console changes need a usable licence (M3-5). Inside
+# CORS so its refusals carry CORS headers.
+app.add_middleware(LicenceGuard)
 app.add_middleware(
     ScopedCORSMiddleware,
     public_origins=settings.cors_origin_list,
     admin_origins=settings.admin_cors_origin_list,
 )
+# Security headers on every response (M2-11).
+app.add_middleware(SecurityHeadersMiddleware, hsts=not settings.is_dev_env)
+# Every successful change made through /tenant routes goes in the audit log (M2-1).
+app.add_middleware(AuditMiddleware)
 # Outermost: every response (CORS preflights included) gets an X-Request-ID,
 # and every log line written while handling it carries that id (F-3).
 app.add_middleware(ObservabilityMiddleware)
@@ -96,3 +126,24 @@ app.include_router(experiments.public)
 app.include_router(experiments.admin)
 app.include_router(billing.admin)
 app.include_router(billing.webhooks)
+app.include_router(team.router)
+app.include_router(sso.public)
+app.include_router(sso.admin)
+app.include_router(live.router)
+app.include_router(triggers.public)
+app.include_router(triggers.admin)
+app.include_router(digest.admin)
+app.include_router(digest.public)
+app.include_router(recaps.public)
+app.include_router(recaps.admin)
+app.include_router(actions.public)
+app.include_router(actions.admin)
+app.include_router(templates.router)
+app.include_router(model_provider.router)
+app.include_router(agent_access.public)
+app.include_router(agent_access.admin)
+app.include_router(memory.router)
+app.include_router(campaigns.public)
+app.include_router(campaigns.admin)
+app.include_router(licence.router)
+app.include_router(status_page.router)

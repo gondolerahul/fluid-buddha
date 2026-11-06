@@ -25,6 +25,12 @@ SECTION_TYPES: dict[str, str] = {
     "enquiry_form": "lead capture. props: {title?, fields:[{name,label,type}], submit_label?, operation_id?}",
     "cta": "call to action. props: {title, body?, cta_label}",
     "media": "image/logo. props: {src, alt?, caption?}",
+    # M3-1: landing-page sections.
+    "testimonials": "customer quotes. props: {title?, items:[{quote, name, role?}]}",
+    "logos": "customer logos. props: {title?, items:[{src, alt}]}",
+    "faq": "questions and answers. props: {title?, items:[{q, a}]}",
+    "comparison": "side-by-side table. props: {title?, columns:[...], rows:[{label, values:[...]}]}",
+    "roi_calculator": "interactive ROI estimate. props: {title?, seats?, monthly_cost?, hours_saved?, hourly_value?}",
 }
 
 _MAX_SECTIONS = 12

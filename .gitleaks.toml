@@ -1,0 +1,11 @@
+# Secret scanning (M2-11): gitleaks' default rules, run over the full history
+# in CI (.github/workflows/ci.yml, job "secrets").
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Values that look like keys but aren't secrets"
+regexes = [
+  # Widget keys are public by design: they ship in every customer page's source.
+  '''fbk_[A-Za-z0-9_-]+''',
+]

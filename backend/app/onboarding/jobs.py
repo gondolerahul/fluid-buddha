@@ -179,6 +179,8 @@ async def _personas(site_key: str, pages, settings) -> int:
         llm = None
         if not settings.mock_ai:
             from app.ai.factory import build_engines
+            from app.ai.providers import current_site
+            current_site.set(site_key)   # the account's own model, if any (M3-4)
             llm = build_engines(settings).llm
         personas = await derive_personas(pages, llm, mock=settings.mock_ai)
         if not personas:

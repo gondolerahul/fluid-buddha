@@ -19,6 +19,7 @@ from app.ai.base import ChatMessage, LLMClient
 from app.config import Settings
 from app.cortex.bridge import CortexBridge
 from app.cortex.query import citations, query_cortex
+from app.i18n.strings import say
 from app.orchestrator.prompts import build_lean_system
 from app.orchestrator.result import Grounding
 from app.orchestrator.rewrite import retrieval_query
@@ -32,7 +33,8 @@ _HEAVY_INTENTS = {"pricing_roi", "integration", "navigation"}
 _HEAVY_KW = re.compile(
     r"\b(show|diagram|chart|graph|table|compare|comparison|calculat|roi|pricing|"
     r"price|cost|quote|integrat|navigat|take me|go to|scroll|walk me|draw|visual|"
-    r"generate|build me|demo|tour)\b",
+    r"generate|build me|demo|tour|pay|buy|purchase|subscribe|checkout|quote|trial|"
+    r"book|schedule|meeting|sign me up)\b",
     re.IGNORECASE,
 )
 
@@ -78,11 +80,16 @@ class LeanResponder:
         section: Optional[str] = None,
         related: Optional[list] = None,
         probe: bool = False,
+        lang: str = "en",
+        seen: str = "en",
+        search: str = "",
     ) -> ThinkResult:
         t0 = time.monotonic()
         # 1. One grounding retrieval (no tool round-trip). A follow-up ("how
-        #    much is it?") searches with the question it follows (WS5).
-        query = retrieval_query(user_text, history)
+        #    much is it?") searches with the question it follows (WS5). A
+        #    question in Hindi searches the English knowledge with the router's
+        #    English version of it (M2-7).
+        query = search or retrieval_query(user_text, history)
         if query != user_text:
             logger.info("lean: follow-up retrieval query %r", query[:120])
         res = await query_cortex(
@@ -100,6 +107,7 @@ class LeanResponder:
         system = build_lean_system(
             persona, site_key, res.get("snippets", []),
             page=page, section=section, related=related, probe=probe,
+            lang=lang, seen=seen,
         )
         messages = list(history) + [ChatMessage(role="user", text=user_text)]
         resp = await self._llm.generate(
@@ -111,11 +119,8 @@ class LeanResponder:
             max_output_tokens=400,
             thinking_budget=0,
         )
-        answer = resp.text.strip() or (
-            "Here's what I can tell you — want me to go deeper on any part?"
-            if grounding.found
-            else "I want to get this exactly right — let me connect you with the team."
-        )
+        answer = resp.text.strip() or say(
+            "lean_found" if grounding.found else "lean_missing", lang)
         logger.info(
             "lean done in %.1fs: grounded=%s answer_len=%d",
             time.monotonic() - t0, grounding.found, len(answer),

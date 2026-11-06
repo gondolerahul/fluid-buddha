@@ -1,0 +1,6 @@
+# Per-install state: never in the repo.
+.env
+secrets/
+certs/
+backups/
+images/

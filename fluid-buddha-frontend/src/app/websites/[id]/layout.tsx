@@ -4,6 +4,7 @@ import { useRequireAuth } from "@/lib/auth";
 import { AppHeader, WebsiteTabs } from "@/components/Chrome";
 import { WebsiteProvider, useWebsite } from "@/components/WebsiteContext";
 import { LoadingScreen } from "@/components/ui";
+import { ViewOnlyNote } from "@/components/Permission";
 
 export default function WebsiteLayout({ children }: { children: React.ReactNode }) {
   const auth = useRequireAuth();
@@ -16,7 +17,7 @@ export default function WebsiteLayout({ children }: { children: React.ReactNode 
     <WebsiteProvider id={id}>
       <AppHeader />
       <Header id={id} />
-      <main className="content" style={{ margin: "0 auto" }}>{children}</main>
+      <main className="content" style={{ margin: "0 auto" }}><ViewOnlyNote />{children}</main>
     </WebsiteProvider>
   );
 }

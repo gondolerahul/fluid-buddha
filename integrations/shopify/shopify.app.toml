@@ -1,0 +1,17 @@
+# Shopify app config (M2-10). The app is a theme app extension only: an app
+# embed that merchants switch on in the theme editor. Fill in client_id from
+# your Shopify Partner dashboard (`shopify app config link` writes it).
+client_id = ""
+name = "FluidBuddha AI Agent"
+application_url = "https://example.com/fluidbuddha-shopify"
+embedded = false
+
+[access_scopes]
+# None: the embed only adds a script tag to the storefront.
+scopes = ""
+
+[auth]
+redirect_urls = [ "https://example.com/fluidbuddha-shopify/auth" ]
+
+[webhooks]
+api_version = "2025-10"

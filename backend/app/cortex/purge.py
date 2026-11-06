@@ -26,6 +26,13 @@ _SITE_TABLES = (
     "conversations", "leads", "site_integrations", "site_privacy", "site_design",
     "experiments",  # its visitors and events go with it (ON DELETE CASCADE)
     "cost_alerts",
+    "live_presence", "live_takeovers", "live_messages",
+    "trigger_rules",  # its events go with it (ON DELETE CASCADE)
+    "recaps",  # its views go with it (ON DELETE CASCADE)
+    "action_runs", "site_actions", "site_components",  # M2-8
+    "visitor_memories",  # M3-3
+    "agent_tokens", "agent_requests",  # M3-2
+    "campaigns",  # M3-1: its pages and events go with it (ON DELETE CASCADE)
 )
 
 

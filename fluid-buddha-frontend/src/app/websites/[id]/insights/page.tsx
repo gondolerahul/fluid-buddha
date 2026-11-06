@@ -5,6 +5,8 @@ import { Api, ApiError, ConversationSummary, Insights, QuestionStat } from "@/li
 import { fmtDate, useToast } from "@/components/ui";
 import { AddSourceModal } from "@/components/AddSourceModal";
 import { TranscriptModal } from "@/components/TranscriptModal";
+import { DealSignals } from "@/components/DealSignals";
+import { EditOnly } from "@/components/Permission";
 
 const RANGES = [7, 30, 90];
 
@@ -45,7 +47,7 @@ export default function InsightsPage() {
         <div>
           <h2>Insights</h2>
           <p className="muted" style={{ fontSize: "0.88rem" }}>
-            What visitors ask, what the agent couldn&apos;t answer, and every conversation.
+            What visitors ask, what holds them back, who they compare you with, and every conversation.
           </p>
         </div>
         <div className="tabs" style={{ border: "none", margin: 0 }}>
@@ -67,6 +69,8 @@ export default function InsightsPage() {
           hint="Grounded in your sources" />
       </div>
 
+      <DealSignals id={id} days={days} onOpen={setOpenConv} />
+
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
         <div className="card">
           <h3 style={{ marginBottom: 4 }}>Knowledge gaps</h3>
@@ -82,7 +86,7 @@ export default function InsightsPage() {
                     <span style={{ minWidth: 0 }}>
                       {g.question} <span className="faint">· {g.count}×</span>
                     </span>
-                    <button className="btn btn-sm" onClick={() => setGap(g)}>Answer this</button>
+                    <EditOnly><button className="btn btn-sm" onClick={() => setGap(g)}>Answer this</button></EditOnly>
                   </div>
                 ))}
               </div>

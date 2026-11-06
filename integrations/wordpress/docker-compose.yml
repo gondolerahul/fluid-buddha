@@ -1,0 +1,28 @@
+# Local WordPress with the plugin mounted, for trying the plugin (M2-10).
+#   docker compose up -d   →  http://localhost:8090
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: wordpress
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - db:/var/lib/mysql
+  wordpress:
+    image: wordpress:6-php8.3-apache
+    depends_on: [db]
+    ports:
+      - "8090:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./fluidbuddha:/var/www/html/wp-content/plugins/fluidbuddha:ro
+volumes:
+  db:

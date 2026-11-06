@@ -32,6 +32,17 @@ _HERMETIC = {
     "REDIS_URL": "", "LOG_FORMAT": "text", "METRICS_ENABLED": "true", "METRICS_TOKEN": "",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "", "SENTRY_DSN": "",
     "INGEST_ALLOW_PRIVATE_URLS": "false",
+    # Email: no real SMTP, and no background sender racing the tests (they call
+    # deliver_due themselves).
+    "SMTP_HOST": "", "SMTP_USERNAME": "", "SMTP_PASSWORD": "",
+    "EMAIL_OUTBOX_INTERVAL_SECONDS": "0",
+    # Classifier and digest jobs: tests call them directly.
+    "INSIGHTS_CLASSIFY_SECONDS": "0", "DIGEST_CHECK_SECONDS": "0",
+    "ACTION_PAYMENTS_SECONDS": "0", "ACCESS_REVIEW_CHECK_SECONDS": "0", "MEMORY_BUILD_SECONDS": "0", "STATUS_PROBE_SECONDS": "0",
+    # Session cookies are Secure, so the suite's http://testserver clients never send
+    # them back: each test authenticates the way it says (tests/test_security.py
+    # checks cookies over https).
+    "SESSION_COOKIE_SECURE": "true",
     "PUBLIC_RATE_LIMIT_PER_MIN": "120", "PUBLIC_DAILY_SPEND_CAP_USD": "0",
 }
 os.environ.update(_HERMETIC)

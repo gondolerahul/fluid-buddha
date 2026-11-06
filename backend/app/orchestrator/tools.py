@@ -247,12 +247,15 @@ def tools_for(level: str, site_key: str | None = None) -> list[ToolSpec]:
     """Return the tool subset allowed at an intelligence ``level``.
 
     ``site_key`` lets the extreme tier offer ``call_site_api`` only when the site
-    actually has ingested APIs.
+    actually has ingested APIs, adds the site's own components to
+    ``render_component`` and its actions as tools (every tier, M2-8).
     """
     if level == "basic":
-        return list(_BASIC)
+        return list(_BASIC) + action_tools(site_key)
     if level == "high":
-        return _with_site_personas(_HIGH, site_key)
+        return _with_site_personas(_HIGH, site_key) + action_tools(site_key)
+    tools = [_site_render(site_key) if t is RENDER_COMPONENT else t
+             for t in _with_site_personas(_ADVANCE, site_key)]
     if level == "extreme":
         extra: list[ToolSpec] = [GENERATE_PAGE]
         if site_key:
@@ -260,8 +263,45 @@ def tools_for(level: str, site_key: str | None = None) -> list[ToolSpec]:
             from app.apis.registry import get_site_apis
             if get_site_apis(site_key).operations():
                 extra.append(CALL_SITE_API)
-        return _with_site_personas(_ADVANCE, site_key) + extra
-    return _with_site_personas(_ADVANCE, site_key)  # advance (default)
+        return tools + extra + action_tools(site_key)
+    return tools + action_tools(site_key)  # advance (default)
+
+
+def action_tools(site_key: str | None) -> list[ToolSpec]:
+    """One tool per enabled action of the site (M2-8)."""
+    if not site_key:
+        return []
+    from app.actions.fields import rupees, tool_parameters
+    from app.actions.store import actions_for
+    out = []
+    for a in actions_for(site_key):
+        desc = f"{a.label}. {a.description}".strip()
+        if a.kind == "payment_link":
+            desc += " Plans (the amount comes from this list, you only pick the plan): " + "; ".join(
+                f"{p['key']} = {p['label']} at {rupees(p['amount'])}" for p in a.config.get("prices", []))
+        desc += (" Calling this only shows the visitor a confirmation card; nothing happens "
+                 "until they press Confirm. Use it when the visitor asks for it or agrees to it.")
+        out.append(ToolSpec(name=a.tool_name, description=desc, parameters=tool_parameters(a.fields)))
+    return out
+
+
+def _site_render(site_key: str | None) -> ToolSpec:
+    """render_component with the site's own components added (M2-8)."""
+    if not site_key:
+        return RENDER_COMPONENT
+    from app.orchestrator.custom_components import components_for, describe
+    custom = components_for(site_key)
+    if not custom:
+        return RENDER_COMPONENT
+    params = {**RENDER_COMPONENT.parameters, "properties": {
+        **RENDER_COMPONENT.parameters["properties"],
+        "component_type": {"type": "string", "enum": [
+            *RENDER_COMPONENT.parameters["properties"]["component_type"]["enum"], *custom]}}}
+    return ToolSpec(
+        name=RENDER_COMPONENT.name,
+        description=RENDER_COMPONENT.description + "\nThis site's own components (prefer one "
+        "when it fits what the visitor asks):\n" + "\n".join(describe(c) for c in custom.values()),
+        parameters=params)
 
 
 def _with_site_personas(tools: list[ToolSpec], site_key: str | None) -> list[ToolSpec]:

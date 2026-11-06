@@ -19,12 +19,12 @@ Object.defineProperty(globalThis, 'localStorage', { value: window.localStorage, 
 globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 // Deterministic WebSocket stub (never actually connects).
 globalThis.WebSocket = class {
-  constructor(url) { this.readyState = 0; globalThis.__lastWsUrl = url; }
+  constructor(url) { this.readyState = 0; globalThis.__lastWsUrl = url; (globalThis.__wsAll ||= []).push(this); }
   close() {} send() {}
 };
 
 const mod = await import('../dist/fluid-buddha.mjs');
-const { init, Session, Canvas, HostBridge } = mod;
+const { init, Session, Canvas, HostBridge, preloadComponents } = mod;
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if (!cond) failures++; };
@@ -90,9 +90,18 @@ ok(leadOk && posted.length === 1 && posted[0].url === 'http://x/leads', 'submitL
 ok(posted[0].body.session_id === 'ws-123' && posted[0].body.values.email === 'ana@acme.io' && !('message' in posted[0].body), 'lead carries the voice session id and raw form values, not a chat message');
 
 // ---- 3. Canvas renders components ----
+// The renderers load on demand (M2-7): before they arrive a card waits, and
+// its synced speech is released only once it is drawn.
 const container = document.createElement('div');
 let rendered = null;
 const canvas = new Canvas(container, (id) => (rendered = id));
+canvas.add({ sync_id: 'ui_early', component_type: 'flowchart', initial_state: { nodes: [{ label: 'Early' }] } });
+ok(!!container.querySelector('.card .card-wait') && rendered === null, 'a card waits for the renderers, speech held');
+await preloadComponents();
+await tick();
+ok(!container.querySelector('.card-wait') && !!container.querySelector('.card .flow-node') && rendered === 'ui_early',
+  'the waiting card is drawn once the renderers arrive, then speech is released');
+container.replaceChildren();
 canvas.add({ sync_id: 'ui_9', component_type: 'flowchart', initial_state: { nodes: [{ label: 'Your system' }, { label: 'API' }], edges: [{ from: 'a', to: 'b' }] }, explanation_text: 'flow' });
 ok(!!container.querySelector('.card .flow-node'), 'Canvas renders a flowchart card');
 canvas.add({ sync_id: 'ui_10', component_type: 'roi_calculator', initial_state: { seats: 10, monthly_cost: 10000, hours_saved: 320 } });
@@ -101,6 +110,16 @@ await tick();
 ok(rendered === 'ui_10', 'Canvas signals onRendered after paint');
 canvas.applyPatch('ui_10', { monthly_cost: 20000 });
 ok(container.querySelectorAll('.roi').length === 1, 'applyPatch rebuilds the card in place');
+// Money in the site's currency (M2-8 follow-up): rupees with Indian grouping.
+canvas.add({ sync_id: 'ui_money', component_type: 'configurator', initial_state: { currency: 'INR',
+  controls: [{ key: 'seats', label: 'Seats', type: 'slider', min: 1, max: 500, value: 100 }],
+  outputs: [{ label: 'Monthly', expr: 'seats * 1499', format: 'currency' },
+            { label: 'In dollars', expr: 'seats * 18', format: 'currency', unit: 'USD' }] } });
+const moneyCells = [...container.querySelectorAll('.cfg-out-val')].slice(-2).map((e) => e.textContent);
+ok(moneyCells[0] === '₹1,49,900' && moneyCells[1] === '$1,800', `a configurator shows the site's currency (${moneyCells.join(', ')})`);
+canvas.add({ sync_id: 'ui_roi_inr', component_type: 'roi_calculator', initial_state: { currency: 'INR', seats: 10, monthly_cost: 25000, hours_saved: 100 } });
+const roiNet = [...container.querySelectorAll('.roi')].pop().textContent;
+ok(roiNet.includes('₹25,000') && roiNet.includes('₹25,000') && !roiNet.includes('$'), 'the ROI calculator counts in rupees');
 
 // ---- 3b. New Advance component types render ----
 canvas.add({ sync_id: 'ui_wf', component_type: 'workflow', initial_state: { steps: [{ id: 's', label: 'Start', type: 'start' }, { id: 'p', label: 'Review', type: 'process' }] } });
@@ -195,6 +214,22 @@ for (const design of ['level1', 'level2', 'level3']) {
 const ext = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', site: 'fluidbuddha', intelligence: 'extreme', design: 'level1' });
 ok(!!ext.shadowRoot.querySelector('.fbpage'), 'extreme mounts a runtime page surface');
 ok(ext.shadowRoot.querySelector('.fbpage').classList.contains('hidden'), 'page surface is hidden until a page renders');
+ext.session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_lp', payload: { sync_id: 'page_lp', title: 'LP', sections: [
+  { type: 'testimonials', props: { title: 'Customers', items: [{ quote: 'Halved no-shows.', name: 'Dr Rao', role: 'Owner' }] } },
+  { type: 'logos', props: { items: [{ src: 'https://cdn.example.com/a.svg', alt: 'A' }, { src: 'javascript:alert(1)', alt: 'bad' }] } },
+  { type: 'faq', props: { items: [{ q: 'Free trial?', a: '14 days.' }, { q: 'SSO?', a: 'Yes.' }] } },
+  { type: 'comparison', props: { columns: ['Starter', 'Growth'], rows: [{ label: 'Doctors', values: ['5', '25'] }] } },
+  { type: 'roi_calculator', props: { title: 'Your return', seats: 5 } }] } });
+await tick();
+{
+  const pg = ext.shadowRoot.querySelector('.fbpage');
+  ok(pg.querySelector('.fbpage-quote blockquote')?.textContent === 'Halved no-shows.' && pg.querySelector('.fbpage-quote figcaption').textContent === 'Dr Rao, Owner',
+    'landing sections: testimonials (M3-1)');
+  ok(pg.querySelectorAll('.fbpage-logos img').length === 1, 'logos: https only');
+  ok(pg.querySelectorAll('.fbpage-qa').length === 2 && pg.querySelector('.fbpage-qa').open, 'faq: questions, the first open');
+  ok(pg.querySelector('.fbpage-table tbody th')?.textContent === 'Doctors' && pg.querySelectorAll('.fbpage-table td').length === 2, 'comparison table');
+  ok(!!pg.querySelector('.fbpage-roi_calculator .roi'), 'ROI calculator section');
+}
 
 // ---- 7. Persona cross-fade (Req 3.6.3) ----
 // matchMedia is undefined in jsdom -> not reduced-motion -> the veil path runs.
@@ -376,6 +411,9 @@ const particlesJs = fs.readFileSync(new URL('../dist/fluid-buddha-particles.glob
 const coreMjs = fs.readFileSync(new URL('../dist/fluid-buddha.mjs', import.meta.url), 'utf8');
 ok(!coreJs.includes('WebGLRenderer') && particlesJs.includes('WebGLRenderer'), 'script-tag core ships without Three.js; the particles file has it');
 ok(!coreMjs.includes('WebGLRenderer') && /import\(["']\.\/chunks\/ParticleField-/.test(coreMjs), 'ESM core loads the particle field as a split chunk');
+const componentsJs = fs.readFileSync(new URL('../dist/fluid-buddha-components.global.js', import.meta.url), 'utf8');
+ok(!coreJs.includes('Unknown component') && componentsJs.includes('Unknown component') && /import\(["']\.\/chunks\/bodies-/.test(coreMjs),
+  'component renderers ship on their own (script-tag file, ESM chunk), not in the core');
 const coreGz = zlib.gzipSync(coreJs).length;
 ok(coreGz < 42 * 1024, `script-tag core is ${(coreGz / 1024).toFixed(1)} kB gzipped (budget 42 kB)`);
 
@@ -441,6 +479,522 @@ const offline = init({ backend: 'ws://localhost:8080', key: 'fbk_offline_site', 
 await settle();
 ok(!!offline.shadowRoot, 'if enrolment fails the visitor just gets the agent');
 offline.remove();
+
+// ---- Live takeover: a person joins, talks, rings, hands back (M2-2) ----
+{
+  const sys = [], said = [], sent = [];
+  const live = new Session(
+    { backend: 'ws://x', api: 'http://x', site: 'hirebuddha', intelligence: 'advance', design: 'level1', position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
+    bridge,
+    { onStatus() {}, onUserTranscript() {}, onAgentMessage: (t) => said.push(t), onComponent() {}, onPatch() {},
+      onSystem: (m) => sys.push(m), onPage() {}, requestCall: async () => true },
+  );
+  live.client = { sendRaw: (channel, type, payload) => sent.push({ channel, type, payload }) };
+  live.feed({ channel: 'EVENTS', type: 'operator_joined', payload: { name: 'Priya' } });
+  ok(sys.some((m) => m.includes('Priya from the team joined')), 'the visitor is told who joined');
+  live.feed({ channel: 'EVENTS', type: 'operator_message', payload: { name: 'Priya', text: 'Hi there' } });
+  ok(said.includes('Priya: Hi there'), "the person's message shows with their name");
+  live.feed({ channel: 'EVENTS', type: 'call_offer', payload: { name: 'Priya', sdp: 'v=0', ice_servers: [] } });
+  await new Promise((r) => setTimeout(r, 0));
+  ok(sent.some((x) => x.type === 'call_decline'), 'a call the browser cannot take is declined, not crashed');
+  live.feed({ channel: 'EVENTS', type: 'operator_left', payload: { name: 'Priya' } });
+  ok(sys.some((m) => m.includes('handed you back')), 'handing back is announced');
+
+  const { callPrompt } = mod;
+  const host = document.createElement('div');
+  const root = host.attachShadow({ mode: 'open' });
+  const answer = callPrompt(root, 'Priya');
+  ok(root.querySelector('[role="alertdialog"]')?.textContent.includes('Talk with Priya?'), 'the call prompt names the person');
+  root.querySelector('.fb-consent-deny').click();
+  ok((await answer) === false && !root.querySelector('.fb-consent'), 'declining closes the prompt');
+}
+
+// ---- Proactive triggers (M2-3) ----
+{
+  const { pageMatches } = mod;
+  ok(pageMatches('/pricing', ['/pricing']) && pageMatches('/pricing/teams', ['/pricing*'])
+    && pageMatches('/anything', []) && !pageMatches('/blog', ['/pricing*']), 'trigger page globs match as expected');
+
+  // A fresh visit: talking to the agent earlier in this file muted triggers for the session.
+  window.sessionStorage.removeItem('fluidbuddha:trg:muted');
+  const trg = [];
+  const rules = [{ id: 'r1', kind: 'time_on_page', seconds: 0.05, pages: [], message: 'Need a hand with pricing?',
+    action: 'nudge', max_per_day: 1, priority: 50 }];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    trg.push({ url: u, body: init && init.body ? JSON.parse(init.body) : null });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => ({ experiment_id: null, arm: null, goal_path: null }) };
+    if (u.includes('/widget/triggers?')) return { ok: true, json: async () => ({ rules }) };
+    return { ok: true, json: async () => ({ counted: true }) };
+  };
+  const sent = (event) => trg.some((c) => c.url.endsWith('/widget/triggers/event') && c.body?.event === event && c.body.rule_id === 'r1');
+  const w = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_trigger_site', site: 'x' });
+  await settle();
+  await new Promise((r) => setTimeout(r, 150));
+  const nudge = w.shadowRoot.querySelector('.fb-nudge');
+  ok(nudge && nudge.textContent.includes('Need a hand with pricing?'), 'a time-on-page trigger shows its nudge');
+  ok(sent('shown'), 'showing it is reported');
+  nudge.querySelector('.fb-nudge-msg').click();
+  ok(!w.shadowRoot.querySelector('.fb-nudge') && !w.shadowRoot.querySelector('.panel').classList.contains('hidden'),
+    'clicking the nudge opens the agent');
+  ok(w.shadowRoot.textContent.includes('Need a hand with pricing?') && sent('clicked'), 'the agent opens with the message, and the click is reported');
+  w.ask('Which plan fits a team of 20?');
+  ok(sent('engaged'), 'asking something after the nudge counts as engaged');
+  w.remove();
+
+  window.sessionStorage.removeItem('fluidbuddha:trg:muted');
+  const w2 = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_trigger_site', site: 'x' });
+  await settle();
+  await new Promise((r) => setTimeout(r, 150));
+  ok(!w2.shadowRoot.querySelector('.fb-nudge'), 'a rule capped at once a day does not show again today');
+  w2.remove();
+
+  // "Let the agent write it" (M2-3 follow-up): the page's opener from the server,
+  // or the rule's own words when it doesn't come.
+  window.sessionStorage.removeItem('fluidbuddha:trg:muted');
+  rules.splice(0, 1, { id: 'r2', kind: 'time_on_page', seconds: 0.05, pages: [], message: 'Fallback words',
+    compose: true, action: 'nudge', max_per_day: 5, priority: 50 });
+  let asked = null;
+  const base = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.includes('/widget/triggers/message?')) {
+      asked = new URL(u).searchParams;
+      return { ok: true, json: async () => ({ message: 'Comparing plans? Ask me which fits.' }) };
+    }
+    return base(url, init);
+  };
+  const w3 = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_trigger_site2', site: 'x' });
+  await settle();
+  await new Promise((r) => setTimeout(r, 200));
+  const n3 = w3.shadowRoot.querySelector('.fb-nudge');
+  ok(n3 && n3.textContent.includes('Comparing plans? Ask me which fits.'), "a composed trigger shows the agent's opener");
+  ok(asked && asked.get('rule_id') === 'r2' && asked.get('page') === window.location.pathname && asked.get('lang') === 'en',
+    'it asks for this page, rule and language');
+  w3.remove();
+  globalThis.fetch = base;
+}
+
+// ---- Variant tests (M2-4) ----
+{
+  window.sessionStorage.removeItem('fluidbuddha:trg:muted');
+  const calls = [];
+  let reply = null;
+  const rules = [{ id: 'r1', kind: 'time_on_page', seconds: 0.05, pages: [], message: 'Psst — questions?',
+    action: 'nudge', max_per_day: 5, priority: 50 }];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    calls.push({ url: u, body: init && init.body ? JSON.parse(init.body) : null });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => reply };
+    if (u.includes('/widget/triggers?')) return { ok: true, json: async () => ({ rules }) };
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'ok', session_id: 's1', actions: [], components: [] }) };
+    return { ok: true, json: async () => ({ counted: true }) };
+  };
+  const opts = (key, extra = {}) => ({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key, site: 'x', ...extra });
+
+  reply = { experiment_id: 't-1', arm: 'b', goal_path: null,
+    overrides: { greeting: 'Hello from B.', triggers: [] }, defaults: { greeting: 'Site hello.', design: 'level1' } };
+  const v = init(opts('fbk_variant_site'));
+  await settle();
+  await new Promise((r) => setTimeout(r, 150));
+  ok(v.shadowRoot.textContent.includes('Hello from B.') && !v.shadowRoot.textContent.includes('Site hello.'),
+    "the variant's greeting replaces the site's");
+  ok(!v.shadowRoot.querySelector('.fb-nudge'), "a trigger left out of the visitor's variant does not fire");
+  ok(JSON.parse(window.localStorage.getItem('fluidbuddha:exp:fbk_variant_site')).overrides.greeting === 'Hello from B.',
+    'the variant is cached with its arm');
+  v.ask('What does it cost?');
+  await settle();
+  const chat = calls.find((c) => c.url.endsWith('/chat'));
+  ok(chat && chat.body.exp && chat.body.exp.id === 't-1' && chat.body.exp.arm === 'b',
+    'the variant goes with the conversation (the server applies persona/greeting)');
+  v.remove();
+
+  reply = { experiment_id: 't-2', arm: 'c', goal_path: null, overrides: { design: 'level2', tour: false }, defaults: {} };
+  const d = init(opts('fbk_design_variant'));
+  await settle();
+  ok(d.getAttribute('data-design') === 'level2' && !!d.shadowRoot.querySelector('.l2'), 'a design variant switches the level');
+  d.remove();
+
+  reply = { experiment_id: null, arm: null, goal_path: null, overrides: {}, defaults: { greeting: 'Site hello.', design: 'level3' } };
+  const s = init(opts('fbk_defaults_site'));
+  await settle();
+  ok(s.getAttribute('data-design') === 'level3', "without a test the site's design level applies");
+  s.remove();
+  const pinned = init(opts('fbk_defaults_site', { design: 'level1' }));
+  await settle();
+  ok(pinned.getAttribute('data-design') === 'level1' && pinned.shadowRoot.textContent.includes('Site hello.'),
+    "an embed that sets its design keeps it, and shows the site's greeting");
+  pinned.remove();
+
+  // A key-only install (M2-10 plugins) takes the site's colour; an embed that
+  // sets data-accent keeps its own.
+  reply = { experiment_id: null, arm: null, goal_path: null, overrides: {}, defaults: { accent: '#123abc' } };
+  const keyOnly = init(opts('fbk_accent_site'));
+  await settle();
+  ok(keyOnly.style.getPropertyValue('--fb-accent') === '#123abc', "a key-only install uses the site's accent");
+  keyOnly.remove();
+  const own = init(opts('fbk_accent_site', { accent: '#ff0000' }));
+  await settle();
+  ok(own.style.getPropertyValue('--fb-accent') === '#ff0000', 'an embed that sets its accent keeps it');
+  own.remove();
+  reply = { experiment_id: null, arm: null, goal_path: null, overrides: {}, defaults: { accent: 'red;x:url(evil)' } };
+  const junk = init(opts('fbk_accent_junk'));
+  await settle();
+  ok(junk.style.getPropertyValue('--fb-accent') !== 'red;x:url(evil)', 'an accent that is not a hex colour is ignored');
+  junk.remove();
+}
+
+// ---- Recap pages (M2-6) ----
+{
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    calls.push({ url: u, body: init && init.body ? JSON.parse(init.body) : null });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => ({ experiment_id: null, arm: null, goal_path: null, overrides: {}, defaults: {} }) };
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'Plans start at 2,000.', session_id: 'sess-recap', actions: [], components: [] }) };
+    if (u.endsWith('/recap')) return { ok: true, status: 200, json: async () => ({ url: 'https://api.example.com/r/tok123', emailed: true }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const w = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_recap_site', site: 'x', design: 'level1' });
+  await settle();
+  w.ask('What does it cost?');
+  await settle();
+  w.ask('Please email me a recap at Ana@Example.com');
+  await settle();
+  const rc = calls.find((c) => c.url.endsWith('/recap'));
+  ok(rc && rc.body.session_id === 'sess-recap' && rc.body.email === 'Ana@Example.com' && rc.body.key === 'fbk_recap_site',
+    '"email me a recap" asks for a recap of this conversation, with the address');
+  ok(!calls.some((c) => c.url.endsWith('/chat') && c.body.message.includes('recap')), 'the recap request is not sent to the agent');
+  const link = [...w.shadowRoot.querySelectorAll('.bubble.pragya a')].find((a) => a.href === 'https://api.example.com/r/tok123');
+  ok(link && link.target === '_blank' && link.rel.includes('noopener') && w.shadowRoot.textContent.includes('emailed it to Ana@Example.com'),
+    'the recap link shows as a link, and says it was emailed');
+  w.remove();
+
+  // The recap page's renderer draws each component in its slot.
+  const { readFile } = await import('node:fs/promises');
+  const code = await readFile(new URL('../dist/fluid-buddha-recap.global.js', import.meta.url), 'utf8');
+  document.body.innerHTML = '<div data-fb-slot="c0"><div class="comp-fallback">flow</div></div>'
+    + '<div data-fb-slot="c1"></div><script type="application/json" id="fb-recap-data">'
+    + JSON.stringify([{ slot: 'c0', component: { component_type: 'flowchart', initial_state: { nodes: [{ label: 'A' }, { label: 'B' }], edges: [] } } },
+      { slot: 'c1', component: { component_type: 'roi_calculator', initial_state: { seats: 5, monthly_cost: 1000, hours_saved: 40 } } },
+      { slot: 'nope', component: { component_type: 'chart' } }]) + '</script>';
+  new Function(code)();
+  const s0 = document.querySelector('[data-fb-slot="c0"]').shadowRoot;
+  ok(s0 && s0.querySelector('.card .flow-node') && s0.querySelector('style').textContent.includes('.card'),
+    'the recap page draws a flowchart with the widget styles');
+  ok(document.querySelector('[data-fb-slot="c1"]').shadowRoot.querySelector('.roi'), 'and an ROI calculator');
+  document.body.innerHTML = '';
+
+  // The hosted campaign page's script (M3-1): slots, then engagement once.
+  const pageCode = await readFile(new URL('../dist/fluid-buddha-page.global.js', import.meta.url), 'utf8');
+  document.body.innerHTML = '<section><div data-fb-slot="s0"><div class="fallback">calc</div></div></section>'
+    + '<script type="application/json" id="fb-page-data">'
+    + JSON.stringify([{ slot: 's0', component: { component_type: 'roi_calculator', initial_state: { seats: 5 } } }]) + '</script>';
+  const beacons = [];
+  window.navigator.sendBeacon = (u) => { beacons.push(u); return true; };
+  const pageMod = {};
+  new Function('self', pageCode + ';self.P = FluidBuddhaPage;')(pageMod);
+  ok(!!document.querySelector('[data-fb-slot="s0"]').shadowRoot?.querySelector('.roi'), 'the campaign page draws its ROI calculator');
+  const stop = pageMod.P.watchEngagement(document, '/p/site/c/event', window, 30);
+  document.querySelector('[data-fb-slot="s0"]').dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 60));
+  ok(beacons.length === 1 && beacons[0] === '/p/site/c/event', 'using a component reports engagement, once');
+  stop();
+  document.body.innerHTML = '';
+}
+
+// ---- English + Hindi (M2-7) ----
+{
+  const { STRINGS, pickLang, prepareLang } = mod;
+  // The Hindi table ships on its own and is fetched only for Hindi visitors.
+  const fs2 = await import('node:fs');
+  const hiJs = fs2.readFileSync(new URL('../dist/fluid-buddha-hi.global.js', import.meta.url), 'utf8');
+  ok(!coreJs.includes('प्रज्ञा') && !coreJs.includes('\\u092A\\u094D\\u0930\\u091C') && hiJs.includes('FluidBuddhaHindi'),
+    'the Hindi words are not in the core script; they have their own file');
+  ok(!STRINGS.hi, 'Hindi is not loaded until a Hindi widget needs it');
+
+  // Language choice: embed attribute, the site's setting, the visitor's browser.
+  ok(pickLang('hi', null) === 'hi' && pickLang(undefined, null) === 'en', 'without site settings only data-lang chooses');
+  ok(pickLang('hi', { languages: ['en'] }) === 'en', 'a site without Hindi stays English even with data-lang="hi"');
+  ok(pickLang(undefined, { languages: ['en', 'hi'], widget_language: 'hi' }) === 'hi', "the site's Hindi setting");
+  ok(pickLang('en', { languages: ['en', 'hi'], widget_language: 'hi' }) === 'en', 'data-lang wins over the site setting');
+  Object.defineProperty(window.navigator, 'languages', { value: ['hi-IN', 'en-US'], configurable: true });
+  ok(pickLang(undefined, { languages: ['en', 'hi'], widget_language: 'auto' }) === 'hi', "auto follows a Hindi browser");
+  Object.defineProperty(window.navigator, 'languages', { value: ['en-US'], configurable: true });
+  ok(pickLang(undefined, { languages: ['en', 'hi'], widget_language: 'auto' }) === 'en', 'auto on an English browser is English');
+
+  // String coverage: every English string has a Hindi one, same placeholders.
+  await prepareLang('hi');
+  const holes = (s) => (s.match(/\{\w+\}/g) || []).sort().join(',');
+  const missing = Object.keys(STRINGS.en).filter((k) => !STRINGS.hi[k] || holes(STRINGS.hi[k]) !== holes(STRINGS.en[k]));
+  ok(STRINGS.hi && missing.length === 0, `every widget string has a Hindi version (${Object.keys(STRINGS.en).length} strings)${missing.length ? ' — missing: ' + missing.join(', ') : ''}`);
+  const latinOnly = Object.keys(STRINGS.hi).filter((k) => !/[ऀ-ॿ]/.test(STRINGS.hi[k]));
+  ok(latinOnly.length === 0, `Hindi strings are in Devanagari${latinOnly.length ? ' — not: ' + latinOnly.join(', ') : ''}`);
+  ok(Object.keys(STRINGS.hi).every((k) => k in STRINGS.en), 'no Hindi string without an English one');
+
+  // A Hindi widget: labels, chips and greeting in Hindi; the hello says so.
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
+  const hw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', site: 'hirebuddha', lang: 'hi' });
+  await settle();
+  const root = hw.shadowRoot;
+  ok(root && root.querySelector('textarea').placeholder === STRINGS.hi.placeholder, 'a Hindi widget shows its labels in Hindi');
+  ok([...root.querySelectorAll('.chip')].map((c) => c.textContent).join('|') === [STRINGS.hi.chipPricing, STRINGS.hi.chipIntegrate, STRINGS.hi.chipTour].join('|'),
+    'suggestion chips are in Hindi');
+  ok(root.querySelector('.bubble.pragya').textContent.includes('नमस्ते'), 'the default greeting is in Hindi');
+  hw.remove();
+
+  // "Send me this" in Hindi asks for a recap.
+  const rcalls = [];
+  globalThis.fetch = async (url, init2) => {
+    const u = String(url);
+    rcalls.push(u);
+    if (u.endsWith('/recap')) return { ok: true, status: 200, json: async () => ({ url: 'https://api.example.com/r/tokhi', emailed: false }) };
+    return { ok: true, json: async () => ({ text: 'ok', session_id: 'sess-hi', lang: 'hi', actions: [], components: [] }) };
+  };
+  const rw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_hi_site', site: 'x', lang: 'hi' });
+  await settle();
+  rw.ask('यह मुझे भेज दो');
+  await settle();
+  ok(rcalls.some((u) => u.endsWith('/recap')) && rw.shadowRoot.textContent.includes('यह रहा आपका रीकैप'),
+    'a Hindi "send me this" makes a recap, answered in Hindi');
+  rw.remove();
+  await prepareLang('en');
+}
+
+// ---- Actions + custom components (M2-8) ----
+{
+  const posts = [];
+  globalThis.fetch = async (url, init2) => {
+    const u = String(url);
+    const body = init2 && init2.body ? JSON.parse(init2.body) : null;
+    posts.push({ u, body });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => ({ defaults: {} }) };
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'Please confirm on screen.', session_id: 'sess-act', actions: [], components: [],
+      proposals: [{ id: 'run-1', kind: 'payment_link', label: 'Pay for a plan', summary: [{ label: 'Plan', value: 'Growth plan' }, { label: 'Amount', value: '₹14,999' }] }] }) };
+    if (u.endsWith('/actions/confirm')) return { ok: true, json: async () => ({ id: 'run-1', status: 'done', message: 'Payment link for Growth plan.', url: 'https://rzp.io/i/abc123' }) };
+    if (u.endsWith('/actions/cancel')) return { ok: true, json: async () => ({ id: body.run_id, status: 'cancelled' }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const aw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_act_site', site: 'x', design: 'level1' });
+  await settle();
+  aw.ask('I want to pay for the growth plan');
+  await settle();
+  const card = aw.shadowRoot.querySelector('.fb-action');
+  ok(card && card.textContent.includes('Pay for a plan') && card.textContent.includes('₹14,999'),
+    'a proposed action shows a confirmation card with its amount');
+  ok(!posts.some((p) => p.u.includes('/actions/')), 'nothing is sent before the visitor confirms');
+  card.querySelector('.fb-consent-allow').click();
+  await settle();
+  const conf = posts.find((p) => p.u.endsWith('/actions/confirm'));
+  ok(conf && conf.body.run_id === 'run-1' && conf.body.session_id === 'sess-act' && conf.body.key === 'fbk_act_site',
+    'Confirm posts the run for this conversation');
+  const link = card.querySelector('a.fb-consent-allow');
+  ok(link && link.href === 'https://rzp.io/i/abc123' && link.target === '_blank' && link.rel.includes('noopener'),
+    'the outcome offers the payment page');
+  card.querySelector('.fb-consent-deny').click();
+  ok(!aw.shadowRoot.querySelector('.fb-action'), 'Close removes the card');
+
+  // Over the voice socket a proposal arrives as an event; Cancel posts a cancel.
+  aw.session.feed({ channel: 'EVENTS', type: 'action_proposal', payload: { id: 'run-2', kind: 'trial', label: 'Start a trial', summary: [] } });
+  const c2 = aw.shadowRoot.querySelector('.fb-action');
+  ok(c2 && c2.textContent.includes('Start a trial'), 'a socket proposal shows the card too');
+  c2.querySelector('.fb-consent-deny').click();
+  await settle();
+  ok(posts.some((p) => p.u.endsWith('/actions/cancel') && p.body.run_id === 'run-2') && !aw.shadowRoot.querySelector('.fb-action'),
+    'Cancel tells the server and closes');
+
+  // Answered out loud (M2-8 follow-up): the server says which, the card's own button is pressed.
+  aw.session.feed({ channel: 'EVENTS', type: 'action_proposal', payload: { id: 'run-3', kind: 'payment_link', label: 'Pay', summary: [] } });
+  aw.session.feed({ channel: 'EVENTS', type: 'action_answer', payload: { run_id: 'run-other', confirm: true } });
+  await settle();
+  ok(!posts.some((p) => p.body && p.body.run_id === 'run-3'), "an answer for another card doesn't touch this one");
+  aw.session.feed({ channel: 'EVENTS', type: 'action_answer', payload: { run_id: 'run-3', confirm: true } });
+  await settle();
+  ok(posts.some((p) => p.u.endsWith('/actions/confirm') && p.body.run_id === 'run-3'), 'a spoken yes confirms through the usual path');
+  aw.shadowRoot.querySelector('.fb-action .fb-consent-deny').click();
+  aw.session.feed({ channel: 'EVENTS', type: 'action_proposal', payload: { id: 'run-4', kind: 'trial', label: 'Trial', summary: [] } });
+  aw.session.feed({ channel: 'EVENTS', type: 'action_answer', payload: { run_id: 'run-4', confirm: false } });
+  await settle();
+  ok(posts.some((p) => p.u.endsWith('/actions/cancel') && p.body.run_id === 'run-4') && !aw.shadowRoot.querySelector('.fb-action'),
+    'a spoken no cancels');
+  aw.remove();
+
+  // A site's own component in a sandboxed iframe, and its message contract.
+  const box = document.createElement('div');
+  document.body.append(box);
+  const reported = [];
+  const ec = new Canvas(box, () => {}, (id, p) => reported.push(p));
+  ec.add({ sync_id: 'ui_embed', component_type: 'embed', initial_state: { src: 'https://tools.acme.example/calc', name: 'plan_builder', props: { seats: 3 } } });
+  await tick();
+  const frame = box.querySelector('iframe');
+  ok(frame && frame.getAttribute('sandbox') === 'allow-scripts' && frame.src === 'https://tools.acme.example/calc'
+    && frame.getAttribute('referrerpolicy') === 'no-referrer', 'an embed is a scripts-only sandboxed iframe of the registered URL');
+  const send = (data, source) => window.dispatchEvent(new window.MessageEvent('message', { data, source }));
+  send({ type: 'fb:resize', height: 5000 }, frame.contentWindow);
+  ok(frame.style.height === '800px', 'fb:resize is clamped (80–800 px)');
+  send({ type: 'fb:state', state: { seats: 9 } }, frame.contentWindow);
+  ok(reported.length === 1 && reported[0].state.seats === 9, 'fb:state reaches the agent');
+  send({ type: 'fb:state', state: { blob: 'x'.repeat(3000) } }, frame.contentWindow);
+  send({ type: 'fb:state', state: { seats: 1 } }, window);
+  send({ type: 'navigate', url: 'https://evil.example' }, frame.contentWindow);
+  ok(reported.length === 1, 'oversized state, other senders and unknown messages are ignored');
+  ec.add({ sync_id: 'ui_bad', component_type: 'embed', initial_state: { src: 'javascript:alert(1)' } });
+  ok(box.querySelectorAll('iframe').length === 1, 'a non-https embed draws nothing');
+  box.remove();
+}
+
+// ---- Vertical templates (M2-9): the site's starter questions as chips ----
+{
+  globalThis.fetch = async (url) => String(url).includes('/experiment/enroll')
+    ? { ok: true, json: async () => ({ defaults: { starters: ['Which courses do you offer?', 'What are the fees?'] } }) }
+    : { ok: true, json: async () => ({}) };
+  const sw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_tpl_site', site: 'x', design: 'level1' });
+  await settle();
+  const chips = [...sw.shadowRoot.querySelectorAll('.chip')].map((c) => c.textContent);
+  ok(chips.join('|') === 'Which courses do you offer?|What are the fees?', "the site's starter questions become the chips");
+  sw.remove();
+
+  // The agent's name from the profile (M2-7 follow-up), and Hindi chips for a
+  // Hindi widget (M2-9 follow-up).
+  globalThis.fetch = async (url) => String(url).includes('/experiment/enroll')
+    ? { ok: true, json: async () => ({ defaults: { agent_name: 'Mira', languages: ['en', 'hi'],
+        starters: ['What are the fees?'], starters_hi: ['फ़ीस कितनी है?', 'कौन से कोर्स हैं?'] } }) }
+    : { ok: true, json: async () => ({}) };
+  const nw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_name_site', site: 'x', design: 'level1' });
+  await settle();
+  ok(nw.shadowRoot.querySelector('.profile .name').textContent === 'Mira'
+    && nw.shadowRoot.textContent.includes("Hi, I'm Mira.") && !nw.shadowRoot.textContent.includes('Pragya'),
+    "the widget uses the site's agent name");
+  ok(nw.shadowRoot.querySelector('.trigger').getAttribute('aria-label') === 'Talk to Mira', 'labels use the name too');
+  nw.remove();
+  const hw2 = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_name_site_hi', site: 'x',
+    design: 'level1', lang: 'hi' });
+  await settle();
+  await new Promise((r) => setTimeout(r, 100));
+  const hiChips = [...hw2.shadowRoot.querySelectorAll('.chip')].map((c) => c.textContent);
+  ok(hiChips.join('|') === 'फ़ीस कितनी है?|कौन से कोर्स हैं?', "a Hindi widget shows the site's Hindi starter questions");
+  ok(hw2.shadowRoot.textContent.includes('मैं Mira हूँ'), 'the Hindi greeting uses the name');
+  hw2.remove();
+}
+
+// ---- Recaps by voice and offered after a few answers (M2-6 follow-up) ----
+{
+  const posted = [];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.endsWith('/recap')) {
+      posted.push(JSON.parse(init.body));
+      return { ok: true, status: 200, json: async () => ({ url: 'https://agent.example.com/r/abc', emailed: false }) };
+    }
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'An answer.', session_id: 'sess-r',
+      grounding: { found: true, confidence: 0.9, sources: [] }, actions: [], components: [] }) };
+    return { ok: true, json: async () => ({ defaults: {} }) };
+  };
+  const rw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_recap_offer', site: 'x', design: 'level1' });
+  await settle();
+  const offer = () => [...rw.shadowRoot.querySelectorAll('.chip')].find((c) => c.textContent === 'Send me a recap');
+  rw.ask('First question?');
+  await settle();
+  rw.ask('Second question?');
+  await settle();
+  ok(!offer(), 'no recap offer after two answers');
+  rw.ask('Third question?');
+  await settle();
+  ok(!!offer(), 'after three answers the agent offers a recap');
+  offer().click();
+  await settle();
+  ok(posted.length === 1 && posted[0].session_id === 'sess-r' && !offer(), 'the offer makes the recap for this conversation');
+  ok(rw.shadowRoot.textContent.includes('https://agent.example.com/r/abc'), 'and shows the link');
+  rw.remove();
+
+  // A spoken "send me this" arrives as an event from the server.
+  const said = [];
+  const vs = new Session(
+    { backend: 'ws://x', api: 'http://x', key: 'fbk_voice_recap', site: 'x', intelligence: 'advance', design: 'level1',
+      position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
+    { setPersona() {}, navigate() {}, scrollTo() {} },
+    { onStatus() {}, onUserTranscript() {}, onAgentMessage: (t) => said.push(t), onComponent() {}, onPatch() {},
+      onSystem() {}, onPage() {} },
+  );
+  vs.feed({ channel: 'EVENTS', type: 'recap_request', payload: { email: null } });
+  await settle();
+  ok(posted.length === 2 && said.some((t) => t.includes('/r/abc')), 'a spoken request makes the recap too');
+}
+
+// ---- Returning-visitor memory, opt-in (M3-3) ----
+{
+  const sent = [];
+  let memory = { offered: true, remembered: false };
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    const body = init && init.body ? JSON.parse(init.body) : null;
+    sent.push({ u, body });
+    if (u.includes('/experiment/enroll')) return { ok: true, json: async () => ({ defaults: { memory } }) };
+    if (u.endsWith('/memory')) return { ok: true, json: async () => ({ remembered: body.remember }) };
+    if (u.endsWith('/chat')) return { ok: true, json: async () => ({ text: 'An answer.', session_id: 'sess-m',
+      grounding: { found: true, confidence: 0.9, sources: [] }, actions: [], components: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  window.localStorage.removeItem('fluidbuddha:memask:fbk_memory_site');
+  const mw = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_memory_site', site: 'x', design: 'level1' });
+  await settle();
+  mw.ask('What does it cost?');
+  await settle();
+  const chat = sent.find((c) => c.u.endsWith('/chat'));
+  ok(chat && /^[A-Za-z0-9_-]{8,64}$/.test(chat.body.visitor || ''), 'the conversation carries the anonymous visitor id');
+  const ask = mw.shadowRoot.querySelector('.fb-mem');
+  ok(ask && ask.textContent.includes('remember this conversation'), 'after an answer the visitor is asked, once, whether to be remembered');
+  [...ask.querySelectorAll('.chip')].find((b) => b.textContent === 'Remember me').click();
+  await settle();
+  ok(sent.some((c) => c.u.endsWith('/memory') && c.body.remember === true && c.body.visitor === chat.body.visitor),
+    'Remember me opts in for this visitor');
+  const forget = mw.shadowRoot.querySelector('.fb-forget');
+  ok(!!forget && mw.shadowRoot.textContent.includes("I'll remember"), 'then says so and offers Forget me');
+  forget.click();
+  await settle();
+  ok(sent.some((c) => c.u.endsWith('/memory') && c.body.remember === false) && !mw.shadowRoot.querySelector('.fb-forget'),
+    'Forget me deletes it');
+  mw.remove();
+
+  const again = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_memory_site', site: 'x', design: 'level1' });
+  await settle();
+  again.ask('Another question?');
+  await settle();
+  ok(!again.shadowRoot.querySelector('.fb-mem'), 'the question is not asked again on this browser');
+  again.remove();
+
+  memory = { offered: true, remembered: true, welcome_back: 'Welcome back! Last time you asked about SSO.' };
+  const back = init({ backend: 'ws://localhost:8080', api: 'http://localhost:8080', key: 'fbk_memory_back', site: 'x', design: 'level1' });
+  await settle();
+  back.openPanel();
+  ok(back.shadowRoot.textContent.includes('Welcome back! Last time you asked about SSO.') && !!back.shadowRoot.querySelector('.fb-forget'),
+    'a remembered visitor is welcomed back, with Forget me at hand');
+  back.session.feed({ channel: 'EVENTS', type: 'memory_forgotten', payload: {} });
+  ok(!back.shadowRoot.querySelector('.fb-forget'), 'a spoken "forget me" removes it too');
+  back.remove();
+}
+
+// ---- A server restart moves the visitor quietly (M3-6) ----
+{
+  const statuses = [];
+  const moved = new Session(
+    { backend: 'ws://x', api: 'http://x', site: 'hirebuddha', key: 'fbk_drain', intelligence: 'advance', design: 'level1', position: 'bottom-right', accent: '#000', greeting: '', autoInject: false, hooks: {} },
+    new HostBridge({}),
+    { onStatus(st) { statuses.push(st); }, onUserTranscript() {}, onAgentMessage() {}, onComponent() {}, onPatch() {}, onSystem() {}, onPage() {} },
+  );
+  moved.connect();
+  for (let n = 0; n < 6; n++) {
+    const before = globalThis.__wsAll.length;
+    globalThis.__wsAll[before - 1].onclose({ code: n % 2 ? 1013 : 1012 });
+    await new Promise((r) => setTimeout(r, 2100));
+    if (globalThis.__wsAll.length !== before + 1) { ok(false, `reconnects after close ${n}`); break; }
+  }
+  ok(globalThis.__wsAll.length >= 7 && !statuses.includes('failed'),
+    'closes for a server restart (1012/1013) reconnect every time, never "failed"');
+  const last = globalThis.__wsAll[globalThis.__wsAll.length - 1];
+  ok(new URL(last.url || globalThis.__lastWsUrl).searchParams.get('key') === 'fbk_drain', 'to the same site');
+  moved.destroy?.();
+}
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

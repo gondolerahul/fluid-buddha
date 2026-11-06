@@ -27,6 +27,8 @@ class WebsiteCreate(BaseModel):
     intelligence: str = "advance"
     design: str = "level1"
     accent: str | None = None
+    # Start from a vertical template (M2-9): saas, education, real_estate, healthcare.
+    template: str | None = None
 
 
 class WebsiteUpdate(BaseModel):
@@ -71,10 +73,23 @@ async def create_website(
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     _validate_levels(body.intelligence, body.design)
+    from app.licence.guard import check_limit
+    await check_limit(db, "sites")   # self-hosted installs (M3-5)
+    pack = None
+    if body.template:
+        from app import templates
+        pack = templates.get(body.template)
+        if pack is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No such template")
     site = await store.create_website(
         db, tenant_id=tenant.id, name=body.name, domain=body.domain,
         intelligence=body.intelligence, design=body.design, accent=body.accent,
     )
+    if pack is not None:
+        from app.templates.apply import apply
+        await db.commit()   # the site exists before its profile is written
+        await apply(db, site.site_key, pack)
+        await db.commit()
     return site.public()
 
 

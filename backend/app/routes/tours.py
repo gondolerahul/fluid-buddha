@@ -98,6 +98,8 @@ async def generate_tour(
     settings = get_settings()
     engines = build_engines(settings)
     await ensure_profile(site.site_key)
+    from app.ai.providers import current_site
+    current_site.set(site.site_key)   # the account's own model, if any (M3-4)
     plan = await plan_tour(site_key=site.site_key, documents=documents,
                            llm=engines.llm, settings=settings)
     await tour_store.save_plan(db, plan)

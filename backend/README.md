@@ -154,7 +154,8 @@ Each website has privacy settings (console → Settings → Privacy & data, or
   `RETENTION_SWEEP_MINUTES` (default 60, 0 = off). Pinned and blocked cached
   answers are never swept.
 - **Erasure**: `POST /tenant/websites/{id}/privacy/erase {email}` deletes that
-  visitor's leads and the conversations they came from.
+  visitor's leads, the conversations they came from and any visitor memory
+  linked to them (M3-3).
 
 Cached answers carry a `status`: `pinned` answers always replay for their
 question (even before the "enough history" gate) and survive content
@@ -203,6 +204,328 @@ enabled on the Razorpay account and a `BILLING_CATALOG` override.
 - A failed renewal keeps the plan while Razorpay retries (`pending`); once it
   gives up (`halted`) the account is on Free limits until it subscribes again.
 
+## Teams, roles and single sign-on
+
+People (users) are separate from accounts. Roles: **Owner** (everything, incl.
+billing and SSO), **Admin** (team, integrations, privacy, deleting a site or
+rotating its key, audit log), **Editor** (sites, knowledge, tours, answers,
+experiments, leads), **Viewer** (read-only). The rule is applied in one place
+(`app/auth/roles.py`) from the method and route, so every `/tenant` route is
+covered. Invitations are emailed (M2-0) and also returned as a single-use link.
+
+Single sign-on (`app/auth/sso.py`): set `PUBLIC_API_URL` and register
+`<PUBLIC_API_URL>/auth/sso/callback` with the provider. "Sign in with Google"
+needs `GOOGLE_CLIENT_ID/SECRET` and only signs in existing members. An account's
+own OIDC provider (Console → Team → Single sign-on) signs in people of the email
+domains the account has proven with a DNS TXT record, with a default role.
+Client secrets are encrypted with `SECRETS_KEY`.
+
+The audit log (`app/audit.py`) records every successful change through the
+console API plus sign-ins; Console → Audit log, CSV export, kept a year.
+
+## Security controls (M2-11)
+
+- **Sessions** (`app/auth/sessions.py`): every sign-in is a row in
+  `user_sessions`; tokens name it, so sessions end when idle
+  (`SESSION_IDLE_MINUTES`), at an absolute limit (`SESSION_ABSOLUTE_HOURS`), on
+  sign-out, "sign out everywhere", a password change, or removal from the
+  team. Tokens from before this release ask the person to sign in again.
+- **Console cookie**: the console holds the session in an httpOnly, Secure,
+  SameSite cookie; cookie requests that change something need `X-CSRF-Token`
+  (from sign-in and `/auth/me`). The live inbox socket takes the CSRF token in
+  its first message. Bearer tokens keep working for API clients.
+- **Two-factor** (`app/auth/mfa.py`, RFC 6238, no extra dependency): setup with
+  a QR code, ten one-time recovery codes (hashed), codes can't be replayed.
+  An Owner can require it for the account (`/tenant/security`); password
+  sessions without it are held at the setup page. SSO sign-ins count as
+  two-factor (the identity provider's).
+- **Lockout**: `LOGIN_MAX_ATTEMPTS` wrong passwords or codes in a row lock the
+  person out for `LOGIN_LOCKOUT_MINUTES`.
+- **Stored secrets** encrypted with `SECRETS_KEY`: SSO client secrets, action
+  keys, lead webhook signing secrets and Slack webhook URLs (migration 0024
+  converted the existing ones), two-factor seeds.
+- **Access review**: `/tenant/team/access-review.csv` (Admin+), and each
+  quarter Owners and Admins get an email summary to review.
+- **Security headers** on every response (`app/security/headers.py`):
+  nosniff, `DENY` framing, referrer policy, `no-store` on `/auth` and
+  `/tenant`, HSTS outside dev. The console sets its own CSP
+  (`fluid-buddha-frontend/next.config.ts`).
+- **Backups**: `scripts/backup.sh` (pg_dump, SHA-256, optional `age`
+  encryption, retention, `backup-log.jsonl`) and `scripts/restore_drill.sh`
+  (restores into a scratch database, checks it, writes `drills/*.json`).
+  Both work against a server URL or through the Postgres container
+  (`PG_CONTAINER=a2ui-cortex-db PGUSER=cortex PGDATABASE=cortex`).
+
+Policies and the SOC 2 control matrix are in [`docs/compliance/`](../docs/compliance).
+
+## Proactive triggers
+
+Website → Triggers: rules for when the agent speaks up first — after time on
+a page, past a scroll depth, when the visitor is about to leave (desktop),
+or on a return visit — on chosen pages, as a bubble by the launcher or by
+opening the agent. The widget fetches them from `GET /widget/triggers?key=`
+(key and domain checked), evaluates them in the browser with caps (one per
+page view, a daily cap per visitor and rule, silence for the visit after a
+dismiss or once the visitor talks) and reports shown / clicked / dismissed /
+engaged to `POST /widget/triggers/event`; the tab shows each rule's numbers.
+
+## A/B tests
+
+Website → A/B tests: try 2-4 versions of the greeting, the proactive
+triggers, the guided tour, the starting persona or the design level (with an
+optional holdout). Visitors are assigned by `POST /experiment/enroll`, which
+returns their version's `overrides` and the site's `defaults`; the widget
+applies them and sends `exp: {id, arm}` with the conversation, so the server
+speaks the version's greeting as written and starts in its persona. Results
+(`GET /tenant/websites/{id}/tests/{tid}`) compare each version with the
+control using the always-valid interval at a split error budget, so checking
+daily never inflates false winners. "Make default" (`.../promote`) writes the
+winner into the agent profile, the website's design level, or the trigger
+switches, and ends the test. One experiment (test or holdout) runs per site.
+
+## Insights v2 and the weekly digest
+
+A background job (`INSIGHTS_CLASSIFY_SECONDS`, default 20) labels each visitor
+question: objections by type, competitors (the site's list in the agent
+profile, plus what the model spots), feature requests and buying signals —
+keyword rules with `MOCK_AI=true`, the fast model otherwise. Insights shows
+them with quotes, and a feature request can be sent to Slack, the signed
+webhook (`feature_request`) or an email address.
+
+The weekly digest (`DIGEST_CHECK_SECONDS`, default 600) goes out on Monday at
+9:00 in each account's time zone (Team page: recipients, time zone, preview,
+test send). It needs SMTP outside a dev environment; each email carries a
+one-click `List-Unsubscribe` link served by `/digest/unsubscribe`, so set
+`PUBLIC_API_URL` to the backend's public address.
+
+## Recap pages
+
+A visitor who types "send me this" (or "email me a recap at …") gets a link to
+`/r/{token}`: a recap of their conversation with the components redrawn,
+sources and the site's call to action (agent profile). The page loads
+`fluid-buddha-recap.global.js` from `WIDGET_SDK_BASE` (where the widget's
+`dist/` is served) and is only allowed scripts from that origin. Links expire
+per site (Privacy settings, default 90 days) and go with their conversation.
+Views and forwards show on the lead and in Leads → Shared recaps.
+
+## Reliability (M3-6)
+
+- **`/readyz`** checks every dependency (2 s timeout each, run together):
+  `db`, `migrations` (schema at this version's head), `redis` (when used) and
+  `draining` are critical — 503, so the load balancer moves traffic;
+  `scheduler`, `models`, `email` are reported (`degraded`) without failing it.
+  Each result also sets `fb_ready{check}` for alerting.
+- **Graceful shutdown** (`app/transport/drain.py`): on SIGTERM the replica
+  turns not-ready, tells each voice session `EVENTS/reconnect`, lets it finish
+  the answer it is speaking, closes it with 1012 and refuses new sockets with
+  1013; the widget reconnects in about 2 s without counting it as a failure.
+  `DRAIN_SECONDS` (25) < uvicorn `--timeout-graceful-shutdown` (45) < the
+  platform's grace period (Compose 60 s). `WEB_CONCURRENCY` sets uvicorn
+  workers.
+- **Status page** at `/status` (and `/status.json`): the `status_probe` job
+  (`STATUS_PROBE_SECONDS`, 60) records each component (API, voice, jobs, email)
+  every minute; 90 days of bars and uptime; incidents posted with
+  `Authorization: Bearer $STATUS_TOKEN` to `POST /status/incidents` and
+  `/status/incidents/{id}/updates`.
+- **Alerts**: `deploy/monitoring/alerts.yml` (error-budget burn, not ready,
+  down, stuck drain, time to first audio, model errors, jobs, spend caps), each
+  linked to `docs/operations/incident-runbook.md`; SLOs in
+  `docs/operations/sla.md`.
+- **Voice load test**: `python -m loadtest.voice --url ws://…/ws/voice --key fbk_… --sessions 50 --turns 3`
+  (also inside the backend image); exits non-zero on failed turns or
+  `--max-p95-ttfa`. Raise `PUBLIC_RATE_LIMIT_PER_MIN` on the target when
+  measuring capacity, or turns are counted as `rate_limited`.
+
+## Self-hosted installs and the licence (M3-5)
+
+`deploy/selfhost/` is the whole product for one Linux host: Caddy (TLS, routing,
+the widget's files at `/sdk/`), backend, console, Postgres+pgvector, Redis,
+optional coturn — with health checks, rotated logs, `bin/install.sh`,
+`backup.sh` (base backup + WAL archive for point-in-time recovery, and a
+logical dump), `restore.sh`, `upgrade.sh` and `export-images.sh` /
+`import-images.sh` for air-gapped hosts. Its README is the runbook.
+
+With `SELF_HOSTED=true` the backend checks a licence: an Ed25519-signed token
+(`FBL1.<payload>.<signature>`) verified offline against `PUBLIC_KEYS` in
+`app/licence/core.py` — no phone-home. It names the customer, websites, seats
+(install-wide, pending invitations included), features (`*` or
+`byo_model`, `agent_access`, `campaigns`, `sso`, `voice_handoff`), expiry and
+grace period. From the console (Account → Licence, Owner; `PUT /tenant/licence`),
+`LICENCE_KEY` or `LICENCE_FILE`. 30 days before expiry, and in the grace
+period, the console shows a banner; after it (or with none / an invalid one)
+`/tenant` changes return 402 — reads still work, and visitors (widget, hosted
+pages, agent endpoint) are never affected. Issue licences with
+`scripts/licence_tool.py` (`keygen`, `issue`, `verify`); the private key lives
+outside the repo (`.licence-keys/`, gitignored).
+
+## Generative landing pages: campaigns (M3-1)
+
+Console → website → Campaigns. A campaign is a brief: goal, audience, key
+messages (the first is the headline), which sections the page may use
+(feature cards, text, pricing, testimonials, logos, FAQ, comparison, ROI
+calculator, chart, enquiry form, image; a hero and a call to action always),
+the call to action and its link, and the proof the customer supplies —
+testimonials and logos, which the page quotes but never invents. Optionally a
+version B (headline, messages, CTA) shown to half the visitors.
+
+Live at `GET /p/{site_key}/{slug}`. The link steers the page:
+`?persona=` (or `utm_content`), `?q=` (or `utm_term`) — answered first,
+`?account=` ("Prepared for Acme", and pre-filled in the form), `?lang=hi`,
+`utm_source` (reported). Drafts open only with the preview link from the
+console (not counted, no agent on the page).
+
+Composition (`app/campaigns/compose.py`): the site's knowledge retrieved for
+the messages, the persona's focus and the question (above the grounding
+threshold), the pinned answers (word for word) and the blocked questions
+(never answered). The account's own model (M3-4) or the platform's composes
+typed sections that cite their sources; in mock mode, past the composition
+rate (20 a minute per site) or past the daily spend cap, a rule-based composer
+that only quotes the material does. Whatever composed it, the checks run:
+only the campaign's sections; factual sections cite real sources; every
+number appears in what it cites (or in the brief); testimonials and logos only
+as supplied; the enquiry form is always the same safe one. Failures are
+dropped and listed on the cached spec (`dropped`).
+
+Pages are cached per campaign version, arm, persona, question, language and
+content version (re-ingesting composes afresh); `?account=` is drawn at
+render time and never costs a composition. The `Server-Timing` header says
+`cache`, `rules` or `model`. The page is server-rendered (no script needed to
+read it or paint the hero); `fluid-buddha-page.global.js` draws the ROI
+calculator and charts and reports engagement once; the site's widget is on
+the page (the widget accepts our own origin for hosted pages).
+
+Numbers per unique visitor, credited to the arm, persona and source of their
+first view: views, engaged (scrolled past half, 15 s visible, or used a
+component or the agent), converted (the page's form — a lead with source
+`campaign` — or the call to action through `/p/…/go`). Bots aren't counted.
+With a version B, the A/B verdict uses the same always-valid test as M2-4.
+Embedding: `?embed=1` in an iframe, allowed from the site's domain and the
+origins listed on the campaign.
+
+## Returning-visitor memory (M3-3)
+
+Off by default. A website switches it on in Privacy settings ("Remember
+returning visitors who ask to be remembered", kept 30–365 days after the last
+visit, default 180). Then, after its first answer, the widget asks the visitor
+once per browser whether to remember the conversation; "Remember me" calls
+`POST /memory {key, visitor, remember: true}` with the widget's anonymous
+visitor id (the same id A/B tests use). From then on that visitor's
+conversations on that site, text or voice, including the one they opted in
+during, are linked to the id (`conversations.visitor_id`; the record links
+only while a memory row exists). Every `MEMORY_BUILD_SECONDS` (default 120,
+0 = off) a job rebuilds the memory of visitors whose conversation has been
+quiet for 10 minutes: their latest questions, components explored, what the
+agent couldn't answer, whether they left their details — from the stored,
+PII-masked transcript, newest three conversations (`app/memory/store.py`).
+
+Next visit, `/experiment/enroll` returns `memory.welcome_back` (English and
+Hindi) and the widget greets with it ("Welcome back! Last time you asked:
+“…?” Want to pick up where we left off?"); the voice welcome says the same
+and skips the guided tour; the agent gets the notes at the start of the
+conversation's history. A memory belongs to one site: the same visitor id
+elsewhere is a stranger.
+
+"Forget me" — the widget's chip, or typed / said ("forget me", "मुझे भूल
+जाओ") — deletes the memory and unlinks the conversations. So do erasure by
+email (through the visitor's conversations), retention, switching the
+setting off, and deleting the site. Retention now also sweeps CORTEX episodic
+memory older than the transcript window (the WS8 leftover).
+
+## Agent endpoint: MCP + llms.txt (M3-2)
+
+A website can let AI assistants ask it directly (Console → website → Agent
+access, off by default; Admins switch it on). With the site's public widget
+key in the path:
+
+- `POST /mcp/{key}` — an MCP server over streamable HTTP (JSON-RPC 2.0,
+  answered as JSON; stateless; protocol versions 2025-11-25 back to
+  2024-11-05). Tools: `search_knowledge` (the site's own agent, one grounded
+  turn with sources and the same guardrails), `get_page`, `list_offerings`
+  (knowledge + payment price lists). Resources: the site's crawled pages.
+  `capture_lead` and the site's actions (`action_<name>`) appear only for a
+  token the customer issued with the `leads` / `actions` scope
+  (`Authorization: Bearer fbat_…`, stored hashed); the token is the
+  authorisation, so actions run at once (amounts still from the price list).
+- `GET /sites/{key}/llms.txt`, `GET /sites/{key}/openapi.json`,
+  `POST /agent/{key}/ask`, `GET /agent/{key}/offerings` — for assistants that
+  read llms.txt or call OpenAPI tools.
+
+Rate-limited per site and client address (30/min), under the site's daily
+spend cap, browser `Origin`s limited to the site's domain (MCP's DNS-rebinding
+rule), and every call logged in `agent_requests` (the console's agent
+traffic: by tool, by assistant). Usage from these calls is recorded with
+channel `agent` and no session, so it never counts as a billed conversation.
+
+## Bring your own model (M3-4)
+
+An account can run its agent on its own **Anthropic**, **OpenAI** or **Azure
+OpenAI** account (Console → AI model, Owners/Admins). It sets the provider, its
+API key (encrypted with `SECRETS_KEY`, never returned), a *fast* model (routing,
+quick answers, labelling) and a *thinking* model (grounded answers with tools),
+and Azure's endpoint + API version (models are deployment names there). "Test
+connection" makes a one-line call with each model. Each website uses the
+account's provider unless switched back to the platform's.
+
+`rt.engines.llm` is a `RoutingLLM` (`app/ai/providers.py`): the site of the
+current request comes from a context variable set where a conversation, recap,
+tour plan or labelling task starts, and calls go to that site's provider
+(`app/ai/anthropic_llm.py` with the official `anthropic` SDK,
+`app/ai/openai_llm.py` with the official `openai` SDK). The platform's
+`HEAVY_MODEL` maps to the thinking model, everything else to the fast one. If
+the provider fails the call falls back to the platform model and the error
+shows in the console. Voice and embeddings stay on Google.
+
+Claude requests send no sampling parameters, set depth with
+`output_config.effort` (low for quick calls; thinking off where the model
+allows it), replay a tool turn's content blocks (thinking included) verbatim,
+handle `refusal`, and use the server-side fallback (`fallbacks: "default"`) on
+the models that support it.
+
+Usage records the provider; that model cost is priced at the account's
+prices (or the provider's list price where known), shown separately on
+Analytics (`byo_llm_cost`) and left out of the daily spend cap.
+
+## Install surfaces
+
+Every way of installing the agent — the plain snippet, the WordPress plugin, the
+Shopify app embed, Google Tag Manager, Webflow, Framer, `@fluidbuddha/react` and
+`@fluidbuddha/vue` (all in [`integrations/`](../integrations)) — loads one script:
+
+```html
+<script src="https://<this server>/widget/loader.js" data-key="fbk_…" async></script>
+```
+
+The loader adds the widget from `WIDGET_SDK_BASE` with the same `data-*`
+settings (or the same settings from its query string, for GTM) and points it
+back at the server it came from, so a page needs only the key. Design, colour,
+greeting and tier come from the console. `data-auto="false"` loads the widget
+without showing it (the framework wrappers create it themselves);
+`fluidbuddha:ready` fires on `window` when it's loaded. It's the same for every
+site, cached for 5 minutes.
+
+`/widget/gtm-template.tpl` is a GTM custom template whose only permission is to
+inject this server's loader (built from `PUBLIC_API_URL`).
+
+Plugins take the server and key as one *install code*, `https://fbk_…@<server>`,
+shown in the console's Install tab.
+
+## Live takeover and voice handoff
+
+Console → Live lists who is talking to the agent right now on the account's
+sites and streams each conversation. An Editor can **take over** (the agent
+pauses; the visitor is told who joined), reply, and **hand back** (the agent
+gets what was said). Voice visitors can be **called** in the browser (WebRTC;
+the visitor accepts; the agent stops listening). Events travel over an
+in-process bus, or Redis pub/sub across replicas with `REDIS_URL`; operators
+receive them on `WS /tenant/live/events`; text-mode widgets long-poll
+`/chat/live`.
+
+Calls need STUN and, behind strict networks, our TURN relay: run
+`TURN_SECRET=… docker compose --profile voice up -d coturn` on a host with a
+public IP (ports 3478 UDP/TCP and 49160–49200 UDP), then set `TURN_URLS` and
+the same `TURN_SECRET` on the backend. Credentials are minted per call and
+expire after `TURN_TTL_SECONDS` (coturn `use-auth-secret`).
+
 ## Operations
 
 - **Request ids.** Every response carries `X-Request-ID` (the caller's, if it
@@ -222,6 +545,15 @@ enabled on the Razorpay account and a `BILLING_CATALOG` override.
     `fb_crawl_jobs_total{status}`, `fb_cost_alerts_total{level}`.
   Time to first audio is also stored per voice turn (`usage_events.ttfa_ms`)
   and shown per site on the console's Analytics tab (median and p95).
+- **Email** (`app/notify/email.py`): plain SMTP (`SMTP_*`). Everything is queued
+  in `email_outbox` and sent by a background job: retried with backoff
+  (1 → 32 minutes, 6 attempts), claimed with `SKIP LOCKED` so replicas never
+  double-send, deduplicated by an idempotency key, and deleted 30 days after
+  sending. Without `SMTP_HOST`, dev logs each email; production refuses to queue.
+  Set up SPF and DKIM for the sending domain at your provider.
+- **Background jobs** (`app/jobs/`): retention sweep, email outbox and cleanup
+  run on one scheduler; each run holds a Postgres advisory lock, so only one
+  replica runs a job at a time (`fb_job_runs_total{job,outcome}`).
 - **Cost alerts** (`app/analytics/alerts.py`): each site can set a daily AI-cost
   alert (Console → Settings → Lead integrations, USD); with a daily spend cap
   (`PUBLIC_DAILY_SPEND_CAP_USD`) every site is also alerted at 80% and 100% of

@@ -1,0 +1,203 @@
+# FluidBuddha, self-hosted (M3-5). One Linux host with Docker:
+#
+#   cp .env.example .env    # then fill it in (README.md → Install)
+#   docker compose up -d --build
+#
+# Services: web (Caddy: TLS, routing, the widget's files), backend (API, voice,
+# jobs; runs the database migrations on start), console, postgres (+pgvector),
+# redis (sessions and rate limits). coturn (voice handoff relay) is optional:
+# `docker compose --profile voice up -d`.
+#
+# Only web (80/443) and coturn are reachable from outside; everything else
+# talks on the private compose network. Every service has a health check, a
+# restart policy and rotated logs.
+name: fluidbuddha
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  web:
+    build:
+      context: ../../fluid-buddha-sdk
+      dockerfile: ../deploy/selfhost/web.Dockerfile
+    image: fluidbuddha/web:${FB_VERSION:-local}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      console:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
+      CONSOLE_DOMAIN: ${CONSOLE_DOMAIN:?set CONSOLE_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@localhost}
+      CADDY_TLS: ${CADDY_TLS:-}
+      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      # Your own certificates (README.md → TLS), if you don't use Let's Encrypt.
+      - ./certs:/certs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 4s
+      retries: 5
+    logging: *logging
+
+  backend:
+    build:
+      context: ../../backend
+    image: fluidbuddha/backend:${FB_VERSION:-local}
+    restart: unless-stopped
+    # Voice sessions get this long to finish before a stop or upgrade (M3-6).
+    stop_grace_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      SELF_HOSTED: "true"
+      LICENCE_KEY: ${LICENCE_KEY:-}
+      LICENCE_FILE: ${LICENCE_FILE:-}
+      CORTEX_DB_URL: postgresql+asyncpg://fluidbuddha:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/fluidbuddha
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env}
+      PUBLIC_API_URL: https://${API_DOMAIN}
+      CONSOLE_URL: https://${CONSOLE_DOMAIN}
+      WIDGET_SDK_BASE: https://${API_DOMAIN}/sdk
+      CORS_ORIGINS: "*"
+      ADMIN_CORS_ORIGINS: https://${CONSOLE_DOMAIN}
+      SESSION_COOKIE_SECURE: "true"
+      LOG_FORMAT: json
+      # Worker processes per backend container (voice sessions spread across them).
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      # Reliability (M3-6): voice sessions get this long to move on shutdown;
+      # the public status page's name and the token for posting incidents.
+      DRAIN_SECONDS: ${DRAIN_SECONDS:-25}
+      STATUS_TITLE: ${STATUS_TITLE:-FluidBuddha}
+      STATUS_TOKEN: ${STATUS_TOKEN:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # AI: Vertex AI by default (mount the service account below), or set
+      # MOCK_AI=true to try the install without any model; then bring your own
+      # Anthropic / OpenAI / Azure OpenAI key in the console (README.md → Models).
+      MOCK_AI: ${MOCK_AI:-false}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      FAST_MODEL: ${FAST_MODEL:-gemini-2.5-flash}
+      HEAVY_MODEL: ${HEAVY_MODEL:-gemini-2.5-pro}
+      PUBLIC_DAILY_SPEND_CAP_USD: ${PUBLIC_DAILY_SPEND_CAP_USD:-50}
+      # Email (invitations, recaps, digests). Without it links are shown in the console.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      # Voice handoff relay (profile "voice").
+      TURN_URLS: ${TURN_URLS:-}
+      TURN_SECRET: ${TURN_SECRET:-}
+      # Single sign-on with Google (optional).
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    volumes:
+      - ./secrets:/secrets:ro
+    logging: *logging
+
+  console:
+    build:
+      context: ../../fluid-buddha-frontend
+      args:
+        NEXT_PUBLIC_API_BASE: https://${API_DOMAIN}
+        NEXT_PUBLIC_WIDGET_BACKEND: wss://${API_DOMAIN}
+    image: fluidbuddha/console:${FB_VERSION:-local}
+    restart: unless-stopped
+    logging: *logging
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fluidbuddha
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: fluidbuddha
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    # Continuous WAL archiving for point-in-time recovery (README.md → Backups).
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test ! -f /backups/wal/%f && cp %p /backups/wal/%f
+      - -c
+      - archive_timeout=300
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fluidbuddha -d fluidbuddha"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+  coturn:
+    image: coturn/coturn:4.6
+    profiles: ["voice"]
+    restart: unless-stopped
+    command:
+      - "-n"
+      - "--log-file=stdout"
+      - "--use-auth-secret"
+      - "--static-auth-secret=${TURN_SECRET:-}"
+      - "--realm=${API_DOMAIN}"
+      - "--listening-port=3478"
+      - "--min-port=49160"
+      - "--max-port=49200"
+      - "--fingerprint"
+      - "--no-cli"
+      - "--no-multicast-peers"
+      - "--denied-peer-ip=10.0.0.0-10.255.255.255"
+      - "--denied-peer-ip=172.16.0.0-172.31.255.255"
+      - "--denied-peer-ip=192.168.0.0-192.168.255.255"
+      - "--denied-peer-ip=127.0.0.0-127.255.255.255"
+      - "--denied-peer-ip=169.254.0.0-169.254.255.255"
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3478 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

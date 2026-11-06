@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FluidBuddha · install check</title>
+  <style>
+    body { margin: 0; font: 16px/1.55 ui-sans-serif, system-ui, sans-serif; background: #f6f4ef; color: #1d1d1f; }
+    main { max-width: 680px; margin: 0 auto; padding: 56px 24px; }
+    code { background: #ebe7dd; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    .status { margin-top: 24px; padding: 12px 16px; border-radius: 8px; background: #fff; border: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Install check</h1>
+    <p>
+      A plain page that installs the agent the way the plugins do (M2-10): only the server's
+      <code>/widget/loader.js</code> and a widget key — no design, colour or tier in the page.
+    </p>
+    <p>
+      <code>?key=fbk_…</code> (required), <code>&amp;server=http://localhost:8081</code>,
+      <code>&amp;mode=react</code> to mount it with <code>@fluidbuddha/react</code> instead
+      (build it first: <code>dist/integrations-react-demo.js</code>, see integrations/js).
+    </p>
+    <div class="status" id="status">Waiting for the widget…</div>
+  </main>
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var key = q.get('key');
+      var server = (q.get('server') || 'http://localhost:8081').replace(/\/$/, '');
+      var status = document.getElementById('status');
+      if (!key) { status.textContent = 'Add ?key=fbk_… to the address.'; return; }
+      window.addEventListener('fluidbuddha:ready', function () {
+        status.textContent = 'Widget code loaded from ' + server + '.';
+      });
+      if (q.get('mode') === 'react') {
+        window.__installCode = server.replace(/^(https?:\/\/)/, '$1' + key + '@');
+        var r = document.createElement('script');
+        r.src = '../dist/integrations-react-demo.js';
+        document.body.appendChild(r);
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = server + '/widget/loader.js';
+      s.async = true;
+      s.setAttribute('data-key', key);
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "@fluidbuddha/react",
+  "version": "0.1.0",
+  "description": "The FluidBuddha voice and chat agent as a React component.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/types/packages/react/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/packages/react/src/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "keywords": ["fluidbuddha", "ai-agent", "chat", "voice", "react"],
+  "license": "MIT"
+}

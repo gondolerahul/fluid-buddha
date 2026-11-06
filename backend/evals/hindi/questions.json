@@ -1,0 +1,22 @@
+[
+  {"target": "pricing-plans", "en": "How much does the Growth plan cost?", "hi": "ग्रोथ प्लान की कीमत कितनी है?", "hinglish": "Growth plan ka price kitna hai?"},
+  {"target": "free-trial", "en": "Do I need a credit card for the free trial?", "hi": "क्या फ्री ट्रायल के लिए क्रेडिट कार्ड चाहिए?", "hinglish": "free trial ke liye credit card chahiye kya?"},
+  {"target": "overage", "en": "What happens if we use more conversations than our plan allows?", "hi": "अगर हम प्लान से ज़्यादा बातचीत कर लें तो क्या होगा?", "hinglish": "agar plan se zyada conversations ho gaye to kya hoga?"},
+  {"target": "payment-methods", "en": "Can I pay with UPI?", "hi": "क्या मैं UPI से पेमेंट कर सकता हूँ?", "hinglish": "kya main UPI se payment kar sakta hoon?"},
+  {"target": "integrations-crm", "en": "Does it work with Zoho CRM?", "hi": "क्या यह Zoho CRM के साथ काम करता है?", "hinglish": "kya ye Zoho CRM ke saath kaam karta hai?"},
+  {"target": "integrations-slack", "en": "Can we get lead alerts in Slack?", "hi": "क्या हमें Slack में लीड की सूचना मिल सकती है?", "hinglish": "Slack mein lead alerts mil sakte hain kya?"},
+  {"target": "install-wordpress", "en": "How do I install it on my WordPress site?", "hi": "इसे अपनी WordPress साइट पर कैसे लगाऊँ?", "hinglish": "WordPress site pe isko kaise install karein?"},
+  {"target": "data-residency", "en": "Is our data stored in India?", "hi": "क्या हमारा डेटा भारत में रखा जाता है?", "hinglish": "hamara data India mein store hota hai kya?"},
+  {"target": "encryption", "en": "Is the data encrypted?", "hi": "क्या डेटा एन्क्रिप्टेड रहता है?", "hinglish": "data encrypted rehta hai kya?"},
+  {"target": "compliance", "en": "Are you compliant with the DPDP Act?", "hi": "क्या आप DPDP कानून का पालन करते हैं?", "hinglish": "kya aap DPDP Act follow karte ho?"},
+  {"target": "pii-masking", "en": "What happens to phone numbers that visitors type?", "hi": "विज़िटर जो फ़ोन नंबर लिखते हैं उनका क्या होता है?", "hinglish": "visitors jo phone number type karte hain uska kya hota hai?"},
+  {"target": "retention", "en": "How long do you keep conversation transcripts?", "hi": "आप बातचीत का रिकॉर्ड कितने दिन तक रखते हैं?", "hinglish": "conversation ka record kitne din tak rakhte ho?"},
+  {"target": "voice-microphone", "en": "Do you record the visitor's voice?", "hi": "क्या आप विज़िटर की आवाज़ रिकॉर्ड करते हैं?", "hinglish": "kya aap visitor ki awaaz record karte ho?"},
+  {"target": "setup-time", "en": "How long does it take to set up?", "hi": "इसे सेट अप करने में कितना समय लगता है?", "hinglish": "setup mein kitna time lagta hai?"},
+  {"target": "accuracy", "en": "What does the agent do when it doesn't know the answer?", "hi": "जब एजेंट को जवाब नहीं पता होता तब वह क्या करता है?", "hinglish": "jab agent ko answer nahi pata hota tab kya karta hai?"},
+  {"target": "human-handoff", "en": "Can my team take over a conversation from the agent?", "hi": "क्या मेरी टीम एजेंट से बातचीत अपने हाथ में ले सकती है?", "hinglish": "kya meri team agent se conversation le sakti hai?"},
+  {"target": "lead-scoring", "en": "How is the lead score calculated?", "hi": "लीड स्कोर कैसे तय होता है?", "hinglish": "lead score kaise calculate hota hai?"},
+  {"target": "ab-testing", "en": "Can I test two different greetings?", "hi": "क्या मैं दो अलग-अलग ग्रीटिंग आज़मा सकता हूँ?", "hinglish": "kya main do alag greetings test kar sakta hoon?"},
+  {"target": "support", "en": "Do you offer phone support?", "hi": "क्या आप फ़ोन पर सपोर्ट देते हैं?", "hinglish": "kya aap phone pe support dete ho?"},
+  {"target": "cancellation", "en": "Can we cancel anytime and export our leads?", "hi": "क्या हम कभी भी रद्द करके अपनी लीड्स निकाल सकते हैं?", "hinglish": "kya hum kabhi bhi cancel karke leads export kar sakte hain?"}
+]

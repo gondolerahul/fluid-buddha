@@ -20,6 +20,19 @@ Tenant (console):
     GET  /tenant/websites/{id}/experiment/plan     ?baseline=&mde=&holdout_pct=
                                                    visitors needed and days left
 
+Variant tests (M2-4), one experiment per site at a time:
+
+    GET  /tenant/websites/{id}/tests               past and current tests
+    POST /tenant/websites/{id}/tests               {name, subject, variants, holdout_pct, goal_path}
+    GET  /tenant/websites/{id}/tests/plan          ?variants=&baseline=&mde=&holdout_pct=
+    GET  /tenant/websites/{id}/tests/{tid}         each variant vs the control, verdict
+    POST /tenant/websites/{id}/tests/{tid}/stop
+    POST /tenant/websites/{id}/tests/{tid}/promote {variant}: make it the site's
+                                                   default and end the test
+
+The enrolment answer carries the visitor's variant ``overrides`` (applied by
+the widget) and the site's ``defaults`` (greeting, design level).
+
 Enrolment turns bots away (their User-Agent, or ``automated`` — the widget's
 ``navigator.webdriver``); see ``app/experiments/bots.py``.
 """
@@ -34,12 +47,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text
+
 from app.db import get_session, session_scope
 from app.experiments import store as exp_store
 from app.experiments.bots import is_bot
+from app.orchestrator.profile import ensure_profile, load_profile, save_profile
 from app.tenancy import store
 from app.tenancy.deps import owned_website
-from app.tenancy.public_access import PublicAccessError, resolve_public_site
+from app.tenancy.public_access import PublicAccessError, ResolvedSite, resolve_public_site
+from app.triggers import store as trigger_store
 
 public = APIRouter(prefix="/experiment", tags=["experiments"])
 admin = APIRouter(prefix="/tenant/websites/{website_id}", tags=["experiments"])
@@ -67,17 +84,24 @@ def _visitor(data: dict) -> str:
     return v
 
 
-async def _site_key(db: AsyncSession, data: dict, request: Request) -> Optional[str]:
-    """The tenant site the key resolves to; None for built-in demo sites, which
-    never run experiments."""
+async def _resolve(db: AsyncSession, data: dict, request: Request) -> ResolvedSite:
     try:
-        resolved = await resolve_public_site(
+        return await resolve_public_site(
             db, key=data.get("key"), site=data.get("site"), intelligence=None,
             origin=request.headers.get("origin"),
         )
     except PublicAccessError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, exc.reason)
+
+
+async def _site_key(db: AsyncSession, data: dict, request: Request) -> Optional[str]:
+    """The tenant site the key resolves to; None for built-in demo sites, which
+    never run experiments."""
+    resolved = await _resolve(db, data, request)
     return resolved.site_key if resolved.website is not None else None
+
+
+_NO_ARM = {"experiment_id": None, "arm": None, "goal_path": None, "overrides": {}}
 
 
 @public.post("/enroll")
@@ -85,10 +109,32 @@ async def enroll(request: Request) -> dict:
     data = await _body(request)
     visitor = _visitor(data)
     async with session_scope() as db:
-        site_key = await _site_key(db, data, request)
+        resolved = await _resolve(db, data, request)
+        if resolved.website is None:
+            return {**_NO_ARM, "defaults": {}}
         bot = is_bot(request.headers.get("user-agent"), data.get("automated"))
-        result = await exp_store.enroll(db, site_key, visitor, bot=bot) if site_key else None
-    return result or {"experiment_id": None, "arm": None, "goal_path": None}
+        result = await exp_store.enroll(db, resolved.site_key, visitor, bot=bot)
+    profile = await ensure_profile(resolved.site_key)
+    from app.memory import store as memory
+    async with session_scope() as mdb:
+        mem_on = await memory.enabled(mdb, resolved.site_key)
+        mem = await memory.get(mdb, resolved.site_key, visitor) if mem_on else None
+    defaults = {"greeting": profile.greeting or None, "design": resolved.website.design,
+                # Brand colour (M2-10): plugin installs carry only the key.
+                "accent": resolved.website.accent or None,
+                # Languages (M2-7): the widget picks its labels from these.
+                "languages": profile.languages, "widget_language": profile.widget_language,
+                "greeting_hi": profile.greeting_hi or None,
+                # Suggestion chips (M2-9 templates); empty = the widget's own.
+                "starters": profile.starter_questions,
+                "starters_hi": profile.starter_questions_hi,
+                # The agent's name for the widget's labels (M2-7 follow-up).
+                "agent_name": profile.agent_name,
+                # Returning-visitor memory (M3-3): offered, opted in, the welcome back.
+                "memory": {"offered": mem_on, "remembered": mem is not None,
+                           "welcome_back": memory.greeting(mem, "en") if mem else None,
+                           "welcome_back_hi": memory.greeting(mem, "hi") if mem else None}}
+    return {**(result or _NO_ARM), "defaults": defaults}
 
 
 @public.post("/convert", status_code=status.HTTP_202_ACCEPTED)
@@ -138,7 +184,7 @@ async def get_experiment(
     site: store.Website = Depends(owned_website),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    return _settings(await exp_store.current(db, site.site_key))
+    return _settings(await exp_store.current(db, site.site_key, kind="holdout"))
 
 
 @admin.put("/experiment")
@@ -151,8 +197,11 @@ async def put_experiment(
         goal = exp_store.clean_goal_path(body.goal_path)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
-    exp, started = await exp_store.configure(
-        db, site.site_key, enabled=body.enabled, holdout_pct=body.holdout_pct, goal_path=goal)
+    try:
+        exp, started = await exp_store.configure(
+            db, site.site_key, enabled=body.enabled, holdout_pct=body.holdout_pct, goal_path=goal)
+    except exp_store.Conflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
     return {**_settings(exp), "started_new_run": started}
 
 
@@ -161,7 +210,10 @@ async def restart_experiment(
     site: store.Website = Depends(owned_website),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    exp = await exp_store.restart(db, site.site_key)
+    try:
+        exp = await exp_store.restart(db, site.site_key)
+    except exp_store.Conflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
     if exp is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No experiment to restart")
     return _settings(exp)
@@ -172,7 +224,7 @@ async def experiment_results(
     site: store.Website = Depends(owned_website),
     db: AsyncSession = Depends(get_session),
 ) -> Optional[dict]:
-    exp = await exp_store.current(db, site.site_key)
+    exp = await exp_store.current(db, site.site_key, kind="holdout")
     if exp is None:
         return None
     return await exp_store.results(db, exp)
@@ -186,5 +238,139 @@ async def experiment_plan(
     site: store.Website = Depends(owned_website),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    exp = await exp_store.current(db, site.site_key)
+    exp = await exp_store.current(db, site.site_key, kind="holdout")
     return await exp_store.plan(db, exp, baseline=baseline, mde=mde, holdout_pct=holdout_pct)
+
+
+# ---- variant tests (M2-4) --------------------------------------------------------
+
+class VariantIn(BaseModel):
+    label: str = Field("", max_length=60)
+    overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class TestIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    subject: str
+    variants: list[VariantIn] = Field(..., min_length=2, max_length=len(exp_store.VARIANT_KEYS))
+    holdout_pct: int = Field(0, ge=0, le=50)
+    goal_path: Optional[str] = Field(None, max_length=300)
+
+
+class PromoteIn(BaseModel):
+    variant: str = Field(..., pattern="^[a-d]$")
+
+
+async def _site_options(db: AsyncSession, site_key: str) -> dict:
+    profile = await load_profile(db, site_key)
+    rules = await trigger_store.rules(db, site_key)
+    return {"personas": profile.persona_slugs, "rule_ids": [r["id"] for r in rules]}
+
+
+async def _test(db: AsyncSession, site: store.Website, test_id: uuid.UUID) -> exp_store.Experiment:
+    exp = await exp_store.get(db, site.site_key, test_id)
+    if exp is None or not exp.is_test:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such test")
+    return exp
+
+
+@admin.get("/tests")
+async def list_tests(
+    site: store.Website = Depends(owned_website),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    running = await exp_store.current(db, site.site_key)
+    return {"tests": await exp_store.list_tests(db, site.site_key),
+            "holdout_running": bool(running and running.running and not running.is_test)}
+
+
+@admin.post("/tests", status_code=status.HTTP_201_CREATED)
+async def start_test(
+    body: TestIn,
+    site: store.Website = Depends(owned_website),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    try:
+        goal = exp_store.clean_goal_path(body.goal_path)
+        variants = exp_store.clean_variants(
+            body.subject, [v.model_dump() for v in body.variants],
+            **await _site_options(db, site.site_key))
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+    exp = await exp_store.start_test(
+        db, site.site_key, name=body.name.strip(), subject=body.subject, variants=variants,
+        holdout_pct=body.holdout_pct, goal_path=goal)
+    return exp.public()
+
+
+@admin.get("/tests/plan")
+async def plan_test(
+    variants: int = Query(3, ge=2, le=len(exp_store.VARIANT_KEYS)),
+    baseline: float = Query(exp_store.DEFAULT_BASELINE, gt=0, lt=1),
+    mde: float = Query(exp_store.DEFAULT_MDE, gt=0, le=10),
+    holdout_pct: int = Query(0, ge=0, le=50),
+    site: store.Website = Depends(owned_website),
+) -> dict:
+    """Before a test starts: visitors it needs for a given lift."""
+    from app.experiments.stats import sample_size_arms
+    return {"baseline": baseline, "mde": mde, "variants": variants, "holdout_pct": holdout_pct,
+            "needed": sample_size_arms(baseline, mde, variants, holdout_pct / 100)}
+
+
+@admin.get("/tests/{test_id}")
+async def test_detail(
+    test_id: uuid.UUID,
+    mde: float = Query(exp_store.DEFAULT_MDE, gt=0, le=10),
+    site: store.Website = Depends(owned_website),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    return await exp_store.variant_results(db, await _test(db, site, test_id), mde=mde)
+
+
+@admin.post("/tests/{test_id}/stop")
+async def stop_test(
+    test_id: uuid.UUID,
+    site: store.Website = Depends(owned_website),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    return (await exp_store.stop_test(db, await _test(db, site, test_id))).public()
+
+
+@admin.post("/tests/{test_id}/promote")
+async def promote_variant(
+    test_id: uuid.UUID,
+    body: PromoteIn,
+    site: store.Website = Depends(owned_website),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """Make a variant the site's default: the greeting, starting persona and
+    tour switch go to the agent profile, the design level to the website, and
+    for a trigger test the winning variant's triggers are switched on and the
+    other tested ones off. Then the test ends."""
+    exp = await _test(db, site, test_id)
+    v = exp.variant(body.variant)
+    if v is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such variant")
+    o = v["overrides"]
+    if exp.subject in ("greeting", "persona", "tour"):
+        profile = await load_profile(db, site.site_key)
+        if exp.subject == "greeting":
+            profile.greeting = o["greeting"]
+        elif exp.subject == "persona":
+            if o["persona"] and o["persona"] not in profile.persona_slugs:
+                raise HTTPException(status.HTTP_409_CONFLICT, "That persona no longer exists")
+            profile.default_persona = o["persona"]
+        else:
+            profile.tour_enabled = o["tour"]
+        await save_profile(db, profile)
+    elif exp.subject == "design":
+        await store.update_website(db, site.id, site.tenant_id, design=o["design"])
+    elif exp.subject == "trigger":
+        tested = sorted({i for x in exp.variants for i in x["overrides"]["triggers"]})
+        if tested:
+            await db.execute(
+                text("UPDATE trigger_rules SET enabled = (CAST(id AS text) = ANY(:on)), "
+                     "updated_at = now() WHERE site_key = :s AND CAST(id AS text) = ANY(:all)"),
+                {"on": o["triggers"], "all": tested, "s": site.site_key})
+            await db.commit()
+    return (await exp_store.mark_promoted(db, exp, body.variant)).public()

@@ -1,39 +1,133 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { API_BASE, Api, ApiError, SDK_URL, WIDGET_BACKEND, Website } from "@/lib/api";
 import { useWebsite } from "@/components/WebsiteContext";
 import { Spinner, useToast } from "@/components/ui";
+import { EditOnly } from "@/components/Permission";
 
-type Mode = "html" | "spa";
 type Check = { label: string; ok: boolean; detail: string };
 
-function htmlSnippet(w: Website): string {
-  const attrs = [
-    `src="${SDK_URL}"`,
-    `data-backend="${WIDGET_BACKEND}"`,
-    `data-key="${w.public_key}"`,
-    `data-intelligence="${w.intelligence}"`,
-    `data-design="${w.design}"`,
-    w.accent ? `data-accent="${w.accent}"` : "",
-  ].filter(Boolean);
-  return `<script ${attrs.join("\n        ")}></script>`;
+/** The server every install surface loads /widget/loader.js from (M2-10): the
+ *  public widget backend, as http(s). The loader points the widget back at it. */
+const SERVER = WIDGET_BACKEND.replace(/^ws/, "http").replace(/\/$/, "");
+
+/** `https://fbk_…@server` — the key and the server in one string, for plugins. */
+function installCode(key: string): string {
+  const m = /^(https?):\/\/(.*)$/.exec(SERVER);
+  return m ? `${m[1]}://${key}@${m[2]}` : key;
 }
 
-function spaSnippet(w: Website): string {
-  const accent = w.accent ? `\n  accent: "${w.accent}",` : "";
-  return `import { init } from "fluid-buddha";
+function loaderSnippet(key: string): string {
+  return `<script src="${SERVER}/widget/loader.js" data-key="${key}" async></script>`;
+}
 
-init({
-  backend: "${WIDGET_BACKEND}",
-  key: "${w.public_key}",
-  intelligence: "${w.intelligence}",
-  design: "${w.design}",${accent}
-  hooks: {
-    // Route inside your app instead of a full page load.
-    onNavigate: (path) => router.push(path),
-  },
-});`;
+type Platform = "html" | "wordpress" | "shopify" | "webflow" | "framer" | "gtm" | "react" | "vue";
+
+const PLATFORMS: { id: Platform; label: string }[] = [
+  { id: "html", label: "Any website" },
+  { id: "wordpress", label: "WordPress" },
+  { id: "shopify", label: "Shopify" },
+  { id: "webflow", label: "Webflow" },
+  { id: "framer", label: "Framer" },
+  { id: "gtm", label: "Tag Manager" },
+  { id: "react", label: "React" },
+  { id: "vue", label: "Vue" },
+];
+
+type Guide = { steps: ReactNode[]; copy: { label: string; text: string; pre?: boolean }[] };
+
+function guide(p: Platform, key: string): Guide {
+  const code = installCode(key);
+  const codeCopy = { label: "Install code", text: code };
+  const snippetCopy = { label: "Snippet", text: loaderSnippet(key), pre: true };
+  switch (p) {
+    case "html":
+      return {
+        steps: ["Paste this just before </body> on every page where the agent should appear."],
+        copy: [snippetCopy],
+      };
+    case "wordpress":
+      return {
+        steps: [
+          <>Install the <strong>FluidBuddha AI Agent</strong> plugin and activate it.</>,
+          <>Go to <strong>Settings → FluidBuddha</strong>, paste the install code and save. The page confirms the connection.</>,
+          "Optional: hide it on pages such as /checkout*, or from your logged-in team.",
+        ],
+        copy: [codeCopy],
+      };
+    case "shopify":
+      return {
+        steps: [
+          <>Install the <strong>FluidBuddha AI Agent</strong> app.</>,
+          <>Open <strong>Online Store → Themes → Customize → App embeds</strong>.</>,
+          <>Switch on <strong>FluidBuddha agent</strong>, paste the install code and save.</>,
+        ],
+        copy: [codeCopy],
+      };
+    case "webflow":
+      return {
+        steps: [
+          <>Open <strong>Site settings → Custom code</strong>.</>,
+          <>Paste the snippet into <strong>Footer code</strong>, save, and publish the site.</>,
+        ],
+        copy: [snippetCopy],
+      };
+    case "framer":
+      return {
+        steps: [
+          <>Add the <strong>FluidBuddha</strong> code component (Assets → Code → New component) and drop it on a page.</>,
+          "Paste the install code in its properties and publish.",
+          <>Or paste the snippet in <strong>Site settings → Custom code → End of &lt;body&gt;</strong>.</>,
+        ],
+        copy: [codeCopy, snippetCopy],
+      };
+    case "gtm":
+      return {
+        steps: [
+          <>Download the template below, then in GTM <strong>Templates → Tag Templates → New → ⋮ → Import</strong>.</>,
+          <>Add a tag of type <strong>FluidBuddha AI agent</strong>, paste the widget key, trigger on <strong>All Pages</strong>, and publish.</>,
+          "Or use a Custom HTML tag with the snippet.",
+        ],
+        copy: [{ label: "Widget key", text: key }, snippetCopy],
+      };
+    case "react":
+      return {
+        steps: [
+          <>Install <span className="mono">@fluidbuddha/react</span> and render the component once, near the root.</>,
+          "onNavigate keeps the agent's page changes inside your router.",
+        ],
+        copy: [{
+          label: "Code", pre: true,
+          text: `npm install @fluidbuddha/react
+
+import { FluidBuddha } from "@fluidbuddha/react";
+
+<FluidBuddha
+  installCode="${code}"
+  onNavigate={(path) => navigate(path)}
+/>`,
+        }],
+      };
+    case "vue":
+      return {
+        steps: [
+          <>Install <span className="mono">@fluidbuddha/vue</span> and use the component once, e.g. in App.vue.</>,
+          "@navigate keeps the agent's page changes inside your router.",
+        ],
+        copy: [{
+          label: "Code", pre: true,
+          text: `npm install @fluidbuddha/vue
+
+import { FluidBuddha } from "@fluidbuddha/vue";
+
+<FluidBuddha
+  install-code="${code}"
+  @navigate="(path) => router.push(path)"
+/>`,
+        }],
+      };
+  }
 }
 
 /** A bookmarklet that drops the widget onto whatever page is open (WS9):
@@ -72,7 +166,7 @@ function BookmarkletLink({ href, label }: { href: string; label: string }) {
 export default function InstallPage() {
   const { website, reload } = useWebsite();
   const toast = useToast();
-  const [mode, setMode] = useState<Mode>("html");
+  const [platform, setPlatform] = useState<Platform>("html");
   const [rotating, setRotating] = useState(false);
   const [testing, setTesting] = useState(false);
   const [checks, setChecks] = useState<Check[] | null>(null);
@@ -135,7 +229,7 @@ export default function InstallPage() {
     setTesting(false);
   };
 
-  const snippet = key ? (mode === "html" ? htmlSnippet(website) : spaSnippet(website)) : "";
+  const g = key ? guide(platform, key) : null;
 
   return (
     <div className="fade-in stack">
@@ -157,9 +251,11 @@ export default function InstallPage() {
           </div>
           <div className="row" style={{ gap: 8 }}>
             {key && <button className="btn btn-sm" onClick={() => copy(key, "Widget key")}>Copy</button>}
-            <button className="btn btn-sm" onClick={rotate} disabled={rotating}>
-              {rotating ? <Spinner /> : key ? "Rotate key" : "Create key"}
-            </button>
+            <EditOnly role="admin">
+              <button className="btn btn-sm" onClick={rotate} disabled={rotating}>
+                {rotating ? <Spinner /> : key ? "Rotate key" : "Create key"}
+              </button>
+            </EditOnly>
           </div>
         </div>
         {key ? (
@@ -171,28 +267,47 @@ export default function InstallPage() {
         )}
       </section>
 
-      {key && (
+      {key && g && (
         <section className="card">
-          <div className="row between wrap" style={{ gap: 12, marginBottom: 14 }}>
-            <div className="tabs" style={{ margin: 0 }}>
-              <button className={`tab ${mode === "html" ? "active" : ""}`} onClick={() => setMode("html")}>
-                Any website
+          <div className="tabs" style={{ marginBottom: 16, flexWrap: "wrap" }}>
+            {PLATFORMS.map((p) => (
+              <button key={p.id} className={`tab ${platform === p.id ? "active" : ""}`} onClick={() => setPlatform(p.id)}>
+                {p.label}
               </button>
-              <button className={`tab ${mode === "spa" ? "active" : ""}`} onClick={() => setMode("spa")}>
-                React / SPA
-              </button>
-            </div>
-            <button className="btn btn-primary btn-sm" onClick={() => copy(snippet, "Snippet")}>Copy snippet</button>
+            ))}
           </div>
-          <p className="muted" style={{ fontSize: "0.86rem", marginBottom: 12 }}>
-            {mode === "html"
-              ? "Paste this just before </body> on every page where the agent should appear."
-              : "Call init once when your app starts. The onNavigate hook keeps navigation inside your router."}
-          </p>
-          <pre className="code">{snippet}</pre>
-          <p className="faint" style={{ fontSize: "0.8rem", marginTop: 10 }}>
-            Tier, design and accent come from <Link href={`/websites/${website.id}/settings`}>Settings</Link>.
-            The backend enforces the tier from the key, whatever the snippet says.
+          <ol className="muted" style={{ fontSize: "0.88rem", margin: "0 0 14px", paddingLeft: 20, lineHeight: 1.7 }}>
+            {g.steps.map((step, i) => <li key={i}>{step}</li>)}
+          </ol>
+          <div className="stack-sm">
+            {g.copy.map((c) => (
+              <div key={c.label}>
+                <div className="row between" style={{ gap: 12, marginBottom: 6 }}>
+                  <span className="eyebrow">{c.label}</span>
+                  <button className="btn btn-primary btn-sm" onClick={() => copy(c.text, c.label)}>Copy</button>
+                </div>
+                {c.pre
+                  ? <pre className="code">{c.text}</pre>
+                  : <code className="code" style={{ display: "block", wordBreak: "break-all" }}>{c.text}</code>}
+              </div>
+            ))}
+          </div>
+          {platform === "gtm" && (
+            <div className="row wrap" style={{ gap: 10, marginTop: 12, alignItems: "center" }}>
+              <a className="btn btn-sm" href={`${SERVER}/widget/gtm-template.tpl`} download>
+                Download GTM template
+              </a>
+              <span className="faint" style={{ fontSize: "0.8rem" }}>
+                Made for this server, so GTM allows it to load the agent from here.
+              </span>
+            </div>
+          )}
+          <p className="faint" style={{ fontSize: "0.8rem", marginTop: 12 }}>
+            {g.copy.some((c) => c.label === "Install code")
+              ? "The install code is your widget key and this server's address in one string. "
+              : "The snippet carries only the key. "}
+            Tier, design, colour and greeting come from <Link href={`/websites/${website.id}/settings`}>Settings</Link>,
+            so changes there reach your site without editing it again.
           </p>
         </section>
       )}
