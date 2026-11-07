@@ -35,6 +35,7 @@ _SITE_TABLES = (
     "campaigns",  # M3-1: its pages and events go with it (ON DELETE CASCADE)
     "site_design_systems", "site_component_manifests",  # P0-7
     "fragment_cache", "g3_usage", "review_samples",  # Phase 4 (review_samples before plan_cache)
+    "agent_confirmations",  # Phase 5
     "site_routes", "site_entities", "site_connectors",  # Phase 2 (before plan_cache: FK)
     "site_experience", "site_regions", "site_intent_families", "plan_cache",  # Phase 1
 )

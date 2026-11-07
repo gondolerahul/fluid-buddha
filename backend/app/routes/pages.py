@@ -93,15 +93,32 @@ async def _page(request: Request, db: AsyncSession, site: store.Website, path: s
     stored = await taste_mod.load(db, site.site_key, visitor) if visitor else None
     session_t = taste_mod.from_compact(q.get("taste"))
     taste = stored.merge(session_t) if stored else session_t
+    # AI agents (Phase 5) get the canonical page like crawlers, rendered plainly; people
+    # can ask for the plain rendering too (?fbmode=plain) and keep their own page.
+    from app.experience.agentview import detect_agent
+
+    agent = detect_agent(ua, request.headers, q)
+    mode = "agent" if agent else ("plain" if q.get("fbmode") == "plain" else "")
     out = await serve_page(
         db, request.app.state.runtime, site.site_key, path=path, sig=_signals(q, path),
-        fbv=q.get("fbv"), bot=is_bot(ua, False), domain=site.domain or "",
-        api_base=settings.public_api_url, public_key=site.public_key or "", taste=taste, visitor=visitor)
+        fbv=q.get("fbv"), bot=is_bot(ua, False) or bool(agent), domain=site.domain or "",
+        api_base=settings.public_api_url, public_key=site.public_key or "", taste=taste, visitor=visitor,
+        mode=mode)
+    if out.get("status") == 200 and site.public_key and await _agent_access(db, site):
+        out["head"]["markdown"] = (f"{settings.public_api_url.rstrip('/')}/sites/{site.public_key}/views/"
+                                   f"{out['plan_id']}?format=md")
     # What a host page loads next to the HTML (the Next.js adapter uses these).
     out["scripts"] = {"composed": f"{settings.widget_sdk_base.rstrip('/')}/fluid-buddha-composed.global.js",
                       "loader": f"{settings.public_api_url.rstrip('/')}/widget/loader.js",
                       "key": site.public_key or ""}
     return out
+
+
+async def _agent_access(db: AsyncSession, site: store.Website) -> bool:
+    from sqlalchemy import text
+
+    return bool((await db.execute(text("SELECT agent_access FROM tenant_websites WHERE id = :id"),
+                                  {"id": site.id})).scalar())
 
 
 @public.get("/experience/page")

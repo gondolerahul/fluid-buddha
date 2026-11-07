@@ -187,7 +187,9 @@ def stylesheet(design: DesignSystem, overrides: Optional[dict[str, str]] = None)
 .fb-steps li{{padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.35)}}
 .fb-steps li[aria-current="step"]{{background:var(--ds-color-primary,#c9a24a);color:var(--ds-color-background,#0c0b09)}}
 .fb-step-nav{{display:flex;gap:10px;justify-content:space-between}}
-.fbpage-inner > [hidden]{{display:none !important}} .fb-step-nav .fbpage-btn-secondary{{background:transparent;color:inherit;border:1px solid rgba(127,127,127,.45)}}
+.fbpage-inner > [hidden]{{display:none !important}}
+.fbpage-root[data-fb-mode] *{{animation:none !important;transition:none !important}}
+.fbpage-root[data-fb-mode] .fbpage-inner > [hidden]{{display:block !important}} .fb-step-nav .fbpage-btn-secondary{{background:transparent;color:inherit;border:1px solid rgba(127,127,127,.45)}}
 .fbpage-h2{{font-size:1.6rem;font-family:var(--ds-font-heading,inherit);margin:0 0 12px}}
 .fbpage-body{{opacity:.92;max-width:70ch}}
 .fbpage-hero{{text-align:center;padding:56px 0 28px}}
@@ -215,14 +217,18 @@ def page_data_json(data: dict[str, Any]) -> str:
 
 
 def render_fragment(sections: list[dict[str, Any]], *, plan_id: Optional[str], title: str,
-                    form_action: str = "", flow: Optional[list[dict[str, Any]]] = None) -> str:
+                    form_action: str = "", flow: Optional[list[dict[str, Any]]] = None, mode: str = "") -> str:
     step_of = {rid: st["step"] for st in (flow or []) for rid in st.get("regions") or []}
     body = "".join(render_section(s, form_action, step_of.get(str(s.get("id")), "")) for s in sections)
     nav = ""
     if flow:  # an ordered list of the steps (readable without JavaScript; the script turns it into tabs)
         nav = ('<ol class="fb-steps">' + "".join(
             f'<li data-fb-step-nav="{_t(st["step"])}">{_t(st.get("title") or st["step"])}</li>' for st in flow) + "</ol>")
-    return (f'<main class="fbpage-root" data-fb-plan="{_t(plan_id)}"><div class="fbpage-inner">'
+    # Agent / plain mode (Phase 5): the same content, no motion, every step shown.
+    mode_attr = f' data-fb-mode="{mode}"' if mode in ("agent", "plain") else ""
+    if mode_attr:  # everything expanded: no answer hidden behind a click
+        body = body.replace('<details class="fbpage-qa">', '<details class="fbpage-qa" open>')
+    return (f'<main class="fbpage-root" data-fb-plan="{_t(plan_id)}"{mode_attr}><div class="fbpage-inner">'
             f"{nav}{body}</div></main>")
 
 
@@ -235,6 +241,8 @@ def render_document(*, fragment: str, head: dict[str, Any], css: str, data: dict
             f'<meta name="robots" content="{_t(head.get("robots") or "index, follow")}">']
     if head.get("json_ld"):
         meta.append(f'<script type="application/ld+json">{page_data_json(head["json_ld"])}</script>')
+    if head.get("markdown"):  # the same view as text, for agents (Phase 5)
+        meta.append(f'<link rel="alternate" type="text/markdown" href="{_t(head["markdown"])}">')
     return ("<!doctype html><html lang=\"" + _t(lang) + "\"><head><meta charset=\"utf-8\">"
             '<meta name="viewport" content="width=device-width, initial-scale=1">' + "".join(meta) +
             f"<style>{css}</style></head><body style=\"margin:0\">{fragment}"

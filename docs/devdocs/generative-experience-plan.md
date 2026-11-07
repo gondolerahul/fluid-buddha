@@ -476,11 +476,78 @@ delivered through Next.js or an edge worker, and measured against G2.
 **Phase 4 exit:** a pilot route serves per-person pages within budget and governance,
 through Next.js or the edge, and a free-form test reports lift over G2.
 
-### Phase 5 — Agent-ready
+### Phase 5 — Agent-ready ✅
 
-Plan endpoint `GET /sites/{key}/views/{plan_id}`, per-view JSON-LD and text rendering, plan
-actions as MCP tools, page-declared tools, agent-mode rendering, plan export to an open
-agent-UI standard after the §11.3 review (D3), agent task-completion analytics.
+Goal (strategy §6): the plan is the contract. The same plan a human sees is served to agents
+as structured data, text and callable tools, always in sync, with the same facts (no
+cloaking), safe confirmation rules for anything that acts, and analytics of what agents
+got done. Builds on the M3-2 agent endpoint (MCP server, tokens, `llms.txt`, traffic log),
+behind the same "agent access" switch.
+
+**Data (migration `0038_agent_ready`)**
+- `agent_requests` + `plan_id`, `action` (which view and action an agent call touched).
+- `agent_confirmations` — one-time confirmation codes an agent's human must approve
+  (hash, site, plan, action, inputs digest, expiry, used).
+
+#### P5-1 · Views endpoint ⏱️M
+- `GET /sites/{key}/views` — the site's routes with links to each view;
+  `GET /sites/{key}/views?path=/pricing` — the view a visitor gets by default (the
+  canonical page, as crawlers get); `GET /sites/{key}/views/{plan_id}` — a given view
+  (from `?fbv`, a page's data or a patch).
+- A view: plan id, title, canonical URL, regions in order with stable ids, component,
+  renderer and bound values, the plan's actions (tool name, label, kind, agent policy,
+  inputs), JSON-LD and links (markdown, HTML). `Accept: text/markdown` or `?format=md`
+  answers the text rendering.
+
+#### P5-2 · Semantic layer ⏱️S
+- Per-view JSON-LD from the bound regions (`WebPage`, `FAQPage` from FAQs, `Offer`s from
+  priced plans, `Organization`), used by the view endpoint and the SSR head.
+- Text rendering of a view (markdown, per renderer), linked from SSR pages
+  (`<link rel="alternate" type="text/markdown">`) and listed in `llms.txt`.
+
+#### P5-3 · Actions as tools, with agent confirmation ⏱️M
+- MCP read tools `list_views` and `get_view` (path or plan id: the text rendering plus the
+  structured view); with an `actions` token, `run_view_action`.
+- REST `POST /sites/{key}/views/{plan_id}/actions/{action}` (Bearer token).
+- **Agent policy** per action: `auto` (runs), `confirm` (first call returns a summary and a
+  one-time code; the agent must get its human's approval and call again with the code
+  within 10 minutes; the code works once and only for the same inputs), `never` (a human
+  must do it on the page). Derived from the plan action's confirm level (none → auto,
+  card → confirm, typed → never) and the API's `x-fb-agent` annotation (`never` wins;
+  destructive operations are never for agents).
+
+#### P5-4 · Page-declared tools ⏱️S
+- The composed script registers the view's tools with an in-browser agent when the browser
+  offers one (`navigator.modelContext`, feature-detected): `read_view` (the page as text)
+  and one tool per action that brings the action's control into view and focuses it — the
+  human still presses it.
+
+#### P5-5 · Agent mode ⏱️S
+- Detection: AI agent user agents, a Web Bot Auth `Signature-Agent` header, or
+  `?fbmode=agent`. Agents get the canonical page like crawlers, rendered plainly:
+  `data-fb-mode="agent"`, no motion, every step of a flow shown. Humans can ask for the same
+  with `?fbmode=plain` (an accessibility and low-bandwidth mode) without losing their own
+  page.
+
+#### P5-6 · Export (D3) ⏱️S
+- The view is our own JSON (`fb.view/1`, with a JSON Schema at
+  `/sites/{key}/views.schema.json`). `get_view` also returns the rendered view as an
+  embedded HTML resource (`ui://fluidbuddha/view/{plan_id}`) for assistants that render UI
+  in the chat. Choosing which open agent-UI standard to export to waits for the §11.3
+  review; the export seam is one function.
+
+#### P5-7 · Task-completion analytics ⏱️S
+- Agent calls record the view and action they touched. The Agent tab's traffic adds a task
+  funnel per agent client (read the site → opened a view → started an action → completed),
+  failure points by view and action, and agent-originated leads.
+
+#### Console
+- Agent tab: views (with text and JSON links and a plain-mode preview), each view's actions
+  with their agent policy, the task funnel and failure points.
+
+**Phase 5 exit:** an assistant can find a page's view, read it as text or data, see what it
+offers, and complete an action under the owner's confirmation rules, with the outcome
+visible in the console.
 
 ### Phase 6 — SaaS apps (same product, same SKU, D7)
 
@@ -518,6 +585,7 @@ Not in this plan: the repo-wide "A2UI" → "FluidBuddha" rename (D10) is a separ
 | 2026-11-06 | Phase 2 (P2-1…P2-6) implemented (fourth record below). |
 | 2026-11-06 | Phase 3 (P3-1…P3-6) implemented (fifth record below). |
 | 2026-11-07 | Phase 4 (P4-1…P4-6) implemented (sixth record below). |
+| 2026-11-07 | Phase 5 (P5-1…P5-7) implemented (seventh record below). |
 
 ### Record: P0-1…P0-6 (2026-11-06)
 
@@ -860,3 +928,91 @@ the server only (client-side, user-token binding is Phase 6); plans are not cach
   per-fragment flag in the review view would be finer.
 - Pinned regions are edited as JSON; a component picker would be friendlier.
 - The edge package is tested with fakes, not yet deployed on a real Workers runtime.
+
+### Record: Phase 5 — agent-ready (2026-11-07)
+
+**Backend**
+- Migration `0038_agent_ready`: `agent_requests.plan_id / action`, `agent_confirmations`
+  (purged with the site).
+- `app/experience/agentview.py`: agent detection (AI agent user agents, Web Bot Auth
+  `Signature-Agent`, `?fbmode=agent`); agent policies (none → auto, card → confirm,
+  typed → never; `x-fb-agent` can relax or tighten, `never` wins, destructive is never);
+  JSON-LD from bound regions (`WebPage`, `Organization`, `FAQPage`, `OfferCatalog` of
+  `Offer`s); the markdown rendering (per renderer, flow steps, actions with what an agent
+  may do, customer quotes marked as such); the `fb.view/1` view and its JSON Schema;
+  one-time confirmation codes (bound to plan, action and an inputs digest; 10 minutes;
+  once) and running an action under its policy.
+- `app/agents/views.py`: list views (concrete paths link to views; patterns explain how
+  to ask), load a view by path (the canonical page, as crawlers get) or plan id, run.
+- API registry: `x-fb-agent` and an input schema per operation (body + parameters).
+- Agent endpoint: `GET /sites/{key}/views`, `?path=`, `/views/{plan_id}` (JSON, or
+  markdown with `?format=md` / `Accept: text/markdown`; `Link` header to the text),
+  `/views.schema.json`, `POST /sites/{key}/views/{plan_id}/actions/{action}` (Bearer
+  token). MCP tools `list_views`, `get_view` (text + structured view + an embedded
+  `ui://fluidbuddha/view/{plan_id}` HTML resource) and, with an actions token,
+  `run_view_action`. `llms.txt` lists every view's text. Everything stays behind the
+  agent-access switch, rate limit and traffic log.
+- Serving: AI agents get the canonical page, rendered with `data-fb-mode="agent"` (no
+  motion, every flow step and FAQ answer shown); people get the same with
+  `?fbmode=plain` and keep their own page. SSR pages carry JSON-LD from the regions and,
+  with agent access on, `<link rel="alternate" type="text/markdown">`.
+- Task analytics: every view and action call records its plan and action; outcomes are
+  logged as `view_action.done / needs_confirmation / refused / failed`; the Agent tab's
+  data adds a funnel (read → viewed → started → completed, per client), failure points
+  by view and action, and agent leads. Console endpoint `GET /agent-views` lists each
+  route's view and its actions' policies.
+
+**SDK and packages**
+- `core/agentTools.ts` (composed script only): with `navigator.modelContext`
+  (feature-detected), served pages register `read_view` and one tool per
+  `data-fb-action` that opens its step, scrolls to and focuses the control — never
+  presses it. Steps stay expanded in agent / plain mode. Core unchanged at 38.6 kB.
+- Shared core / `@fluidbuddha/next` / `@fluidbuddha/edge`: the markdown alternate link in
+  the document and in `composedMetadata` (`alternates.types`).
+
+**Console**
+- Agent tab: a Views endpoint row; "Pages as agents see them" (each route, sections,
+  actions with their agent policy, links to the text, the data and the plain page); the
+  task funnel and where agents got stuck.
+
+**Verification**
+- Backend: `tests/test_agent_ready.py` (7 tests: detection and policies, JSON-LD and
+  markdown, agent-mode markup, views over REST in JSON and text with the schema and the
+  off switch, agent-mode serving, actions under each policy with the confirmation code
+  bound to inputs and single use, MCP view tools with the UI resource, funnel and
+  console views, `x-fb-agent` and input schemas); the M3-2 tool-list test updated; full
+  suite 436 passed, 2 skipped, 1 failed: the status-page test, which reads today's probe
+  history in the local dev database. That history holds 12 "down" API probes from a local
+  backend left running across migration 0038 (its code expected 0037); environmental,
+  clears with the day.
+- Races fixed on the way (the first full run had 3 failures):
+  - Phase 2 `?fbv` restore: a route's first visitor got a quick rules page while their
+    page built in the background; when both had the same cache key (no campaign, persona
+    or taste), the build replaced the quick page's row and the visitor's `?fbv` link
+    stopped resolving. The quick page now takes its own key in that case. New
+    `test_fbv_link_survives_the_background_build` waits for the build, so it fails every
+    time without the fix (checked) instead of 1 run in 3.
+  - Phase 4 route-switch test wiped fragments before the background build stored its own;
+    it now waits for the build.
+- SDK: 4 new smoke assertions (declared tools, read_view text, an action tool opening its
+  step and focusing without pressing, agent mode keeps steps open).
+- `integrations/js`: 26 tests (markdown link asserted). Console typecheck and lint clean.
+- Browser: with agent access on, an assistant (Claude-User) read `/plans` as a view, was
+  asked for its person's approval on "Get a quote", completed it with the code, and was
+  refused "Buy now" (people only); the Agent tab showed the policies, the funnel (1 view,
+  1 started, 1 completed) and the refusal as the failure point; the plain page and the
+  text view render. Caught and fixed: site actions weren't loaded when a view was built
+  (actions came back empty); the text view repeated the title when the hero carried it;
+  FAQ answers stayed collapsed in agent mode.
+
+**Known gaps carried forward**
+- `data-fb-entity` / `data-fb-field` attributes (strategy §6.3) need bindings to carry
+  their source to the rendered region; not done.
+- The confirmation step relies on the agent asking its person (the MCP human-in-the-loop
+  convention); a FluidBuddha-hosted approval page the person opens is the stronger form.
+- Export to an open agent-UI standard waits for the §11.3 review (D3); today's seam is the
+  `fb.view/1` JSON and the embedded HTML resource.
+- Page-declared tools follow a proposal still in flux (`navigator.modelContext`); tested
+  against a stub, not a shipping browser.
+- Agent identity is the user agent or a `Signature-Agent` value as sent; signatures are not
+  verified yet.

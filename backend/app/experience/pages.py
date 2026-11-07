@@ -144,10 +144,11 @@ def canonical_url(domain: str, path: str) -> str:
 async def serve_page(
     db: AsyncSession, rt: Any, site_key: str, *, path: str, sig: Signals, fbv: Optional[str] = None,
     bot: bool = False, domain: str = "", api_base: str = "", public_key: str = "", wait: bool = False,
-    taste: Any = None, visitor: Optional[str] = None,
+    taste: Any = None, visitor: Optional[str] = None, mode: str = "", include_sections: bool = False,
 ) -> dict[str, Any]:
     from app.design.system import ensure_design, load_design_system
     from app.experience.personal import apply_tunables, explain
+    from app.experience.agentview import json_ld
     from app.experience.ssr import render_fragment, stylesheet
     from app.orchestrator.profile import profile_for
 
@@ -213,13 +214,16 @@ async def serve_page(
                 out["served"] = "fallback"
                 if row is None:
                     # Nothing yet for this route at all: a rules page now (no model, fast).
+                    rules_key = rs.plan_cache_key(family="general", persona="", lang=sig.lang,
+                                                  page=route.pattern, regions=[PAGE_REGIONS],
+                                                  content_version=content, manifest_version=manifest.version)
+                    if rules_key == key:
+                        # The background build above writes `key`; if the quick page shared it,
+                        # the build would replace it and its plan_id (the visitor's ?fbv link)
+                        # would stop resolving. Keep it in its own row.
+                        rules_key = f"{key}#rules"[:64]
                     row = await build_and_store_page(db, rt, site_key, route, params, Intent(), sig,
-                                                     key=rs.plan_cache_key(
-                                                         family="general", persona="", lang=sig.lang,
-                                                         page=route.pattern, regions=[PAGE_REGIONS],
-                                                         content_version=content,
-                                                         manifest_version=manifest.version),
-                                                     content=content, use_model=False)
+                                                     key=rules_key, content=content, use_model=False)
     if row is None:
         return {"status": 404, "reason": "no_plan"}
     if not restored:
@@ -240,7 +244,8 @@ async def serve_page(
         "plan_row": row["id"],
         "html": render_fragment(sections, plan_id=plan_id, title=title,
                                 form_action=f"{api_base.rstrip('/')}/experience/lead" if api_base else "",
-                                flow=row["plan"].get("flow")),
+                                flow=row["plan"].get("flow"), mode=mode),
+        "mode": mode,
         "flow": row["plan"].get("flow") or [],
         "css": stylesheet(design, overrides),
         "why": why,
@@ -249,8 +254,10 @@ async def serve_page(
             "title": title, "description": desc, "canonical": canonical,
             # Crawlers and the owner's canonical page are indexed; generated variants aren't.
             "robots": "index, follow" if (bot or is_canonical) and not restored else "noindex, follow",
-            "json_ld": {"@context": "https://schema.org", "@type": "WebPage", "name": title,
-                        "description": desc, "url": canonical},
+            # Structured data from the bound regions (Phase 5): FAQs, offers, the organisation.
+            "json_ld": json_ld(sections, title=title, description=desc, url=canonical,
+                               org=profile_for(site_key).company_name or "",
+                               currency=profile_for(site_key).currency or ""),
         },
         "data": {"plan_id": plan_id, "api": api_base, "key": public_key, "page": path, "why": why,
                  "flow": row["plan"].get("flow") or [],
@@ -261,4 +268,6 @@ async def serve_page(
     })
     if manifest.bundle and any(is_wc_renderer(s["type"]) for s in sections):
         out["bundle"] = manifest.bundle
+    if include_sections:  # agent views (Phase 5); never sent to browsers
+        out["_sections"], out["_plan"] = sections, row["plan"]
     return out

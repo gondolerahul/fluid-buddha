@@ -7,6 +7,7 @@
 //   * sends enquiry forms with fetch to /leads (without JavaScript they post
 //     to the server's form endpoint);
 //   * shows multi-step pages (Phase 4) one step at a time, with Back / Next;
+//   * declares the page's tools to an in-browser agent (Phase 5);
 //   * applies plan patches from the conversation (P2-4) to the page, when the
 //     widget on the page relays them as `fluidbuddha:plan_patch` events.
 
@@ -16,6 +17,7 @@ import { applyPatch, PlanPatch } from './core/patch/patcher';
 import { rememberPlan } from './core/taste';
 import { trackEngagement, whyControl } from './core/why';
 import { setupSteps } from './ui/page/steps';
+import { declareTools } from './core/agentTools';
 
 interface PageData {
   why?: string[];
@@ -108,6 +110,8 @@ export function hydrate(doc: Document = document): number {
   }
   // A multi-step page (Phase 4): the server rendered every step; show one at a time.
   if (inner) setupSteps(inner, { history: true });
+  // Page-declared tools for an in-browser agent, when the browser offers one (Phase 5).
+  if (main) declareTools(main);
   window.addEventListener('fluidbuddha:plan_patch', (e) => {
     applyPatch((e as CustomEvent<PlanPatch>).detail, [doc], send);
   });

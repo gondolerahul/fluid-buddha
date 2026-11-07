@@ -139,12 +139,19 @@ export type AuthResponse = { access_token: string; token_type: string; tenant: T
 export type AgentToken = { id: string; name: string; scopes: string[]; created_at: string; last_used_at: string | null };
 export type AgentAccess = {
   enabled: boolean;
-  endpoints: { mcp: string; llms_txt: string; openapi: string; ask: string } | null;
+  endpoints: { mcp: string; llms_txt: string; openapi: string; ask: string; views?: string } | null;
   tokens: AgentToken[];
   traffic: { days: number; total: number; by_tool: { tool: string; count: number; failed: number }[];
     by_client: { client: string; count: number }[];
     recent: { kind: string; tool: string | null; client: string | null; ok: boolean; error: string | null; at: string }[] };
+  /** Task completion (Phase 5): agent clients at each step, failure points, agent leads. */
+  funnel?: { clients: number; read: number; viewed: number; started: number; completed: number; leads: number;
+    failures: { plan_id: string | null; action: string | null; tool: string; count: number; error: string | null }[] };
 };
+export type AgentPolicy = "auto" | "confirm" | "never";
+export type AgentViewRow = { path: string; title: string; purpose: string; view?: string; markdown?: string; note?: string;
+  plan_id: string | null; preview: string | null; regions: number;
+  actions: { id: string; label: string; kind: "site_action" | "api"; policy: AgentPolicy; description?: string }[] };
 /** Self-hosted licence (M3-5). */
 export type LicenceState = {
   self_hosted: boolean;
@@ -842,6 +849,7 @@ export const Api = {
     api<{ enabled: boolean }>(`/tenant/websites/${wid}/agent-access`, { method: "PUT", body: { enabled } }),
   createAgentToken: (wid: string, name: string, scopes: string[]) =>
     api<AgentToken & { token: string }>(`/tenant/websites/${wid}/agent-tokens`, { method: "POST", body: { name, scopes } }),
+  agentViews: (wid: string) => api<{ views: AgentViewRow[] }>(`/tenant/websites/${wid}/agent-views`),
   revokeAgentToken: (wid: string, id: string) =>
     api<void>(`/tenant/websites/${wid}/agent-tokens/${id}`, { method: "DELETE" }),
   licence: () => api<LicenceState>("/tenant/licence"),

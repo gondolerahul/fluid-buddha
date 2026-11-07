@@ -1264,6 +1264,36 @@ offline.remove();
   host3.remove();
 }
 
+// ---- Agent-ready served pages: page-declared tools and agent mode (Phase 5) ----
+{
+  const fs2 = await import('node:fs');
+  const code = fs2.readFileSync(new URL('../dist/fluid-buddha-composed.global.js', import.meta.url), 'utf8');
+  const page = (mode) => '<!doctype html><html><head><title>Plans</title></head><body>'
+    + `<main class="fbpage-root" data-fb-plan="pl_00000000ag"${mode}><div class="fbpage-inner">`
+    + '<ol class="fb-steps"><li data-fb-step-nav="learn">Learn</li><li data-fb-step-nav="book">Book</li></ol>'
+    + '<section data-fb-region="hero" data-fb-step="learn"><h1>Plans</h1><p>Fill every slot.</p></section>'
+    + '<section data-fb-region="go" data-fb-step="book"><a class="fbpage-btn" href="#enquiry" data-fb-action="get_quote">Get a quote</a></section>'
+    + '</div></main><script type="application/json" id="fb-page-data">{"plan_id":"pl_00000000ag"}</script></body></html>';
+  const adom = new JSDOM(page(''), { url: 'https://orbit.example/plans', runScripts: 'outside-only' });
+  const registered = [];
+  Object.defineProperty(adom.window.navigator, 'modelContext', { value: { registerTool: (t) => registered.push(t) } });
+  adom.window.eval(code);
+  await new Promise((r) => setTimeout(r, 30));
+  ok(registered.map((t) => t.name).join(',') === 'read_view,get_quote', 'agent tools: the page declares read_view and its actions');
+  const read = await registered[0].execute({});
+  ok(read.content[0].text.includes('Steps: [Learn] → Book') && read.content[0].text.includes('Fill every slot.')
+    && read.content[0].text.includes('- get_quote: Get a quote'), 'agent tools: read_view gives the page as text');
+  const ad = adom.window.document;
+  const quote = await registered[1].execute({});
+  ok(!ad.querySelector('[data-fb-region="go"]').hidden && ad.activeElement === ad.querySelector('[data-fb-action="get_quote"]')
+    && quote.content[0].text.includes('Ask the person to press it'), 'agent tools: an action tool opens its step and focuses it, never presses it');
+  const pdom = new JSDOM(page(' data-fb-mode="agent"'), { url: 'https://orbit.example/plans', runScripts: 'outside-only' });
+  pdom.window.eval(code);
+  await new Promise((r) => setTimeout(r, 30));
+  ok(![...pdom.window.document.querySelectorAll('[data-fb-step]')].some((e) => e.hidden)
+    && !pdom.window.document.querySelector('.fb-step-nav'), 'agent mode: every step stays visible');
+}
+
 // ---- First-party visitor id for server-side adapters (Phase 4) ----
 {
   const vid = window.localStorage.getItem('fluidbuddha:vid');

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { AgentAccess, Api, ApiError } from "@/lib/api";
+import { AgentAccess, AgentPolicy, AgentViewRow, Api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner, fmtDate, useToast } from "@/components/ui";
 
@@ -64,7 +64,8 @@ export default function AgentAccessPage() {
         {!e && <div className="notice warn" style={{ marginTop: 12 }}>Create a widget key first (Install tab).</div>}
         {data.enabled && e && (
           <div className="stack-sm" style={{ marginTop: 16 }}>
-            {([["MCP server", e.mcp], ["llms.txt", e.llms_txt], ["OpenAPI", e.openapi], ["REST ask", e.ask]] as const).map(([label, url]) => (
+            {([["MCP server", e.mcp], ["llms.txt", e.llms_txt], ["OpenAPI", e.openapi], ["REST ask", e.ask],
+              ...(e.views ? [["Views", e.views] as const] : [])] as const).map(([label, url]) => (
               <div key={label} className="row between" style={{ gap: 12 }}>
                 <span className="eyebrow" style={{ minWidth: 90 }}>{label}</span>
                 <code className="code" style={{ flex: 1, wordBreak: "break-all", padding: "6px 10px" }}>{url}</code>
@@ -80,6 +81,7 @@ export default function AgentAccessPage() {
       </section>
 
       {data.enabled && <TokensCard id={id} data={data} isAdmin={isAdmin} onChange={load} />}
+      {data.enabled && <ViewsCard id={id} />}
       {data.enabled && <TrafficCard data={data} />}
     </div>
   );
@@ -158,11 +160,91 @@ function TokensCard({ id, data, isAdmin, onChange }: { id: string; data: AgentAc
   );
 }
 
+const POLICY: Record<AgentPolicy, { label: string; hint: string; cls: string }> = {
+  auto: { label: "agent can do it", hint: "Runs when an assistant with an actions token asks.", cls: "accent" },
+  confirm: { label: "needs the person's OK", hint: "The assistant gets a one-time code and must ask its person before it runs.", cls: "" },
+  never: { label: "people only", hint: "A person must do it on the page (typed confirmation or destructive).", cls: "" },
+};
+
+/** Each page as agents see it (Phase 5): the view, its text, and what agents may do. */
+function ViewsCard({ id }: { id: string }) {
+  const [views, setViews] = useState<AgentViewRow[] | null>(null);
+  useEffect(() => { Api.agentViews(id).then((r) => setViews(r.views)).catch(() => setViews([])); }, [id]);
+  return (
+    <section className="card">
+      <h3>Pages as agents see them</h3>
+      <p className="faint" style={{ fontSize: "0.84rem", margin: "4px 0 12px", maxWidth: 760 }}>
+        Each page in the Pages tab is also served to assistants as a view — the same sections and data people see,
+        as structured data and as text — with the actions it offers. Agents get the same facts, plainly rendered.
+        How an agent may use an action follows its confirmation level: a card becomes &ldquo;needs the person&apos;s OK&rdquo;,
+        a typed confirmation stays with people. Your API can tighten this with <span className="mono">x-fb-agent</span>.
+      </p>
+      {views === null ? <div className="skeleton" style={{ height: 80 }} /> : views.length === 0 ? (
+        <div className="empty">No pages yet. Add a route in the Pages tab.</div>
+      ) : (
+        <table className="table">
+          <thead><tr><th>Page</th><th>Actions for agents</th><th /></tr></thead>
+          <tbody>
+            {views.map((v) => (
+              <tr key={v.path}>
+                <td><span className="mono" style={{ fontWeight: 600 }}>{v.path}</span>
+                  <div className="faint" style={{ fontSize: "0.8rem" }}>{v.title}{v.regions ? ` · ${v.regions} sections` : ""}</div></td>
+                <td>{v.note ? <span className="faint" style={{ fontSize: "0.8rem" }}>Views per concrete path</span>
+                  : v.actions.length === 0 ? <span className="faint">none</span>
+                  : v.actions.map((a) => (
+                    <div key={a.id} style={{ fontSize: "0.84rem" }} title={POLICY[a.policy].hint}>
+                      {a.label} <span className={`badge ${POLICY[a.policy].cls}`} style={{ marginLeft: 4 }}>{POLICY[a.policy].label}</span>
+                    </div>
+                  ))}</td>
+                <td style={{ textAlign: "right" }}><div className="row wrap" style={{ gap: 4, justifyContent: "flex-end" }}>
+                  {v.markdown && <a className="btn btn-ghost btn-sm" href={v.markdown} target="_blank" rel="noreferrer">Text</a>}
+                  {v.view && <a className="btn btn-ghost btn-sm" href={v.view} target="_blank" rel="noreferrer">Data</a>}
+                  {v.preview && <a className="btn btn-ghost btn-sm" href={v.preview} target="_blank" rel="noreferrer">Plain page</a>}
+                </div></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 function TrafficCard({ data }: { data: AgentAccess }) {
   const t = data.traffic;
+  const f = data.funnel;
   return (
     <section className="card">
       <h3>Agent traffic <span className="faint" style={{ fontSize: "0.84rem", fontWeight: 400 }}>· last {t.days} days</span></h3>
+      {f && f.clients > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <span className="eyebrow">What they got done</span>
+          <div className="row wrap" style={{ gap: 8, marginTop: 6 }}>
+            {([["Read the site", f.read], ["Opened a page view", f.viewed], ["Started an action", f.started],
+              ["Completed one", f.completed], ["Left a lead", f.leads]] as const).map(([label, n]) => (
+              <div key={label} className="card" style={{ padding: "8px 12px", minWidth: 120 }}>
+                <div style={{ fontSize: "1.2rem", fontWeight: 600 }}>{n}</div>
+                <div className="faint" style={{ fontSize: "0.78rem" }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <p className="faint" style={{ fontSize: "0.78rem", marginTop: 6 }}>Assistants (by client) at each step, of {f.clients}.</p>
+          {f.failures.length > 0 && (
+            <table className="table" style={{ marginTop: 8 }}>
+              <thead><tr><th>Where agents got stuck</th><th>Why</th><th style={{ textAlign: "right" }}>Times</th></tr></thead>
+              <tbody>
+                {f.failures.map((x, i) => (
+                  <tr key={i}>
+                    <td className="mono" style={{ fontSize: "0.8rem" }}>{x.action ? `${x.action} · ` : ""}{x.tool}{x.plan_id ? ` · ${x.plan_id}` : ""}</td>
+                    <td className="faint" style={{ fontSize: "0.8rem" }}>{x.error || "—"}</td>
+                    <td style={{ textAlign: "right" }}>{x.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
       {t.total === 0 ? <div className="empty" style={{ marginTop: 10 }}>No AI assistant has asked yet.</div> : (
         <div className="grid grid-2" style={{ gap: 16, marginTop: 12 }}>
           <div>

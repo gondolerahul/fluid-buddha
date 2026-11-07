@@ -275,6 +275,15 @@ def test_route_switched_to_freeform_seeds_from_its_pages():
         h, site, w = _site(client)
         r = client.post(f"{w}/routes", headers=h, json={"pattern": "/", "title": "Home"}).json()
         assert _page(client, site)["status"] == 200  # a composed page
+        import time
+
+        # The first visit also builds the visitor's page in the background, which seeds
+        # fragments too: let it finish before wiping, so the wipe is the last word.
+        for _ in range(50):
+            if len(client.get(f"{w}/routes", headers=h).json()["routes"][0]["plans"]) >= 2:
+                break
+            time.sleep(0.1)
+        time.sleep(0.3)
 
         async def wipe():
             async with session_scope() as db:

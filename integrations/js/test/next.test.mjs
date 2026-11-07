@@ -13,7 +13,8 @@ const PAGE = {
   html: '<main class="fbpage-root" data-fb-plan="pl_0123456789"><div class="fbpage-inner"><section data-fb-region="hero"><h1>Plans</h1></section></div></main>',
   css: ':root{--ds-color-primary:#123456}',
   head: { title: 'Pricing & plans', description: 'Compare plans', canonical: 'https://orbit.example/pricing',
-          robots: 'index, follow', json_ld: { '@type': 'WebPage', name: '</script><b>' } },
+          robots: 'index, follow', json_ld: { '@type': 'WebPage', name: '</script><b>' },
+          markdown: 'https://agent.example.com/sites/fbk_abcdefgh12345678/views/pl_0123456789?format=md' },
   data: { plan_id: 'pl_0123456789', sections: [] },
   scripts: { composed: 'https://cdn.example.com/fluid-buddha-composed.global.js',
              loader: 'https://agent.example.com/widget/loader.js', key: 'fbk_abcdefgh12345678' },
@@ -67,6 +68,7 @@ test('the Route Handler returns the full document from your domain', async () =>
   assert.match(html, /fluid-buddha-composed\.global\.js/);
   assert.match(html, /data-key="fbk_abcdefgh12345678"/);
   assert.ok(!html.includes('</script><b>'), 'JSON-LD is escaped');
+  assert.match(html, /<link rel="alternate" type="text\/markdown" href="https:\/\/agent\.example\.com\/sites\/fbk_abcdefgh12345678\/views\/pl_0123456789\?format=md">/);
   const missing = createPageHandler({ installCode: CODE, fetch: fakeFetch({ status: 404 }, []) });
   assert.equal((await missing(new Request('https://orbit.example/none'))).status, 404);
   const custom = createPageHandler({ installCode: CODE, fetch: fakeFetch({ status: 404 }, []),

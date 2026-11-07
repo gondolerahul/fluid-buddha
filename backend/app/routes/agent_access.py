@@ -10,6 +10,10 @@ logged as agent traffic):
     GET  /sites/{key}/openapi.json     the REST endpoints below, for tool-calling agents
     POST /agent/{key}/ask              {question} -> a grounded answer with sources
     GET  /agent/{key}/offerings        plans and prices
+    GET  /sites/{key}/views            pages with views; ?path=/pricing → that page's view (Phase 5)
+    GET  /sites/{key}/views/{plan_id}  a view (JSON, or markdown with ?format=md / Accept)
+    GET  /sites/{key}/views.schema.json
+    POST /sites/{key}/views/{plan_id}/actions/{action}   {inputs, confirm_code} (Bearer token)
 
 Console (reads Viewer; changes Admin; audit-logged):
 
@@ -53,7 +57,8 @@ def _base() -> str:
 def endpoints(key: str) -> dict[str, str]:
     b = _base()
     return {"mcp": f"{b}/mcp/{key}", "llms_txt": f"{b}/sites/{key}/llms.txt",
-            "openapi": f"{b}/sites/{key}/openapi.json", "ask": f"{b}/agent/{key}/ask"}
+            "openapi": f"{b}/sites/{key}/openapi.json", "ask": f"{b}/agent/{key}/ask",
+            "views": f"{b}/sites/{key}/views"}
 
 
 async def _site(key: str) -> dict[str, Any]:
@@ -150,8 +155,13 @@ async def mcp_post(key: str, request: Request) -> Response:
     response, what, ok = await mcp.handle(ctx, msg)
     if method in ("initialize", "tools/call", "resources/read"):
         err = (response or {}).get("error", {}).get("message") if response else None
+        if not err and response and (response.get("result") or {}).get("isError"):
+            err = str(((response["result"].get("structuredContent") or {}).get("message")
+                       or (response["result"].get("structuredContent") or {}).get("error") or ""))[:300] or None
+        if what == "run_view_action":  # task analytics: the outcome is the step
+            what = f"view_action.{ctx.meta.get('status') or 'refused'}"
         await _log(site, kind="mcp", tool=what, client=ctx.client, token_id=token["id"] if token else None,
-                   ok=ok, error=err)
+                   ok=ok, error=err, plan_id=ctx.meta.get("plan_id"), action=ctx.meta.get("action"))
     if response is None:
         return Response(status_code=status.HTTP_202_ACCEPTED)
     return JSONResponse(response)
@@ -181,15 +191,121 @@ async def llms_txt(key: str, request: Request) -> PlainTextResponse:
         lines += [f"Website: https://{site['domain']}", ""]
     if pages:
         lines += ["## Pages", ""] + [f"- [{p['name']}]({p['uri']})" for p in pages] + [""]
+    from app.agents import views
+
+    listed = (await views.list_views(site))["views"]
+    if listed:
+        lines += ["## Views", "", "Each page as people see it, as text (markdown):", ""]
+        lines += [f"- [{v['title']}]({v['markdown']})" + (f": {v['purpose']}" if v.get("purpose") else "")
+                  for v in listed if v.get("markdown")] + [""]
     lines += ["## For AI assistants", "",
-              f"- [MCP server]({e['mcp']}): tools search_knowledge, get_page, list_offerings "
-              "(streamable HTTP, no sign-in needed to read)",
+              f"- [MCP server]({e['mcp']}): tools search_knowledge, get_page, list_offerings, list_views, "
+              "get_view (streamable HTTP, no sign-in needed to read)",
+              f"- [Views]({_base()}/sites/{key}/views): each page as structured data "
+              f"([schema]({_base()}/sites/{key}/views.schema.json)); actions run under the site's "
+              "confirmation rules",
               f"- [OpenAPI description]({e['openapi']}): POST {e['ask']} with {{\"question\": \"…\"}}",
               "- Grounded answers with sources; for anything that acts (leads, payments), ask the company "
               "for a token.", ""]
     await _log(site, kind="llms", tool="llms.txt", client=_client(request))
     return PlainTextResponse("\n".join(lines), media_type="text/markdown; charset=utf-8",
                              headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ---- views (Phase 5) --------------------------------------------------------------------------
+
+def _wants_markdown(request: Request, fmt: Optional[str]) -> bool:
+    return fmt == "md" or "text/markdown" in (request.headers.get("accept") or "")
+
+
+@public.get("/sites/{key}/views.schema.json")
+async def views_schema(key: str) -> JSONResponse:
+    from app.experience.agentview import VIEW_SCHEMA
+
+    await _site(key)
+    return JSONResponse(VIEW_SCHEMA, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@public.get("/sites/{key}/views")
+async def views_index(key: str, request: Request, path: Optional[str] = None,
+                      format: Optional[str] = None) -> Response:
+    from app.agents import views
+
+    site = await _site(key)
+    blocked = await _limit(request, site, model_call=False)
+    if blocked:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, blocked)
+    if not path:
+        out = await views.list_views(site)
+        await _log(site, kind="view", tool="list_views", client=_client(request))
+        return JSONResponse(out)
+    view = await views.load_view(request.app.state.runtime, site, path=path)
+    if view is None:
+        await _log(site, kind="view", tool="get_view", client=_client(request), ok=False, error="no view")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No view for that path.")
+    await _log(site, kind="view", tool="get_view", client=_client(request), plan_id=view["plan_id"])
+    return _view_response(request, view, format)
+
+
+@public.get("/sites/{key}/views/{plan_id}")
+async def view_by_id(key: str, plan_id: str, request: Request, path: Optional[str] = None,
+                     format: Optional[str] = None) -> Response:
+    from app.agents import views
+
+    site = await _site(key)
+    blocked = await _limit(request, site, model_call=False)
+    if blocked:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, blocked)
+    view = await views.load_view(request.app.state.runtime, site, plan_id=plan_id, path=path)
+    if view is None:
+        await _log(site, kind="view", tool="get_view", client=_client(request), ok=False, error="no view",
+                   plan_id=plan_id)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such view.")
+    await _log(site, kind="view", tool="get_view", client=_client(request), plan_id=view["plan_id"])
+    return _view_response(request, view, format)
+
+
+def _view_response(request: Request, view: dict[str, Any], fmt: Optional[str]) -> Response:
+    from app.agents import views
+
+    headers = {"Cache-Control": "private, max-age=60", "Link": f'<{view["links"]["markdown"]}>; rel="alternate"; '
+                                                                'type="text/markdown"'}
+    if _wants_markdown(request, fmt):
+        return PlainTextResponse(views.markdown(view), media_type="text/markdown; charset=utf-8", headers=headers)
+    return JSONResponse(view, headers=headers)
+
+
+class ViewActionIn(BaseModel):
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    confirm_code: str = Field("", max_length=64)
+
+
+@public.post("/sites/{key}/views/{plan_id}/actions/{action}")
+async def view_action(key: str, plan_id: str, action: str, body: ViewActionIn, request: Request) -> dict:
+    from app.agents import views
+
+    site = await _site(key)
+    if not _origin_ok(request, site):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Origin not allowed")
+    blocked = await _limit(request, site, model_call=False)
+    if blocked:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, blocked)
+    auth = request.headers.get("authorization") or ""
+    token = None
+    if auth.lower().startswith("bearer "):
+        async with session_scope() as db:
+            token = await agents.verify(db, site["site_key"], auth[7:].strip())
+    if token and "actions" in token["scopes"]:
+        from app.routes.actions import ensure_extras
+        await ensure_extras(site["site_key"])
+    out = await views.run(request.app.state.runtime, site, plan_id, action, body.inputs, token, body.confirm_code)
+    await _log(site, kind="rest", tool=f"view_action.{out['status']}", client=_client(request),
+               token_id=token["id"] if token else None, ok=out["status"] in ("done", "needs_confirmation"),
+               error=out.get("message") if out["status"] in ("refused", "failed") else None,
+               plan_id=plan_id, action=action)
+    if out["status"] == "refused" and out.get("message", "").startswith("This needs a token"):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, out["message"])
+    return out
 
 
 @public.get("/sites/{key}/openapi.json")
@@ -274,7 +390,28 @@ async def get_access(site: tenancy.Website = Depends(owned_website),
     return {"enabled": bool(enabled),
             "endpoints": endpoints(site.public_key) if site.public_key else None,
             "tokens": await agents.list_tokens(db, site.site_key),
-            "traffic": await agents.traffic(db, site.site_key)}
+            "traffic": await agents.traffic(db, site.site_key),
+            "funnel": await agents.funnel(db, site.site_key)}
+
+
+@admin.get("/agent-views")
+async def agent_views(request: Request, site: tenancy.Website = Depends(owned_website)) -> dict:
+    """Each route's view as agents get it: its actions and their agent policy (Phase 5)."""
+    from app.agents import views
+
+    if not site.public_key:
+        return {"views": []}
+    info = {"id": site.id, "tenant_id": getattr(site, "tenant_id", None), "site_key": site.site_key, "name": site.name,
+            "domain": site.domain, "intelligence": getattr(site, "intelligence", "advance"), "agent_access": True,
+            "public_key": site.public_key}
+    out = []
+    for v in (await views.list_views(info))["views"]:
+        view = await views.load_view(request.app.state.runtime, info, path=v["path"]) if v.get("markdown") else None
+        out.append({**v, "plan_id": view["plan_id"] if view else None,
+                    "preview": f"{_base()}/g/{site.site_key}{v['path']}?fbmode=plain" if v.get("markdown") else None,
+                    "actions": view["actions"] if view else [],
+                    "regions": len(view["regions"]) if view else 0})
+    return {"views": out}
 
 
 @admin.put("/agent-access")

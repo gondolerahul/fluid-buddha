@@ -28,6 +28,8 @@ export function setupSteps(root: Element, opts: { history: boolean }): ((step: s
   const items = Array.from(root.querySelectorAll<HTMLElement>('.fb-steps [data-fb-step-nav]'));
   const steps = items.map((li) => li.getAttribute('data-fb-step-nav') || '').filter(Boolean);
   if (steps.length < 2 || !regions.length) return null;
+  // Agent and plain modes (Phase 5) show every step: nothing is hidden from them.
+  if (root.closest('[data-fb-mode]')) return null;
 
   const nav = doc.createElement('div');
   nav.className = 'fb-step-nav';

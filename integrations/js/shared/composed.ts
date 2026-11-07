@@ -21,6 +21,8 @@ export interface ComposedHead {
   canonical: string;
   robots: string;
   json_ld?: Record<string, unknown>;
+  /** The same page as text for agents (Phase 5), when agent access is on. */
+  markdown?: string;
 }
 
 export interface ComposedPage {
@@ -157,7 +159,10 @@ export function composedMetadata(page: ComposedPage): Record<string, unknown> {
   return {
     title: page.head.title,
     description: page.head.description || undefined,
-    alternates: page.head.canonical ? { canonical: page.head.canonical } : undefined,
+    alternates: page.head.canonical || page.head.markdown ? {
+      ...(page.head.canonical ? { canonical: page.head.canonical } : {}),
+      ...(httpsOnly(page.head.markdown) ? { types: { 'text/markdown': page.head.markdown } } : {}),
+    } : undefined,
     robots: { index: !/noindex/.test(robots), follow: !/nofollow/.test(robots) },
   };
 }
@@ -172,6 +177,7 @@ export function renderComposedDocument(page: ComposedPage, opts: { lang?: string
     h.canonical ? `<link rel="canonical" href="${esc(h.canonical)}">` : '',
     `<meta name="robots" content="${esc(h.robots || 'index, follow')}">`,
     h.json_ld ? `<script type="application/ld+json">${scriptJson(h.json_ld)}</script>` : '',
+    httpsOnly(h.markdown) ? `<link rel="alternate" type="text/markdown" href="${esc(h.markdown!)}">` : '',
   ].join('');
   const scripts = [
     httpsOnly(s?.composed) ? `<script src="${esc(s!.composed)}" defer></script>` : '',

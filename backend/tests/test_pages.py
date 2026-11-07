@@ -373,6 +373,36 @@ class _Got:
     text: str
 
 
+def test_fbv_link_survives_the_background_build():
+    """A first visitor gets a quick rules page while their page builds in the background.
+    When that build lands on the same cache key it must not replace the quick page: the
+    plan id the visitor holds (``?fbv``) keeps resolving."""
+    import time
+
+    from app.main import app
+
+    with TestClient(app) as client:
+        h, site, w = _site(client, domain="orbit.example")
+        home = client.post(f"{w}/routes", headers=h, json={"pattern": "/", "title": "Home"}).json()
+        key = site["public_key"]
+        first = client.get(f"/experience/page?key={key}&path=/").json()
+        assert first["pending"] and first["served"] == "fallback"
+        # Wait for the background build to land (its own row next to the quick page).
+        plans = []
+        for _ in range(100):
+            plans = next(r for r in client.get(f"{w}/routes", headers=h).json()["routes"]
+                         if r["id"] == home["id"])["plans"]
+            if len(plans) >= 2:
+                break
+            time.sleep(0.1)
+        assert len(plans) == 2, "the background build gets its own row"
+        again = client.get(f"/experience/page?key={key}&path=/&fbv={first['plan_id']}").json()
+        assert again["restored"] and again["plan_id"] == first["plan_id"]
+        # New visitors now get the built page, not the quick one.
+        later = client.get(f"/experience/page?key={key}&path=/").json()
+        assert not later["pending"] and later["served"] == "cached" and later["plan_id"] != first["plan_id"]
+
+
 def test_connectors_sync_with_a_fake_feed(monkeypatch):
     from app.main import app
     from app.routes import pages as pages_route

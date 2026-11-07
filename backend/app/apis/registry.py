@@ -36,6 +36,28 @@ _HTTP_METHODS = ("get", "post", "put", "patch", "delete")
 _EFFECTS = ("read", "write", "destructive")
 _AUTHS = ("site", "user", "none")
 _CONFIRMS = ("none", "card", "typed")
+_AGENT = ("auto", "confirm", "never")
+
+
+def _input_schema(op: dict[str, Any]) -> dict[str, Any]:
+    """The inputs an operation takes as one JSON Schema object (agents' tool inputs)."""
+    props: dict[str, Any] = {}
+    required: list[str] = []
+    for prm in op.get("parameters") or []:
+        if isinstance(prm, dict) and prm.get("name") and prm.get("in") in ("path", "query"):
+            sch = prm.get("schema") if isinstance(prm.get("schema"), dict) else {"type": "string"}
+            props[str(prm["name"])] = {k: v for k, v in sch.items() if k in ("type", "enum", "format", "maximum",
+                                                                                 "minimum", "maxLength")}
+            if prm.get("required") or prm.get("in") == "path":
+                required.append(str(prm["name"]))
+    body = (((op.get("requestBody") or {}).get("content") or {}).get("application/json") or {}).get("schema")
+    if isinstance(body, dict) and isinstance(body.get("properties"), dict):
+        props.update(body["properties"])
+        required += [str(r) for r in body.get("required") or [] if isinstance(r, str)]
+    out: dict[str, Any] = {"type": "object", "properties": props}
+    if required:
+        out["required"] = sorted(set(required))
+    return out
 
 
 @dataclass
@@ -52,6 +74,8 @@ class ApiOperation:
     auth: str = "site"            # site | user | none
     pii: tuple[str, ...] = ()     # field paths holding personal data
     confirm: str = "none"         # none | card | typed
+    agent: str = ""               # agent callers (Phase 5): "" (from confirm) | auto | confirm | never
+    input_schema: dict[str, Any] | None = None   # JSON Schema of the inputs (body + parameters)
 
 
 def _default_effect(method: str) -> str:
@@ -119,6 +143,8 @@ class SiteApiRegistry:
                     "auth": _choice(op.get("x-fb-auth"), _AUTHS, "site"),
                     "pii": tuple(str(x) for x in pii) if isinstance(pii, list) else (),
                     "confirm": _choice(op.get("x-fb-confirm"), _CONFIRMS, "none"),
+                    "agent": _choice(op.get("x-fb-agent"), _AGENT, ""),
+                    "input_schema": _input_schema(op),
                     "example": _response_example(op),
                 }
 
@@ -128,6 +154,7 @@ class SiteApiRegistry:
             op_id, o["method"], o["path"], o["summary"],
             effect=o["effect"], entity=o["entity"], cache=o["cache"],
             auth=o["auth"], pii=o["pii"], confirm=o["confirm"],
+            agent=o.get("agent", ""), input_schema=o.get("input_schema"),
         )
 
     def operations(self) -> list[ApiOperation]:
