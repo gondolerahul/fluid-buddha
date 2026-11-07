@@ -9,7 +9,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.framer.json",
-    "test": "node --test test/shared.test.mjs test/react.test.mjs test/vue.test.mjs test/components.test.mjs test/next.test.mjs",
+    "test": "node --test test/shared.test.mjs test/react.test.mjs test/vue.test.mjs test/components.test.mjs test/next.test.mjs test/edge.test.mjs",
     "audit": "npm audit"
   },
   "engines": {

@@ -47,16 +47,20 @@ class BoundRegion:
     renderer: str
     props: dict[str, Any]
     state: str = "ready"            # ready | empty | error
+    width: str = "full"
 
     def to_section(self) -> dict[str, Any]:
         """The v1.0 ``PageSection`` shape plus the plan addressing fields."""
-        return {
+        d = {
             "type": self.renderer,
             "props": self.props,
             "id": self.id,
             "component": self.component,
             "state": self.state,
         }
+        if self.width == "half":
+            d["width"] = "half"
+        return d
 
 
 def select(data: Any, path: Optional[str]) -> Any:
@@ -237,6 +241,6 @@ async def bind_plan(
             props[name] = result
         bound.append(BoundRegion(
             id=region.id, component=region.component, renderer=entry.renderer,
-            props=props, state=state,
+            props=props, state=state, width=getattr(region, "width", "full"),
         ))
     return bound

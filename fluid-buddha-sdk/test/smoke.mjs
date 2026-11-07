@@ -301,6 +301,24 @@ await tick();
   ok(root.querySelector('[data-fb-region="intro"]') === intro, 'patch: unchanged regions are not re-rendered');
 }
 
+// ---- Multi-step and half-width pages on the widget's page surface (Phase 4) ----
+{
+  ext.session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_fl', payload: { sync_id: 'page_fl', title: 'FL', plan_id: 'pl_00000000fl', sections: [
+    { type: 'text', id: 'a', component: 'fb.text', state: 'ready', props: { body: 'Compare A' }, width: 'half' },
+    { type: 'text', id: 'b', component: 'fb.text', state: 'ready', props: { body: 'Compare B' }, width: 'half' },
+    { type: 'cta', id: 'go', component: 'fb.cta', state: 'ready', props: { title: 'Book', cta_label: 'Book' } }],
+    flow: [{ step: 'compare', title: 'Compare', regions: ['a', 'b'] }, { step: 'book', title: 'Book', regions: ['go'] }] } });
+  await new Promise((r) => setTimeout(r, 80));
+  const root = ext.shadowRoot.querySelector('[data-fb-plan="pl_00000000fl"]');
+  ok(root && root.querySelector('[data-fb-region="a"]').getAttribute('data-fb-width') === 'half', 'flow: half-width regions are marked');
+  ok(!root.querySelector('[data-fb-region="a"]').hidden && root.querySelector('[data-fb-region="go"]').hidden,
+    'flow: only the first step shows');
+  ok(root.querySelector('.fb-steps [aria-current="step"]').textContent === 'Compare', 'flow: the step list marks the current step');
+  [...root.querySelectorAll('.fb-step-nav button')].find((b) => !b.hidden).click();
+  ok(root.querySelector('[data-fb-region="a"]').hidden && !root.querySelector('[data-fb-region="go"]').hidden,
+    'flow: Next moves to the next step');
+}
+
 // ---- Server-rendered composed page: hydration + patches (P2-1, P2-4) ----
 {
   const fs2 = await import('node:fs');
@@ -341,6 +359,31 @@ await tick();
   await new Promise((r) => setTimeout(r, 10));
   const ids = [...cdoc.querySelectorAll('.fbpage-inner > [data-fb-region]')].map((e) => e.getAttribute('data-fb-region')).join(',');
   ok(ids === 'hero,ask,next', `composed: patches from the conversation apply to the served page (${ids})`);
+}
+
+// ---- Server-rendered multi-step page (Phase 4) ----
+{
+  const fs2 = await import('node:fs');
+  const code = fs2.readFileSync(new URL('../dist/fluid-buddha-composed.global.js', import.meta.url), 'utf8');
+  const html = '<!doctype html><html><body><main class="fbpage-root" data-fb-plan="pl_00000000ff"><div class="fbpage-inner">'
+    + '<ol class="fb-steps"><li data-fb-step-nav="compare">Compare</li><li data-fb-step-nav="choose">Choose</li><li data-fb-step-nav="book">Book</li></ol>'
+    + '<section data-fb-region="a" data-fb-step="compare" data-fb-width="half">A</section>'
+    + '<section data-fb-region="b" data-fb-step="choose">B</section>'
+    + '<section data-fb-region="c" data-fb-step="book">C</section>'
+    + '</div></main><script type="application/json" id="fb-page-data">{"plan_id":"pl_00000000ff"}</script></body></html>';
+  const sdom = new JSDOM(html, { url: 'https://orbit.example/plans#step-choose', runScripts: 'outside-only' });
+  sdom.window.eval(code);
+  await new Promise((r) => setTimeout(r, 30));
+  const d = sdom.window.document;
+  const visible = () => [...d.querySelectorAll('[data-fb-step]')].filter((e) => !e.hidden).map((e) => e.getAttribute('data-fb-region')).join(',');
+  ok(visible() === 'b', `served flow: the step in the URL opens (${visible()})`);
+  const [back, next] = d.querySelectorAll('.fb-step-nav button');
+  ok(!back.hidden && next.textContent === 'Next: Book', 'served flow: Back and Next name where they go');
+  next.click();
+  ok(visible() === 'c' && next.hidden && sdom.window.location.hash === '#step-book', 'served flow: Next moves on and keeps the step in the URL');
+  d.querySelector('[data-fb-step-nav="compare"]').click();
+  ok(visible() === 'a' && back.hidden && d.querySelector('[aria-current="step"]').textContent === 'Compare',
+    'served flow: the step list works as tabs');
 }
 
 // ---- 7. Persona cross-fade (Req 3.6.3) ----
@@ -1219,6 +1262,12 @@ offline.remove();
   ok(!document.querySelector('fb-preferences'), 'preferences: Done closes it');
   globalThis.fetch = base3;
   host3.remove();
+}
+
+// ---- First-party visitor id for server-side adapters (Phase 4) ----
+{
+  const vid = window.localStorage.getItem('fluidbuddha:vid');
+  ok(!!vid && document.cookie.includes(`fbvid=${vid}`), 'visitor id: mirrored into the fbvid cookie');
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

@@ -46,7 +46,7 @@ GOAL_NAME_RE = re.compile(r"^[\w.:-]{1,64}$")
 _MAX_EVENTS_PER_VISITOR = 50
 
 
-SUBJECTS = ("greeting", "trigger", "tour", "persona", "design", "regions")
+SUBJECTS = ("greeting", "trigger", "tour", "persona", "design", "regions", "freeform")
 VARIANT_KEYS = ("a", "b", "c", "d")
 DESIGNS = ("level1", "level2", "level3")
 
@@ -403,6 +403,11 @@ def clean_overrides(subject: str, raw: Any, *, personas: list[str],
         if not isinstance(o.get("regions"), bool):
             raise ValueError("Each variant turns generated regions on or off.")
         return {"regions": o["regions"]}
+    if subject == "freeform":
+        # Free-form pages (Phase 4) against the composed (G2) page.
+        if not isinstance(o.get("freeform"), bool):
+            raise ValueError("Each variant turns free-form pages on or off.")
+        return {"freeform": o["freeform"]}
     raise ValueError(f"Can't test {subject!r}")
 
 

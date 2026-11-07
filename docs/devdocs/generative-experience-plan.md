@@ -407,11 +407,74 @@ which variants work — without tracking anyone who hasn't opted in.
 get session-level taste; plans differ by taste bucket within brand limits; visitors can see
 why and change it; the bandit shifts traffic to the better-rewarded variant.
 
-### Phase 4 — Free-form (G3), the product we sell (D1)
+### Phase 4 — Free-form (G3), the product we sell (D1) ✅
 
-Fragment cache and assembling planner (§4.14.2), free composition and multi-step flows,
-generation budget with fallback to G2 (Q12), pinned regions and G1/G2-only routes (Q14),
-sampling review feed, edge-worker hosted shell (D4 second step).
+Goal (strategy §4.14): chosen routes compose a page **per person and moment**, mostly
+assembled from reusable fragments, within a generation budget and the owner's governance,
+delivered through Next.js or an edge worker, and measured against G2.
+
+**Data (migration `0037_freeform`)**
+- `site_routes` + `mode` (`composed` = G2 | `freeform` = G3) and `pinned_regions` (regions
+  every G3 page must include unchanged, each with `position` top | bottom).
+- `fragment_cache` — reusable regions: `purpose` (the region id), the region (component +
+  props, bindings as references), `conditions` (family, stage, taste bucket, lang),
+  content / manifest versions, `status` auto | pinned | blocked, hits, rewards.
+- `site_experience` + `freeform_enabled`, `g3_daily_budget`, `g3_visitor_budget`,
+  `review_sample_pct`, `g3_blocked_patterns` (routes that can never be free-form;
+  default `/checkout*`, `/cart*`, `/legal*`, `/terms*`, `/privacy*`).
+- `g3_usage (site_key, day, visitor, fresh)` — fresh model plans counted per day and visitor.
+- `review_samples` — sampled G3 pages for the review feed, with automatic flags.
+- Experiments gain the subject `freeform` (variants: free-form on / off).
+
+#### P4-1 · Fragment cache and the assembling planner ⏱️M
+- Every region the model writes is stored as a fragment (deduplicated by content).
+- **Assemble** (no model, fast): pick the best fragments for the visitor's conditions per
+  purpose, ordered by purpose and rewards; at least 3 regions or it isn't used.
+- **Compose** (model): offered the matching fragments as building blocks (`{"use": "F2"}`)
+  plus the components, writes only the glue and the regions the visitor needs; may define
+  a **flow** (≤ 5 steps, each a list of region ids) and half-width regions (free
+  composition within a two-column grid).
+
+#### P4-2 · Budget and fallbacks ⏱️S
+- A fresh model plan needs room in the site's daily budget and the visitor's own; past it,
+  the visitor gets an assembled page, else the G2 page (cached family plan → canonical).
+
+#### P4-3 · Governance ⏱️S
+- Free-form only on routes set to it and not matching the blocked patterns (refused with a
+  clear message). Pinned regions are inserted unchanged in every G3 page.
+- **Stability:** a visitor's G3 page for a route is cached by visitor + goal + taste +
+  content; it changes only when one of those changes.
+- **Review feed:** a share of served G3 pages (`review_sample_pct`) plus every page with an
+  automatic flag (validator problems, dropped regions, fewer than 3 regions, no call to
+  action, a missing pinned region) lands in the feed; "flag" blocks the page and its new
+  fragments.
+- Crawlers always get the canonical page (G3 is never indexed).
+
+#### P4-4 · Delivery and identity ⏱️M
+- The widget sets a first-party `fbvid` cookie (the same anonymous id it already keeps for
+  experiments), so server-side delivery can keep a visitor's page stable.
+- Framework-free core moved to `integrations/js/shared/composed.ts`; `@fluidbuddha/next`
+  re-exports it and forwards `fbvid`; new `@fluidbuddha/edge`: a standard `fetch` handler
+  (Cloudflare Workers, Vercel / Netlify Edge, Deno) that composes registered routes and
+  passes everything else through to the origin.
+
+#### P4-5 · Rendering ⏱️S
+- Plans may carry `layout: "split"` and region `width: "half"`; SSR and the widget lay
+  half-width regions side by side on wide screens.
+- Flows: SSR renders every step (works without JavaScript and for crawlers); the composed
+  script and the widget show one step at a time with Back / Next and a `#step-…` hash.
+
+#### P4-6 · Measurement ⏱️S
+- A `freeform` variant test sends a share of visitors to the G2 page on free-form routes;
+  the existing always-valid verdict tells whether G3 beats G2. Promoting "off" turns
+  free-form off for the site.
+
+#### Console
+- Pages tab: route mode and pinned regions; free-form settings (switch, budgets, review
+  share, blocked patterns); fragments (pin / block); review feed (preview, OK, flag).
+
+**Phase 4 exit:** a pilot route serves per-person pages within budget and governance,
+through Next.js or the edge, and a free-form test reports lift over G2.
 
 ### Phase 5 — Agent-ready
 
@@ -454,6 +517,7 @@ Not in this plan: the repo-wide "A2UI" → "FluidBuddha" rename (D10) is a separ
 | 2026-11-06 | Phase 1 (P1-1…P1-4) implemented (third record below). |
 | 2026-11-06 | Phase 2 (P2-1…P2-6) implemented (fourth record below). |
 | 2026-11-06 | Phase 3 (P3-1…P3-6) implemented (fifth record below). |
+| 2026-11-07 | Phase 4 (P4-1…P4-6) implemented (sixth record below). |
 
 ### Record: P0-1…P0-6 (2026-11-06)
 
@@ -723,3 +787,76 @@ the server only (client-side, user-token binding is Phase 6); plans are not cach
 - Statistics: the bandit optimises; the always-valid holdout remains the way to *prove* lift.
 - No live model in testing (mock mode): model variants were exercised with fakes only.
 
+### Record: Phase 4 — free-form pages, G3 (2026-11-07)
+
+**Backend**
+- Migration `0037_freeform` as designed above (route `mode` / `pinned_regions`,
+  `fragment_cache`, free-form settings on `site_experience`, `g3_usage`, `review_samples`,
+  experiments subject `freeform`).
+- `app/experience/freeform.py`: settings; blocked routes (glob patterns); budget (daily and
+  per visitor, counted only for fresh model plans); fragments (fingerprinted by content,
+  scored by goal / language / taste / reward rate, pinned first, blocked never); the
+  assembling planner (best fragment per purpose, page order, ≥ 3 regions, ≤ 8); the model
+  composer (`compose_page` tool, fragments offered as `{"use": "F#"}`, one repair round);
+  pinned regions placed top / bottom unchanged; automatic flags and review sampling;
+  per-visitor stable plans (regions marker `@g3`, persona `v:<hash>`); the experiment arm.
+- Serving (`pages.serve_page`): free-form routes with a visitor id and a human visitor try
+  stable → assembled → (fresh model build in the background, or inline with `wait`) and
+  fall back to the G2 page. Crawlers and visitors without an id always get G2.
+- Fragments are seeded from every G2 page built, and — when a route is switched to
+  free-form after it already had pages — from its existing pages on first serve.
+- Rewards (`/experience/feedback`) also credit the fragments a page was assembled from
+  (per-region attribution, closing a Phase 3 gap).
+- Plans: region `width: "half"`, `layout: "split"`, `flow` (2–5 steps of existing region
+  ids; anything else is dropped). SSR renders `data-fb-width`, `data-fb-step`, an
+  `ol.fb-steps` list and the two-column grid (one column under 720 px).
+- Console API: `GET/PUT /freeform`, `GET /fragments`, `PUT /fragments/{id}`,
+  `GET /reviews` (with a preview), `PUT /reviews/{id}`; route create / update validates the
+  mode against blocked patterns and the pinned regions against the manifest.
+- The hosted shell (`/g/…`) reads the `fbvid` / `fbtaste` cookies on its own origin.
+
+**SDK and packages**
+- The widget mirrors its visitor id into a first-party `fbvid` cookie (180 days) and adopts
+  one an edge worker minted first.
+- `ui/page/steps.ts`: one step at a time with Back / "Next: <step>", the step list as tabs
+  (`aria-current="step"`), `#step-…` in the URL on served pages; used by the composed script
+  and the widget's page renderer (lazy chunk). Half-width sections in the widget's grid.
+  Core stays 38.6 kB gzipped.
+- `integrations/js/shared/composed.ts`: the framework-free core (fetch, document, handler,
+  cookie reading); `@fluidbuddha/next` re-exports it, forwards `fbvid`, reports
+  `page.freeform`.
+- New `@fluidbuddha/edge`: `createEdgeHandler({ installCode, origin, routes })` — composes
+  matching GET paths, passes everything else (and any path without a page, or when
+  FluidBuddha is down) to the origin, mints `fbvid` on a first visit (never for crawlers).
+
+**Console**
+- Pages: route mode (composed / free-form) and pinned regions (JSON); a free-form card with
+  settings (switch, budgets, review share, blocked patterns), the review feed (view in a
+  sandboxed frame, Fine / Flag) and fragments (pin / automatic / block).
+- A/B tests: the "Free-form pages" subject.
+
+**Verification**
+- Backend: `tests/test_freeform.py` (9 tests: blocked routes, fingerprints, scoring and
+  assembly, pinned regions, flags, flow / width validation, SSR steps, compose with a fake
+  model, route governance, assembled → stable per visitor, crawlers / no id get G2,
+  fragment rewards, review flagging blocks page and fragments, the free-form test arm and
+  promotion, budget, a route switched to free-form seeding from its pages, the hosted shell
+  cookie); full suite 429 passed, 2 skipped (need Redis).
+- SDK: 9 new smoke assertions (half width, widget flow, served flow with hash and tabs,
+  `fbvid` cookie).
+- `integrations/js`: 26 tests (4 new for the edge handler and `fbvid` forwarding).
+- Console: typecheck and lint clean.
+- Browser: on a site whose home route already had a canonical page, switching it to
+  free-form gave each visitor their own assembled page (stable on return, different per
+  visitor), with the pinned notice at the bottom; the console's free-form card, review
+  preview, Fine and the route editor round trip all work. Caught and fixed: such a route
+  had no fragments (its pages pre-dated Phase 4), so free-form never engaged; the hosted
+  shell ignored the visitor's cookie.
+
+**Known gaps carried forward**
+- No live model in testing (mock mode): the model composer, its flows and half-width
+  choices were exercised with a fake model only.
+- Flagging blocks the fragments a page used, including ones other good pages share; a
+  per-fragment flag in the review view would be finer.
+- Pinned regions are edited as JSON; a component picker would be friendlier.
+- The edge package is tested with fakes, not yet deployed on a real Workers runtime.

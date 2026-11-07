@@ -10,6 +10,7 @@ import { buildFlowchart } from '../components/flowchart';
 import { buildRoiCalculator } from '../components/roiCalculator';
 import { revealSequence } from '../components/reveal';
 import { buildCustomElement, loadBundle, validBundle, wcTag } from './customComponents';
+import { stepNav, setupSteps } from './steps';
 import { t } from '../../i18n';
 
 export interface EnquiryPayload {
@@ -49,6 +50,17 @@ export class PageRenderer {
       if (validBundle(page.bundle)) loadBundle(page.bundle).catch(fail);
       else fail();
     }
+    // A multi-step page (Phase 4): label each region with its step, then show one step at a time.
+    if (page.flow && page.flow.length > 1) {
+      const stepOf = new Map<string, string>();
+      for (const st of page.flow) for (const rid of st.regions || []) stepOf.set(rid, st.step);
+      for (const el of built) {
+        const st = stepOf.get(el.getAttribute('data-fb-region') || '');
+        if (st) el.setAttribute('data-fb-step', st);
+      }
+      this.container.prepend(stepNav(document, page.flow));
+      setupSteps(this.container, { history: false });
+    }
     revealSequence(built, { stepMs: 320 });
   }
 
@@ -61,6 +73,7 @@ export class PageRenderer {
     if (section.id) el.setAttribute('data-fb-region', section.id);
     if (section.component) el.setAttribute('data-fb-component', section.component);
     el.setAttribute('data-fb-state', section.state || 'ready');
+    if (section.width === 'half') el.setAttribute('data-fb-width', 'half');
     return el;
   }
 

@@ -370,6 +370,10 @@ async def promote_variant(
         from app.experience import regions_store
 
         await regions_store.set_regions_enabled(db, site.site_key, o["regions"])
+    elif exp.subject == "freeform":
+        from app.experience import freeform
+
+        await freeform.set_settings(db, site.site_key, {"freeform_enabled": o["freeform"]})
     elif exp.subject == "trigger":
         tested = sorted({i for x in exp.variants for i in x["overrides"]["triggers"]})
         if tested:

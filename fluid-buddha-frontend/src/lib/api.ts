@@ -460,9 +460,9 @@ export type DigestSettings = {
 export type DigestPreview = { subject: string; text: string; html: string };
 
 /** Variant tests (M2-4). */
-export type TestSubject = "greeting" | "trigger" | "tour" | "persona" | "design" | "regions";
+export type TestSubject = "greeting" | "trigger" | "tour" | "persona" | "design" | "regions" | "freeform";
 export type VariantOverrides = { greeting?: string; triggers?: string[]; tour?: boolean;
-  persona?: string; design?: "level1" | "level2" | "level3"; regions?: boolean };
+  persona?: string; design?: "level1" | "level2" | "level3"; regions?: boolean; freeform?: boolean };
 export type Variant = { key: string; label: string; overrides: VariantOverrides };
 export type VariantTest = {
   id: string; name: string; subject: TestSubject; variants: Variant[];
@@ -1067,6 +1067,18 @@ export const Api = {
   generateRoutePage: (id: string, rid: string, body: { family?: string; path?: string }) =>
     api<PlanRow & { preview_html: string; plan_id: string; intent: ResolvedIntent }>(
       `/tenant/websites/${id}/routes/${rid}/generate`, { method: "POST", body }),
+  // Free-form pages (Phase 4): settings, fragments, review feed.
+  getFreeform: (id: string) => api<FreeformSettings>(`/tenant/websites/${id}/freeform`),
+  setFreeform: (id: string, body: Partial<FreeformSettings>) =>
+    api<FreeformSettings>(`/tenant/websites/${id}/freeform`, { method: "PUT", body }),
+  listFragments: (id: string, status?: string) =>
+    api<{ fragments: Fragment[] }>(`/tenant/websites/${id}/fragments${status ? `?status_filter=${status}` : ""}`),
+  setFragmentStatus: (id: string, fid: string, status: Fragment["status"]) =>
+    api<{ id: string; status: string }>(`/tenant/websites/${id}/fragments/${fid}`, { method: "PUT", body: { status } }),
+  listReviews: (id: string, status?: string) =>
+    api<{ reviews: ReviewSample[] }>(`/tenant/websites/${id}/reviews${status ? `?status_filter=${status}` : ""}`),
+  reviewSample: (id: string, rid: string, verdict: "ok" | "flagged") =>
+    api<{ id: string; status: string }>(`/tenant/websites/${id}/reviews/${rid}`, { method: "PUT", body: { verdict } }),
   entityTypes: (id: string) => api<{ types: { type: string; count: number }[] }>(`/tenant/websites/${id}/entities`),
   listEntities: (id: string, type: string) =>
     api<{ records: EntityRecord[] }>(`/tenant/websites/${id}/entities/${encodeURIComponent(type)}`),
@@ -1086,12 +1098,25 @@ export const Api = {
 };
 
 // ---- composed pages (Phase 2) ----
-export type RouteInput = { pattern: string; title: string; purpose: string; enabled: boolean; priority: number };
+export type RouteMode = "composed" | "freeform";
+/** A region every free-form page on a route keeps, unchanged, at the top or bottom (Phase 4). */
+export type PinnedRegion = { id: string; component: string; props?: Record<string, unknown>; position?: "top" | "bottom" };
+export type RouteInput = { pattern: string; title: string; purpose: string; enabled: boolean; priority: number;
+  mode?: RouteMode; pinned_regions?: PinnedRegion[] };
 export type SiteRoute = RouteInput & { id: string; canonical_plan: string | null; plans: PlanRow[] };
 export type EntityRecord = { id: string; type: string; key: string; data: Record<string, unknown>; source: string;
   updated_at: string | null };
 export type ConnectorInput = { kind: "json_feed" | "wordpress"; name: string; url: string; entity_type: string;
   items_path: string; key_field: string; fields: Record<string, string> };
+// ---- free-form pages (Phase 4) ----
+export type FreeformSettings = { freeform_enabled: boolean; g3_daily_budget: number; g3_visitor_budget: number;
+  review_sample_pct: number; g3_blocked_patterns: string[] };
+export type Fragment = { id: string; purpose: string; component: string; region: Record<string, unknown>;
+  conditions: { family?: string; lang?: string; taste?: string }; status: "auto" | "pinned" | "blocked";
+  source: string; hit_count: number; rewards: number; created_at: string; last_hit_at: string | null };
+export type ReviewSample = { id: string; route: string; plan_row: string | null; plan: Record<string, unknown>;
+  flags: string[]; status: "new" | "ok" | "flagged"; created_at: string; reviewed_by: string | null;
+  preview_html: string };
 export type Connector = { id: string; kind: "json_feed" | "wordpress"; name: string; url: string; entity_type: string;
   config: Record<string, unknown>; last_sync_at: string | null; last_status: string };
 

@@ -3,17 +3,30 @@
  * Composed pages (Phase 2, G2): the routes FluidBuddha composes whole pages
  * for, the canonical page search engines get, and the records (entities)
  * pages bind to — typed in, imported, or synced from a content feed.
+ *
+ * Free-form pages (Phase 4, G3): routes in free-form mode get a page made for
+ * each visitor, assembled from proven fragments or written by the model within
+ * a budget. Owners keep control with pinned regions, routes that can never be
+ * free-form, a review feed of sampled pages, and pin/block on fragments.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  Api, ApiError, Connector, ConnectorInput, EntityRecord, IntentFamily, RouteInput, SiteRoute,
+  Api, ApiError, Connector, ConnectorInput, EntityRecord, Fragment, FreeformSettings, IntentFamily, ReviewSample,
+  RouteInput, RouteMode, SiteRoute,
 } from "@/lib/api";
 import { Modal, Spinner, fmtDate, useToast } from "@/components/ui";
 import { EditOnly, Editable } from "@/components/Permission";
 
 type Preview = { route: SiteRoute; html: string; planRow: string; composer: string };
-const blankRoute: RouteInput & { isNew: boolean; id?: string } = { pattern: "", title: "", purpose: "", enabled: true, priority: 0, isNew: true };
+type RouteDraft = RouteInput & { isNew: boolean; id?: string; pinnedJson: string };
+const blankRoute: RouteDraft = { pattern: "", title: "", purpose: "", enabled: true, priority: 0, mode: "composed",
+  pinned_regions: [], pinnedJson: "[]", isNew: true };
+const PIN_EXAMPLE = '[\n  { "id": "notice", "component": "fb.text", "props": { "body": "Prices exclude GST." }, "position": "bottom" }\n]';
+const FLAG_LABEL: Record<string, string> = {
+  validator: "had to be repaired", "few regions": "few regions", "no call to action": "no call to action",
+  "pinned region missing": "a pinned region is missing",
+};
 const blankConnector: ConnectorInput = { kind: "json_feed", name: "", url: "", entity_type: "", items_path: "", key_field: "slug", fields: {} };
 
 export default function PagesPage() {
@@ -26,7 +39,12 @@ export default function PagesPage() {
   const [type, setType] = useState("");
   const [records, setRecords] = useState<EntityRecord[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
-  const [routeDraft, setRouteDraft] = useState<typeof blankRoute | null>(null);
+  const [routeDraft, setRouteDraft] = useState<RouteDraft | null>(null);
+  const [ff, setFf] = useState<FreeformSettings | null>(null);
+  const [ffDraft, setFfDraft] = useState<(FreeformSettings & { blockedText: string }) | null>(null);
+  const [fragments, setFragments] = useState<Fragment[]>([]);
+  const [reviews, setReviews] = useState<ReviewSample[]>([]);
+  const [reviewOpen, setReviewOpen] = useState<ReviewSample | null>(null);
   const [genFamily, setGenFamily] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<Preview | null>(null);
   const [recordDraft, setRecordDraft] = useState<{ type: string; key: string; json: string; isNew: boolean } | null>(null);
@@ -37,10 +55,12 @@ export default function PagesPage() {
   const loadRecords = useCallback((t: string) => (t ? Api.listEntities(id, t).then((r) => setRecords(r.records))
     .catch(() => setRecords([])) : Promise.resolve()), [id]);
   const load = useCallback(() =>
-    Promise.all([Api.listRoutes(id), Api.listIntentFamilies(id), Api.entityTypes(id), Api.listConnectors(id)])
-      .then(([r, f, t, c]) => {
+    Promise.all([Api.listRoutes(id), Api.listIntentFamilies(id), Api.entityTypes(id), Api.listConnectors(id),
+      Api.getFreeform(id), Api.listFragments(id), Api.listReviews(id, "new")])
+      .then(([r, f, t, c, s, fr, rv]) => {
         setRoutes(r.routes); setHostedBase(r.hosted_base); setFamilies(f.families); setTypes(t.types); setConnectors(c.connectors);
         setType((cur) => cur || t.types[0]?.type || "");
+        setFf(s); setFragments(fr.fragments); setReviews(rv.reviews);
       })
       .catch(() => toast("Could not load pages", "err")), [id, toast]);
   useEffect(() => { load(); }, [load]);
@@ -54,8 +74,13 @@ export default function PagesPage() {
   };
 
   const saveRoute = () => routeDraft && run(async () => {
-    const body = { pattern: routeDraft.pattern, title: routeDraft.title, purpose: routeDraft.purpose,
-      enabled: routeDraft.enabled, priority: routeDraft.priority };
+    let pinned: RouteInput["pinned_regions"] = [];
+    if (routeDraft.mode === "freeform" && routeDraft.pinnedJson.trim()) {
+      try { pinned = JSON.parse(routeDraft.pinnedJson); } catch { throw new ApiError(422, "Pinned regions aren't valid JSON"); }
+      if (!Array.isArray(pinned)) throw new ApiError(422, "Pinned regions are a list");
+    }
+    const body: RouteInput = { pattern: routeDraft.pattern, title: routeDraft.title, purpose: routeDraft.purpose,
+      enabled: routeDraft.enabled, priority: routeDraft.priority, mode: routeDraft.mode, pinned_regions: pinned };
     if (routeDraft.isNew || !routeDraft.id) await Api.createRoute(id, body);
     else await Api.updateRoute(id, routeDraft.id, body);
     setRouteDraft(null); await load();
@@ -65,6 +90,25 @@ export default function PagesPage() {
     const out = await Api.generateRoutePage(id, r.id, { family: genFamily[r.id] || undefined });
     setPreview({ route: r, html: out.preview_html, planRow: out.id, composer: out.composer }); await load();
   }, "Page composed and cached");
+
+  const saveFreeform = () => ffDraft && run(async () => {
+    const blocked = ffDraft.blockedText.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+    const { blockedText: _ignored, ...rest } = ffDraft;
+    void _ignored;
+    setFf(await Api.setFreeform(id, { ...rest, g3_blocked_patterns: blocked })); setFfDraft(null);
+  }, "Free-form settings saved");
+  const setFragment = (f: Fragment, status: Fragment["status"]) => run(async () => {
+    await Api.setFragmentStatus(id, f.id, status); await load();
+  }, status === "blocked" ? "Fragment blocked: it will not be used again" : status === "pinned" ? "Fragment pinned" : "Fragment back to automatic");
+  const review = (r: ReviewSample, verdict: "ok" | "flagged") => run(async () => {
+    await Api.reviewSample(id, r.id, verdict); setReviewOpen(null); await load();
+  }, verdict === "flagged" ? "Flagged: that page and its fragments are blocked" : "Marked as fine");
+  const fragText = (f: Fragment) => {
+    const p = (f.region.props || {}) as Record<string, unknown>;
+    const v = p.title ?? p.body ?? p.subtitle ?? p.heading ?? Object.values(p).find((x) => typeof x === "string");
+    return typeof v === "string" ? v.slice(0, 90) : "";
+  };
+  const freeformRoutes = routes?.filter((r) => r.mode === "freeform").length ?? 0;
 
   const samplePath = (pattern: string) => pattern.replace("/*", "/example").replace(/:([a-z_]+)/g, "example");
 
@@ -77,7 +121,7 @@ export default function PagesPage() {
         <h2>Pages</h2>
         <p className="muted" style={{ fontSize: "0.88rem", maxWidth: 720 }}>
           Whole pages FluidBuddha composes for each visitor&apos;s goal from your approved components and your own data,
-          rendered on the server. Serve them from your Next.js site with <code>@fluidbuddha/next</code>, or preview them here.
+          rendered on the server. Serve them from your Next.js site with <code>@fluidbuddha/next</code>, from an edge worker in front of any site with <code>@fluidbuddha/edge</code>, or preview them here.
           Search engines get the canonical page you choose.
         </p>
       </div>
@@ -96,6 +140,10 @@ export default function PagesPage() {
               <div>
                 <span className="mono" style={{ fontWeight: 600 }}>{r.pattern}</span>
                 {!r.enabled && <span className="badge" style={{ marginLeft: 6 }}>off</span>}
+                {r.mode === "freeform" && <span className="badge accent" style={{ marginLeft: 6 }}
+                  title="Each visitor gets a page made for them">free-form</span>}
+                {(r.pinned_regions?.length ?? 0) > 0 && <span className="badge" style={{ marginLeft: 6 }}>
+                  {r.pinned_regions!.length} pinned</span>}
                 <span className="muted" style={{ marginLeft: 8 }}>{r.title}</span>
                 <div className="faint" style={{ fontSize: "0.8rem" }}>{r.purpose}</div>
               </div>
@@ -109,7 +157,8 @@ export default function PagesPage() {
                     {families.map((f) => <option key={f.slug} value={f.slug}>{f.label}</option>)}
                   </select>
                   <button className="btn btn-sm" onClick={() => generate(r)} disabled={busy}>{busy ? <Spinner /> : "Compose a preview"}</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setRouteDraft({ ...r, isNew: false })}>Edit</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setRouteDraft({ ...r, mode: r.mode ?? "composed", isNew: false,
+                    pinnedJson: r.pinned_regions?.length ? JSON.stringify(r.pinned_regions, null, 2) : "[]" })}>Edit</button>
                   <button className="btn btn-ghost btn-sm btn-danger"
                     onClick={() => run(async () => { await Api.deleteRoute(id, r.id); await load(); }, "Route removed")}>Remove</button>
                 </EditOnly>
@@ -160,6 +209,82 @@ export default function PagesPage() {
           </div>
           <iframe title="Page preview" sandbox="" srcDoc={preview.html}
             style={{ width: "100%", height: 560, border: "1px solid var(--line)", borderRadius: 12, background: "#fff" }} />
+        </div>
+      )}
+
+      {/* ---- free-form (Phase 4) ---- */}
+      {ff && (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div className="row between wrap" style={{ gap: 8, marginBottom: 6 }}>
+            <h3>Free-form pages {ff.freeform_enabled ? <span className="badge accent">on</span> : <span className="badge">off</span>}</h3>
+            <EditOnly><button className="btn btn-ghost btn-sm"
+              onClick={() => setFfDraft({ ...ff, blockedText: ff.g3_blocked_patterns.join("\n") })}>Settings</button></EditOnly>
+          </div>
+          <p className="muted" style={{ fontSize: "0.84rem", marginBottom: 10, maxWidth: 760 }}>
+            On routes set to <strong>free-form</strong>, each visitor gets a page made for them — assembled from fragments
+            that worked before, or written by the agent within your budget — and keeps it on later visits. Search engines and
+            visitors without an id get the composed page. {freeformRoutes === 0
+              ? "No route is free-form yet: edit a route and choose Free-form."
+              : `${freeformRoutes} route${freeformRoutes === 1 ? " is" : "s are"} free-form.`}
+          </p>
+          <div className="row wrap" style={{ gap: 18, fontSize: "0.84rem" }}>
+            <span><span className="faint">Budget</span> {ff.g3_daily_budget} new pages a day · {ff.g3_visitor_budget} per visitor</span>
+            <span><span className="faint">Review</span> {ff.review_sample_pct}% of pages sampled</span>
+            <span><span className="faint">Never free-form</span> <span className="mono">{ff.g3_blocked_patterns.join("  ") || "—"}</span></span>
+          </div>
+
+          <h4 style={{ margin: "18px 0 8px" }}>Review feed {reviews.length > 0 && <span className="badge">{reviews.length} to review</span>}</h4>
+          {reviews.length === 0 ? <div className="empty">Nothing to review. Sampled and flagged pages appear here.</div> : (
+            <table className="table">
+              <thead><tr><th>Route</th><th>Why it&apos;s here</th><th>Made</th><th></th></tr></thead>
+              <tbody>
+                {reviews.map((r) => (
+                  <tr key={r.id}>
+                    <td className="mono">{r.route}</td>
+                    <td>{r.flags.length ? r.flags.map((f) => <span key={f} className="badge" style={{ marginRight: 4 }}>{FLAG_LABEL[f] ?? f}</span>)
+                      : <span className="muted">sampled</span>}</td>
+                    <td className="muted" style={{ fontSize: "0.8rem" }}>{fmtDate(r.created_at)}</td>
+                    <td><div className="row" style={{ gap: 4 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setReviewOpen(r)}>View</button>
+                      <EditOnly>
+                        <button className="btn btn-ghost btn-sm" onClick={() => review(r, "ok")}>Fine</button>
+                        <button className="btn btn-ghost btn-sm btn-danger" onClick={() => review(r, "flagged")}>Flag</button>
+                      </EditOnly>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <h4 style={{ margin: "18px 0 8px" }}>Fragments</h4>
+          <p className="muted" style={{ fontSize: "0.82rem", marginBottom: 8 }}>
+            Regions from earlier pages, reused when they fit a visitor&apos;s goal. Ones that earn results are preferred;
+            pin one to favour it, block one to never use it again.
+          </p>
+          {fragments.length === 0 ? <div className="empty">No fragments yet. They are collected as pages are composed.</div> : (
+            <table className="table">
+              <thead><tr><th>Purpose</th><th>Content</th><th>For</th><th>Used</th><th>Results</th><th></th></tr></thead>
+              <tbody>
+                {fragments.slice(0, 50).map((f) => (
+                  <tr key={f.id}>
+                    <td>{f.purpose} {f.status !== "auto" && <span className={`badge ${f.status === "pinned" ? "accent" : ""}`}>{f.status}</span>}
+                      <div className="mono faint" style={{ fontSize: "0.74rem" }}>{f.component}</div></td>
+                    <td className="muted" style={{ fontSize: "0.82rem", maxWidth: 360 }}>{fragText(f) || "—"}</td>
+                    <td className="faint" style={{ fontSize: "0.78rem" }}>{f.conditions.family ? famLabel(f.conditions.family) : "anyone"}
+                      {f.conditions.lang ? ` · ${f.conditions.lang}` : ""}</td>
+                    <td>{f.hit_count}×</td>
+                    <td className="muted">{f.hit_count ? `${((f.rewards / f.hit_count) * 100).toFixed(0)}%` : "—"}</td>
+                    <td><EditOnly><div className="row" style={{ gap: 4 }}>
+                      {f.status !== "pinned" && <button className="btn btn-ghost btn-sm" onClick={() => setFragment(f, "pinned")}>Pin</button>}
+                      {f.status !== "auto" && <button className="btn btn-ghost btn-sm" onClick={() => setFragment(f, "auto")}>Automatic</button>}
+                      {f.status !== "blocked" && <button className="btn btn-ghost btn-sm btn-danger" onClick={() => setFragment(f, "blocked")}>Block</button>}
+                    </div></EditOnly></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
@@ -257,6 +382,24 @@ export default function PagesPage() {
               <input id="rt-purpose" className="input" value={routeDraft.purpose} placeholder="Help visitors choose a plan"
                 onChange={(e) => setRouteDraft({ ...routeDraft, purpose: e.target.value })} />
             </div>
+            <div className="field">
+              <label className="label" htmlFor="rt-mode">Pages</label>
+              <select id="rt-mode" className="select" value={routeDraft.mode ?? "composed"}
+                onChange={(e) => setRouteDraft({ ...routeDraft, mode: e.target.value as RouteMode })}>
+                <option value="composed">Composed for each visitor&apos;s goal</option>
+                <option value="freeform">Free-form: a page made for each visitor</option>
+              </select>
+            </div>
+            {routeDraft.mode === "freeform" && (
+              <div className="field">
+                <label className="label" htmlFor="rt-pinned">Pinned regions <span className="faint">(kept unchanged on every page; JSON)</span></label>
+                <textarea id="rt-pinned" className="textarea mono" style={{ minHeight: 110 }} value={routeDraft.pinnedJson}
+                  placeholder={PIN_EXAMPLE} spellCheck={false}
+                  onChange={(e) => setRouteDraft({ ...routeDraft, pinnedJson: e.target.value })} />
+                <div className="faint" style={{ fontSize: "0.76rem", marginTop: 4 }}>
+                  For a legal notice or your brand header. <code>position</code> is <code>top</code> or <code>bottom</code>.</div>
+              </div>
+            )}
             <label className="row" style={{ gap: 6, fontSize: "0.86rem", marginBottom: 14 }}>
               <input type="checkbox" checked={routeDraft.enabled} onChange={(e) => setRouteDraft({ ...routeDraft, enabled: e.target.checked })} /> On
             </label>
@@ -265,6 +408,60 @@ export default function PagesPage() {
               <button className="btn btn-primary" onClick={saveRoute} disabled={busy || !routeDraft.pattern.trim()}>Save route</button>
             </div>
           </Editable>
+        </Modal>
+      )}
+
+      {ffDraft && (
+        <Modal open title="Free-form settings" onClose={() => setFfDraft(null)} width={560}>
+          <Editable>
+            <label className="row" style={{ gap: 6, fontSize: "0.86rem", marginBottom: 14 }}>
+              <input type="checkbox" checked={ffDraft.freeform_enabled}
+                onChange={(e) => setFfDraft({ ...ffDraft, freeform_enabled: e.target.checked })} /> Free-form pages on
+            </label>
+            <div className="row" style={{ gap: 10 }}>
+              <div className="field" style={{ flex: 1 }}>
+                <label className="label" htmlFor="ff-day">New pages a day</label>
+                <input id="ff-day" className="input" type="number" min={0} value={ffDraft.g3_daily_budget}
+                  onChange={(e) => setFfDraft({ ...ffDraft, g3_daily_budget: Number(e.target.value) })} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label className="label" htmlFor="ff-vis">Per visitor a day</label>
+                <input id="ff-vis" className="input" type="number" min={0} max={50} value={ffDraft.g3_visitor_budget}
+                  onChange={(e) => setFfDraft({ ...ffDraft, g3_visitor_budget: Number(e.target.value) })} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label className="label" htmlFor="ff-rev">Review sample %</label>
+                <input id="ff-rev" className="input" type="number" min={0} max={100} value={ffDraft.review_sample_pct}
+                  onChange={(e) => setFfDraft({ ...ffDraft, review_sample_pct: Number(e.target.value) })} />
+              </div>
+            </div>
+            <p className="faint" style={{ fontSize: "0.78rem", marginTop: -4, marginBottom: 12 }}>
+              Pages the agent writes count against the budget; pages assembled from fragments don&apos;t. Past the budget,
+              visitors get the composed page.</p>
+            <div className="field">
+              <label className="label" htmlFor="ff-block">Never free-form <span className="faint">(one per line; * matches the rest)</span></label>
+              <textarea id="ff-block" className="textarea mono" style={{ minHeight: 110 }} value={ffDraft.blockedText}
+                onChange={(e) => setFfDraft({ ...ffDraft, blockedText: e.target.value })} spellCheck={false} />
+            </div>
+            <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost" onClick={() => setFfDraft(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveFreeform} disabled={busy}>Save</button>
+            </div>
+          </Editable>
+        </Modal>
+      )}
+
+      {reviewOpen && (
+        <Modal open title={`Page made for a visitor on ${reviewOpen.route}`} onClose={() => setReviewOpen(null)} width={900}>
+          <iframe title="Free-form page" sandbox="" srcDoc={reviewOpen.preview_html}
+            style={{ width: "100%", height: 520, border: "1px solid var(--line)", borderRadius: 12, background: "#fff" }} />
+          <div className="row" style={{ gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+            <button className="btn btn-ghost" onClick={() => setReviewOpen(null)}>Close</button>
+            <EditOnly>
+              <button className="btn btn-ghost btn-danger" onClick={() => review(reviewOpen, "flagged")} disabled={busy}>Flag</button>
+              <button className="btn btn-primary" onClick={() => review(reviewOpen, "ok")} disabled={busy}>Fine</button>
+            </EditOnly>
+          </div>
         </Modal>
       )}
 

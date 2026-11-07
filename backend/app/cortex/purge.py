@@ -34,6 +34,7 @@ _SITE_TABLES = (
     "agent_tokens", "agent_requests",  # M3-2
     "campaigns",  # M3-1: its pages and events go with it (ON DELETE CASCADE)
     "site_design_systems", "site_component_manifests",  # P0-7
+    "fragment_cache", "g3_usage", "review_samples",  # Phase 4 (review_samples before plan_cache)
     "site_routes", "site_entities", "site_connectors",  # Phase 2 (before plan_cache: FK)
     "site_experience", "site_regions", "site_intent_families", "plan_cache",  # Phase 1
 )
@@ -73,6 +74,10 @@ async def invalidate_site_caches(db: AsyncSession, site_key: str) -> None:
     # blocked plans are the owner's decisions and stay.
     if await _table_exists(db, "plan_cache"):
         await db.execute(text("DELETE FROM plan_cache WHERE site_key = :sk AND status = 'auto'"),
+                         {"sk": site_key})
+    # Free-form fragments quote site content as well (Phase 4).
+    if await _table_exists(db, "fragment_cache"):
+        await db.execute(text("DELETE FROM fragment_cache WHERE site_key = :sk AND status = 'auto'"),
                          {"sk": site_key})
 
 

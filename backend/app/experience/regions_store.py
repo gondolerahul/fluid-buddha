@@ -347,5 +347,10 @@ async def record_feedback(db: AsyncSession, site_key: str, plan_id: str, visitor
         "ON CONFLICT DO NOTHING"), {"sk": site_key, "p": row.id, "v": visitor, "e": event})
     if (ins.rowcount or 0) > 0:
         await db.execute(text("UPDATE plan_cache SET rewards = rewards + 1 WHERE id = :id"), {"id": row.id})
+        # Free-form pages (Phase 4) credit the fragments they were built from.
+        await db.execute(text(
+            "UPDATE fragment_cache SET rewards = rewards + 1 WHERE site_key = :sk AND id::text IN "
+            "(SELECT jsonb_array_elements_text(COALESCE(plan->'provenance'->'fragments', '[]'::jsonb)) "
+            " FROM plan_cache WHERE id = :id)"), {"sk": site_key, "id": row.id})
     await db.commit()
     return (ins.rowcount or 0) > 0

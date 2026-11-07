@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -37,10 +37,13 @@ class Route:
     enabled: bool = True
     priority: int = 0
     canonical_plan: Optional[str] = None
+    mode: str = "composed"                       # composed (G2) | freeform (G3, Phase 4)
+    pinned_regions: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "pattern": self.pattern, "title": self.title, "purpose": self.purpose,
-                "enabled": self.enabled, "priority": self.priority, "canonical_plan": self.canonical_plan}
+                "enabled": self.enabled, "priority": self.priority, "canonical_plan": self.canonical_plan,
+                "mode": self.mode, "pinned_regions": self.pinned_regions}
 
     def match(self, path: str) -> Optional[dict[str, str]]:
         return match_pattern(self.pattern, path)
@@ -76,10 +79,11 @@ def match_pattern(pattern: str, path: str) -> Optional[dict[str, str]]:
 
 def _route(r: Any) -> Route:
     return Route(id=str(r.id), pattern=r.pattern, title=r.title, purpose=r.purpose, enabled=bool(r.enabled),
-                 priority=r.priority, canonical_plan=str(r.canonical_plan) if r.canonical_plan else None)
+                 priority=r.priority, canonical_plan=str(r.canonical_plan) if r.canonical_plan else None,
+                 mode=r.mode, pinned_regions=list(r.pinned_regions or []))
 
 
-_COLS = "id, pattern, title, purpose, enabled, priority, canonical_plan"
+_COLS = "id, pattern, title, purpose, enabled, priority, canonical_plan, mode, pinned_regions"
 
 
 async def list_routes(db: AsyncSession, site_key: str) -> list[Route]:
@@ -110,14 +114,19 @@ async def get_route(db: AsyncSession, site_key: str, rid: str) -> Optional[Route
 
 
 async def upsert_route(db: AsyncSession, site_key: str, *, pattern: str, title: str, purpose: str,
-                       enabled: bool, priority: int) -> Route:
+                       enabled: bool, priority: int, mode: str = "composed",
+                       pinned_regions: Optional[list[dict[str, Any]]] = None) -> Route:
+    import json as _json
+
     await db.execute(text("""
-        INSERT INTO site_routes (id, site_key, pattern, title, purpose, enabled, priority)
-        VALUES (:id, :sk, :p, :t, :pu, :e, :pr)
+        INSERT INTO site_routes (id, site_key, pattern, title, purpose, enabled, priority, mode, pinned_regions)
+        VALUES (:id, :sk, :p, :t, :pu, :e, :pr, :m, CAST(:pin AS jsonb))
         ON CONFLICT (site_key, pattern) DO UPDATE SET title = EXCLUDED.title, purpose = EXCLUDED.purpose,
-            enabled = EXCLUDED.enabled, priority = EXCLUDED.priority
+            enabled = EXCLUDED.enabled, priority = EXCLUDED.priority, mode = EXCLUDED.mode,
+            pinned_regions = EXCLUDED.pinned_regions
     """), {"id": uuid.uuid4(), "sk": site_key, "p": pattern, "t": title, "pu": purpose, "e": enabled,
-           "pr": priority})
+           "pr": priority, "m": mode if mode in ("composed", "freeform") else "composed",
+           "pin": _json.dumps(pinned_regions or [])})
     await db.commit()
     r = (await db.execute(text(f"SELECT {_COLS} FROM site_routes WHERE site_key = :sk AND pattern = :p"),
                           {"sk": site_key, "p": pattern})).first()

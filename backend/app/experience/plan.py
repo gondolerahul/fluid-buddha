@@ -53,9 +53,13 @@ class Region:
     id: str
     component: str
     props: dict[str, Any]
+    width: str = "full"           # full | half (free composition in a two-column grid, Phase 4)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "component": self.component, "props": self.props}
+        d = {"id": self.id, "component": self.component, "props": self.props}
+        if self.width == "half":
+            d["width"] = "half"
+        return d
 
 
 @dataclass
@@ -80,6 +84,8 @@ class Plan:
     theme: dict[str, Any] = field(default_factory=dict)
     policies: dict[str, Any] = field(default_factory=dict)
     provenance: dict[str, Any] = field(default_factory=dict)
+    # A multi-step flow (Phase 4): [{step, title, regions: [region ids]}]; empty = one page.
+    flow: list[dict[str, Any]] = field(default_factory=list)
     schema: str = SCHEMA
 
     def to_dict(self) -> dict[str, Any]:
@@ -95,6 +101,7 @@ class Plan:
             "actions": [a.to_dict() for a in self.actions],
             "policies": self.policies,
             "provenance": self.provenance,
+            **({"flow": self.flow} if self.flow else {}),
         }
 
 
@@ -157,8 +164,12 @@ def validate_plan(
         if props is None:
             dropped.append(f"region {rid}: required props missing")
             continue
-        plan.regions.append(Region(id=rid, component=cid, props=props))
+        width = "half" if r.get("width") == "half" else "full"
+        plan.regions.append(Region(id=rid, component=cid, props=props, width=width))
 
+    plan.flow = _validate_flow(raw.get("flow"), {r.id for r in plan.regions}, problems)
+    if plan.layout not in ("", "stack", "split"):
+        plan.layout = ""
     must = plan.policies.get("must_include")
     if isinstance(must, list):
         present = {r.component for r in plan.regions}
@@ -167,6 +178,28 @@ def validate_plan(
                 problems.append(f"policy: must include component {cid}")
 
     return PlanReport(plan=plan, problems=problems, dropped=dropped)
+
+
+MAX_STEPS = 5
+
+
+def _validate_flow(raw: Any, region_ids: set[str], problems: list[str]) -> list[dict[str, Any]]:
+    """Steps that each name existing regions; fewer than two steps is no flow."""
+    if not isinstance(raw, list) or not raw:
+        return []
+    steps: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for s in raw[:MAX_STEPS]:
+        if not isinstance(s, dict):
+            continue
+        sid = slug(s.get("step"))
+        regs = [slug(x) for x in (s.get("regions") or []) if slug(x) in region_ids]
+        if not sid or sid in seen or not regs:
+            problems.append(f"flow step {s.get('step')!r}: needs a unique id and existing regions")
+            continue
+        seen.add(sid)
+        steps.append({"step": sid, "title": str(s.get("title") or sid)[:60], "regions": regs})
+    return steps if len(steps) >= 2 else []
 
 
 def _plan_id(v: Any) -> str:

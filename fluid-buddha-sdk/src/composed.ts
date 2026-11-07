@@ -6,6 +6,7 @@
 //     page data in <script id="fb-page-data">;
 //   * sends enquiry forms with fetch to /leads (without JavaScript they post
 //     to the server's form endpoint);
+//   * shows multi-step pages (Phase 4) one step at a time, with Back / Next;
 //   * applies plan patches from the conversation (P2-4) to the page, when the
 //     widget on the page relays them as `fluidbuddha:plan_patch` events.
 
@@ -14,6 +15,7 @@ import { PageRenderer } from './ui/page/PageRenderer';
 import { applyPatch, PlanPatch } from './core/patch/patcher';
 import { rememberPlan } from './core/taste';
 import { trackEngagement, whyControl } from './core/why';
+import { setupSteps } from './ui/page/steps';
 
 interface PageData {
   why?: string[];
@@ -104,6 +106,8 @@ export function hydrate(doc: Document = document): number {
     trackEngagement(main, { api: data.api, key: data.key || '' }, data.plan_id);
     rememberPlan(data.plan_id);
   }
+  // A multi-step page (Phase 4): the server rendered every step; show one at a time.
+  if (inner) setupSteps(inner, { history: true });
   window.addEventListener('fluidbuddha:plan_patch', (e) => {
     applyPatch((e as CustomEvent<PlanPatch>).detail, [doc], send);
   });

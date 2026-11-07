@@ -14,6 +14,7 @@ const SUBJECTS: { key: TestSubject; label: string; hint: string }[] = [
   { key: "persona", label: "Starting persona", hint: "Who the agent assumes it is talking to at first." },
   { key: "design", label: "Design level", hint: "Companion panel, immersive presence or ambient atmosphere." },
   { key: "regions", label: "Generated regions", hint: "Your page's own content against regions FluidBuddha generates for each visitor's goal (set them up in the Regions tab)." },
+  { key: "freeform", label: "Free-form pages", hint: "Composed pages against pages made for each visitor on your free-form routes (set them up in the Pages tab)." },
 ];
 const DESIGNS = [
   { key: "level1", label: "Level 1 · Companion" },
@@ -35,6 +36,7 @@ function describe(o: VariantOverrides, rules: Record<string, string>, personas: 
   if (o.persona !== undefined) return o.persona ? personas[o.persona] ?? o.persona : "Worked out from the conversation";
   if (o.design !== undefined) return DESIGNS.find((d) => d.key === o.design)?.label ?? o.design;
   if (o.regions !== undefined) return o.regions ? "Generated regions" : "The page's own content";
+  if (o.freeform !== undefined) return o.freeform ? "Free-form, per visitor" : "Composed pages";
   return "—";
 }
 
@@ -78,7 +80,8 @@ export default function TestsPage() {
   };
   const promote = async (t: VariantTest, key: string, label: string) => {
     const where = t.subject === "design" ? "the site's design level" : t.subject === "trigger"
-      ? "which triggers are on" : t.subject === "regions" ? "whether generated regions are on" : "the agent profile";
+      ? "which triggers are on" : t.subject === "regions" ? "whether generated regions are on"
+      : t.subject === "freeform" ? "whether free-form pages are on" : "the agent profile";
     if (!window.confirm(`Make “${label}” the default for everyone? This updates ${where} and ends the test.`)) return;
     try {
       await Api.promoteVariant(id, t.id, key);
@@ -244,6 +247,7 @@ function blank(subject: TestSubject, i: number): Draft {
     case "persona": return { label, overrides: { persona: "" } };
     case "design": return { label, overrides: { design: DESIGNS[Math.min(i, 2)].key } };
     case "regions": return { label: i === 0 ? "Page's own content" : "Generated", overrides: { regions: i !== 0 } };
+    case "freeform": return { label: i === 0 ? "Composed" : "Free-form", overrides: { freeform: i !== 0 } };
   }
 }
 
@@ -351,6 +355,13 @@ function TestForm({ id, rules, personas, holdoutRunning, onCancel, onStarted }: 
               onChange={(e) => setOverride(i, { regions: e.target.value === "on" })}>
               <option value="off">The page&apos;s own content</option>
               <option value="on">Generated regions</option>
+            </select>
+          )}
+          {subject === "freeform" && (
+            <select className="select" aria-label={`Version ${i + 1} free-form`} value={v.overrides.freeform ? "on" : "off"}
+              onChange={(e) => setOverride(i, { freeform: e.target.value === "on" })}>
+              <option value="off">Composed pages</option>
+              <option value="on">Free-form, per visitor</option>
             </select>
           )}
           {subject === "persona" && (

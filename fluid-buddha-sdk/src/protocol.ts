@@ -105,6 +105,15 @@ export interface PageSection {
   id?: string;
   component?: string;
   state?: 'ready' | 'empty' | 'error';
+  /** Half the page width beside its neighbour (Phase 4); full width otherwise. */
+  width?: 'half';
+}
+
+/** One step of a multi-step page (Phase 4): the regions shown together. */
+export interface FlowStep {
+  step: string;
+  title?: string;
+  regions: string[];
 }
 
 /** An action a generated page offers (Experience Plan). */
@@ -125,6 +134,8 @@ export interface PageSpec {
   /** The customer's component script when a section is drawn by one of their
    *  Web Components (`type: "wc:<tag>"`, P0-8). */
   bundle?: { url: string; integrity: string };
+  /** A multi-step page (Phase 4): one step shown at a time. */
+  flow?: FlowStep[];
 }
 
 export interface Grounding {

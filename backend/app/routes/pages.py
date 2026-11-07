@@ -70,12 +70,19 @@ def _signals(q: dict[str, str], path: str) -> Signals:
                              persona=(q.get("persona") or "")[:40])
 
 
-async def _page(request: Request, db: AsyncSession, site: store.Website, path: str) -> dict[str, Any]:
+async def _page(request: Request, db: AsyncSession, site: store.Website, path: str,
+                cookies: bool = False) -> dict[str, Any]:
     from app.transport import guard
 
     if not guard._limiter.allow(f"pages:{site.site_key}", PAGE_PER_MIN):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, guard.RATE_LIMITED)
     q = dict(request.query_params)
+    if cookies:
+        # The hosted shell (/g/) is a page on this origin: the widget on it keeps the
+        # visitor id (`fbvid`, Phase 4) and taste (`fbtaste`) in cookies here.
+        for name, key in (("fbvid", "visitor"), ("fbtaste", "taste")):
+            if not q.get(key) and request.cookies.get(name):
+                q[key] = request.cookies[name][:200]
     ua = q.get("ua") or request.headers.get("user-agent")  # the adapter forwards the visitor's UA
     settings = get_settings()
     from app.experience import taste as taste_mod
@@ -89,7 +96,7 @@ async def _page(request: Request, db: AsyncSession, site: store.Website, path: s
     out = await serve_page(
         db, request.app.state.runtime, site.site_key, path=path, sig=_signals(q, path),
         fbv=q.get("fbv"), bot=is_bot(ua, False), domain=site.domain or "",
-        api_base=settings.public_api_url, public_key=site.public_key or "", taste=taste)
+        api_base=settings.public_api_url, public_key=site.public_key or "", taste=taste, visitor=visitor)
     # What a host page loads next to the HTML (the Next.js adapter uses these).
     out["scripts"] = {"composed": f"{settings.widget_sdk_base.rstrip('/')}/fluid-buddha-composed.global.js",
                       "loader": f"{settings.public_api_url.rstrip('/')}/widget/loader.js",
@@ -141,7 +148,7 @@ async def hosted_page(site_key: str, path: str, request: Request) -> HTMLRespons
         site = await store.get_website_by_site_key(db, site_key)
         if site is None or site.status != "active":
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-        page = await _page(request, db, site, "/" + path)
+        page = await _page(request, db, site, "/" + path, cookies=True)
     if page.get("status") != 200:
         return HTMLResponse("<!doctype html><title>Not found</title><p>No page here.</p>", status_code=404,
                             headers={"X-Robots-Tag": "noindex"})
@@ -173,6 +180,38 @@ class RouteIn(BaseModel):
     purpose: str = Field("", max_length=400)
     enabled: bool = True
     priority: int = Field(0, ge=-100, le=100)
+    # Phase 4: free-form (G3) per person, and regions every G3 page keeps unchanged.
+    mode: str = Field("composed", pattern="^(composed|freeform)$")
+    pinned_regions: list[dict[str, Any]] = Field(default_factory=list, max_length=6)
+
+
+async def _check_route_body(db: AsyncSession, site: store.Website, body: RouteIn, pattern: str) -> list[dict[str, Any]]:
+    """Free-form allowed for this pattern; pinned regions valid against the manifest."""
+    from app.apis.registry import get_site_apis
+    from app.experience import freeform
+    from app.experience.plan import validate_plan
+
+    if body.mode == "freeform":
+        cfg = await freeform.settings(db, site.site_key)
+        hit = freeform.blocked_route(pattern, cfg["g3_blocked_patterns"])
+        if hit:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                f"{pattern} matches {hit}, which can never be free-form (change it in free-form settings).")
+    if not body.pinned_regions:
+        return []
+    await ensure_manifest(site.site_key)
+    rep = validate_plan({"regions": body.pinned_regions}, manifest=load_manifest(site.site_key),
+                        catalogue=get_site_apis(site.site_key), site_key=site.site_key)
+    if rep.problems or rep.dropped or len(rep.plan.regions) != len(body.pinned_regions):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"message": "Fix the pinned regions.", "problems": (rep.problems + rep.dropped)[:10]})
+    positions = {str(r.get("id") or ""): r.get("position") for r in body.pinned_regions}
+    out = []
+    for r in rep.plan.regions:
+        d = r.to_dict()
+        d["position"] = "bottom" if positions.get(r.id, positions.get(d["id"])) == "bottom" else "top"
+        out.append(d)
+    return out
 
 
 def _check_pattern(p: str) -> str:
@@ -206,8 +245,11 @@ async def list_site_routes(site: store.Website = Depends(owned_website),
 @admin.post("/routes", status_code=status.HTTP_201_CREATED)
 async def create_route(body: RouteIn, site: store.Website = Depends(owned_website),
                        db: AsyncSession = Depends(get_session)) -> dict:
-    r = await routes.upsert_route(db, site.site_key, pattern=_check_pattern(body.pattern), title=body.title.strip(),
-                                  purpose=body.purpose.strip(), enabled=body.enabled, priority=body.priority)
+    pattern = _check_pattern(body.pattern)
+    pinned = await _check_route_body(db, site, body, pattern)
+    r = await routes.upsert_route(db, site.site_key, pattern=pattern, title=body.title.strip(),
+                                  purpose=body.purpose.strip(), enabled=body.enabled, priority=body.priority,
+                                  mode=body.mode, pinned_regions=pinned)
     return await _route_view(db, site.site_key, r)
 
 
@@ -221,8 +263,10 @@ async def update_route(rid: str, body: RouteIn, site: store.Website = Depends(ow
     if pattern != cur.pattern:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "A route's pattern can't change (its plans are keyed by it); add a new route.")
+    pinned = await _check_route_body(db, site, body, pattern)
     r = await routes.upsert_route(db, site.site_key, pattern=pattern, title=body.title.strip(),
-                                  purpose=body.purpose.strip(), enabled=body.enabled, priority=body.priority)
+                                  purpose=body.purpose.strip(), enabled=body.enabled, priority=body.priority,
+                                  mode=body.mode, pinned_regions=pinned)
     return await _route_view(db, site.site_key, r)
 
 
@@ -393,3 +437,98 @@ async def sync_connector(cid: str, site: store.Website = Depends(owned_website),
     if conn is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Connector not found")
     return await ents.sync_connector(db, site.site_key, conn, fetch_public)
+
+
+# ---- console: free-form (Phase 4) ---------------------------------------------------
+
+class FreeformIn(BaseModel):
+    freeform_enabled: Optional[bool] = None
+    g3_daily_budget: Optional[int] = Field(None, ge=0, le=100000)
+    g3_visitor_budget: Optional[int] = Field(None, ge=0, le=50)
+    review_sample_pct: Optional[int] = Field(None, ge=0, le=100)
+    g3_blocked_patterns: Optional[list[str]] = Field(None, max_length=30)
+
+
+@admin.get("/freeform")
+async def get_freeform(site: store.Website = Depends(owned_website), db: AsyncSession = Depends(get_session)) -> dict:
+    from app.experience import freeform
+
+    return await freeform.settings(db, site.site_key)
+
+
+@admin.put("/freeform")
+async def put_freeform(body: FreeformIn, site: store.Website = Depends(owned_website),
+                       db: AsyncSession = Depends(get_session)) -> dict:
+    from app.experience import freeform
+
+    patch = body.model_dump()
+    if body.g3_blocked_patterns is not None:
+        pats = []
+        for p in body.g3_blocked_patterns:
+            p = p.strip().lower()
+            if not p:
+                continue
+            if not p.startswith("/") or len(p) > 200 or any(c in p for c in " <>\"'"):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Blocked patterns look like /checkout*")
+            pats.append(p)
+        patch["g3_blocked_patterns"] = pats
+    return await freeform.set_settings(db, site.site_key, patch)
+
+
+@admin.get("/fragments")
+async def list_fragments(status_filter: Optional[str] = None, site: store.Website = Depends(owned_website),
+                         db: AsyncSession = Depends(get_session)) -> dict:
+    from app.experience import freeform
+
+    return {"fragments": await freeform.list_fragments(db, site.site_key, status=status_filter)}
+
+
+class StatusIn(BaseModel):
+    status: str = Field(..., pattern="^(auto|pinned|blocked)$")
+
+
+@admin.put("/fragments/{fid}")
+async def set_fragment(fid: str, body: StatusIn, site: store.Website = Depends(owned_website),
+                       db: AsyncSession = Depends(get_session)) -> dict:
+    from app.experience import freeform
+
+    if not await freeform.set_fragment_status(db, site.site_key, fid, body.status):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Fragment not found")
+    return {"id": fid, "status": body.status}
+
+
+@admin.get("/reviews")
+async def list_reviews(status_filter: Optional[str] = None, site: store.Website = Depends(owned_website),
+                       db: AsyncSession = Depends(get_session)) -> dict:
+    from app.design.system import ensure_design, load_design_system
+    from app.experience import freeform
+    from app.experience.preview import render_preview
+    from app.experience.regions import render_plan
+    from app.orchestrator.profile import profile_for
+
+    await ensure_manifest(site.site_key)
+    await ensure_design(site.site_key)
+    design = load_design_system(site.site_key)
+    out = []
+    for r in await freeform.list_reviews(db, site.site_key, status_filter):
+        ctx = {"site_key": site.site_key, "currency": profile_for(site.site_key).currency, "lang": "en",
+               "persona": "", "page": r["route"]}
+        regions, _ = await render_plan(site.site_key, r["plan"], ctx, db=db)
+        out.append({**r, "preview_html": render_preview(regions, design, title=r["route"])})
+    return {"reviews": out}
+
+
+class VerdictIn(BaseModel):
+    verdict: str = Field(..., pattern="^(ok|flagged)$")
+
+
+@admin.put("/reviews/{rid}")
+async def review_sample(rid: str, body: VerdictIn, request: Request, site: store.Website = Depends(owned_website),
+                        db: AsyncSession = Depends(get_session)) -> dict:
+    from app.experience import freeform
+
+    m = getattr(request.state, "member", None)
+    got = await freeform.review(db, site.site_key, rid, body.verdict, getattr(m, "email", None))
+    if got is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Review not found")
+    return got

@@ -149,10 +149,14 @@ def section_inner(t: str, p: dict[str, Any], form_action: str = "") -> str:
     return ""
 
 
-def render_section(s: dict[str, Any], form_action: str = "") -> str:
+def render_section(s: dict[str, Any], form_action: str = "", step: str = "") -> str:
     t, p = str(s.get("type") or ""), s.get("props") or {}
     attrs = (f'data-fb-region="{_t(s.get("id"))}" data-fb-component="{_t(s.get("component"))}" '
              f'data-fb-state="{_t(s.get("state") or "ready")}"')
+    if step:  # a step of a multi-step flow (Phase 4): every step renders; the script shows one at a time
+        attrs += f' data-fb-step="{_t(step)}"'
+    if s.get("width") == "half":
+        attrs += ' data-fb-width="half"'
     if t.startswith("wc:"):
         tag = t[3:]
         if not _TAG_RE.match(tag) or tag.startswith(("fluid-buddha", "fb-")):
@@ -176,7 +180,14 @@ def stylesheet(design: DesignSystem, overrides: Optional[dict[str, str]] = None)
                       if re.fullmatch(r"--[a-z0-9-]{1,40}", k) and re.fullmatch(r"[#\w\s.,%()'\"-]{1,200}", str(v)))
     return f""":root{{{tokens}}}
 .fbpage-root{{background:var(--ds-color-background,#0c0b09);color:var(--ds-color-text,#f3f5f7);font-family:var(--ds-font,ui-sans-serif,system-ui,sans-serif);font-size:var(--ds-base-size,16px);line-height:1.6}}
-.fbpage-inner{{max-width:1000px;margin:0 auto;padding:8px 5vw 96px;display:flex;flex-direction:column;gap:var(--ds-gap,34px)}}
+.fbpage-inner{{max-width:1000px;margin:0 auto;padding:8px 5vw 96px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ds-gap,34px)}}
+.fbpage-inner > *{{grid-column:1 / -1}} .fbpage-inner > [data-fb-width="half"]{{grid-column:auto}}
+@media (max-width:720px){{.fbpage-inner > [data-fb-width="half"]{{grid-column:1 / -1}}}}
+.fb-steps{{display:flex;gap:10px;flex-wrap:wrap;list-style:none;padding:0;margin:0;font-size:.9rem}}
+.fb-steps li{{padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.35)}}
+.fb-steps li[aria-current="step"]{{background:var(--ds-color-primary,#c9a24a);color:var(--ds-color-background,#0c0b09)}}
+.fb-step-nav{{display:flex;gap:10px;justify-content:space-between}}
+.fbpage-inner > [hidden]{{display:none !important}} .fb-step-nav .fbpage-btn-secondary{{background:transparent;color:inherit;border:1px solid rgba(127,127,127,.45)}}
 .fbpage-h2{{font-size:1.6rem;font-family:var(--ds-font-heading,inherit);margin:0 0 12px}}
 .fbpage-body{{opacity:.92;max-width:70ch}}
 .fbpage-hero{{text-align:center;padding:56px 0 28px}}
@@ -204,10 +215,15 @@ def page_data_json(data: dict[str, Any]) -> str:
 
 
 def render_fragment(sections: list[dict[str, Any]], *, plan_id: Optional[str], title: str,
-                    form_action: str = "") -> str:
-    body = "".join(render_section(s, form_action) for s in sections)
+                    form_action: str = "", flow: Optional[list[dict[str, Any]]] = None) -> str:
+    step_of = {rid: st["step"] for st in (flow or []) for rid in st.get("regions") or []}
+    body = "".join(render_section(s, form_action, step_of.get(str(s.get("id")), "")) for s in sections)
+    nav = ""
+    if flow:  # an ordered list of the steps (readable without JavaScript; the script turns it into tabs)
+        nav = ('<ol class="fb-steps">' + "".join(
+            f'<li data-fb-step-nav="{_t(st["step"])}">{_t(st.get("title") or st["step"])}</li>' for st in flow) + "</ol>")
     return (f'<main class="fbpage-root" data-fb-plan="{_t(plan_id)}"><div class="fbpage-inner">'
-            f"{body}</div></main>")
+            f"{nav}{body}</div></main>")
 
 
 def render_document(*, fragment: str, head: dict[str, Any], css: str, data: dict[str, Any],

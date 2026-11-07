@@ -91,11 +91,34 @@ export function visitorId(): string | null {
   const s = storage();
   if (!s) return null;
   let vid = s.getItem(VISITOR_KEY);
+  const cookie = readVisitorCookie();
   if (!vid) {
-    vid = randomId();
+    // An edge worker (Phase 4) may have minted the id on the first request: adopt it,
+    // so the page it served and the widget agree on who this is.
+    vid = cookie || randomId();
     s.setItem(VISITOR_KEY, vid);
   }
+  if (cookie !== vid) mirrorVisitorCookie(vid);
   return vid;
+}
+
+const VISITOR_COOKIE_RE = /(?:^|;\s*)fbvid=([A-Za-z0-9_-]{8,64})(?:;|$)/;
+
+function readVisitorCookie(): string {
+  try {
+    return VISITOR_COOKIE_RE.exec(document.cookie)?.[1] || '';
+  } catch {
+    return '';
+  }
+}
+
+/** A first-party copy of the id (Phase 4): server-side adapters (Next.js, edge)
+ *  read it so a visitor's free-form page is made for them and stays the same. */
+function mirrorVisitorCookie(vid: string): void {
+  try {
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `fbvid=${vid}; path=/; max-age=${180 * 86400}; SameSite=Lax${secure}`;
+  } catch { /* cookies blocked: pages are simply not per person */ }
 }
 
 export function matchesGoal(path: string, goal: string | null): boolean {

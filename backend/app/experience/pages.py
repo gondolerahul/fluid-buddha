@@ -85,6 +85,15 @@ async def build_and_store_page(
         plan=built["plan"], composer=built["composer"], build_ms=built["build_ms"],
         taste=taste.bucket() if taste is not None else "", arm=arm, base_key=base_key or key)
     row["dropped"], row["problems"] = built["dropped"], built["problems"]
+    # Its regions seed the fragment cache free-form routes assemble from (Phase 4).
+    try:
+        from app.experience.freeform import seed_fragments_from_plan, store_fragments
+
+        await store_fragments(db, site_key, seed_fragments_from_plan(built["plan"]), conditions={
+            "family": intent.family, "stage": intent.stage, "taste": taste.bucket() if taste is not None else "",
+            "lang": sig.lang}, content=content, manifest_version=manifest.version, source=built["composer"])
+    except Exception as exc:  # seeding is best-effort
+        logger.debug("fragment seeding skipped: %s", exc)
     return row
 
 
@@ -135,7 +144,7 @@ def canonical_url(domain: str, path: str) -> str:
 async def serve_page(
     db: AsyncSession, rt: Any, site_key: str, *, path: str, sig: Signals, fbv: Optional[str] = None,
     bot: bool = False, domain: str = "", api_base: str = "", public_key: str = "", wait: bool = False,
-    taste: Any = None,
+    taste: Any = None, visitor: Optional[str] = None,
 ) -> dict[str, Any]:
     from app.design.system import ensure_design, load_design_system
     from app.experience.personal import apply_tunables, explain
@@ -167,6 +176,21 @@ async def serve_page(
         out["intent"] = intent.to_dict()
         manifest = load_manifest(site_key)
         content = await _content_version(db, site_key)
+        # Free-form routes (Phase 4): the visitor's own page, when there is one to give.
+        if route.mode == "freeform" and visitor and not bot:
+            from app.experience.freeform import serve_freeform
+
+            g3 = await serve_freeform(db, rt, site_key, route, params, intent, sig, visitor=visitor, taste=taste,
+                                      content=content, manifest=manifest, wait=wait)
+            if g3 is not None:
+                row = g3
+                out["served"] = g3["served"]
+                out["freeform"] = True
+    if row is None:
+        if intent is None:
+            intent = Intent()
+        manifest = load_manifest(site_key)
+        content = await _content_version(db, site_key)
         key = rs.plan_cache_key(family=intent.family, persona=sig.persona, lang=sig.lang, page=route.pattern,
                                 regions=[PAGE_REGIONS], content_version=content,
                                 manifest_version=manifest.version,
@@ -189,7 +213,7 @@ async def serve_page(
                 out["served"] = "fallback"
                 if row is None:
                     # Nothing yet for this route at all: a rules page now (no model, fast).
-                    row =await build_and_store_page(db, rt, site_key, route, params, Intent(), sig,
+                    row = await build_and_store_page(db, rt, site_key, route, params, Intent(), sig,
                                                      key=rs.plan_cache_key(
                                                          family="general", persona="", lang=sig.lang,
                                                          page=route.pattern, regions=[PAGE_REGIONS],
@@ -215,7 +239,9 @@ async def serve_page(
         "plan_id": plan_id,
         "plan_row": row["id"],
         "html": render_fragment(sections, plan_id=plan_id, title=title,
-                                form_action=f"{api_base.rstrip('/')}/experience/lead" if api_base else ""),
+                                form_action=f"{api_base.rstrip('/')}/experience/lead" if api_base else "",
+                                flow=row["plan"].get("flow")),
+        "flow": row["plan"].get("flow") or [],
         "css": stylesheet(design, overrides),
         "why": why,
         "arm": row.get("arm", 0),
@@ -227,6 +253,7 @@ async def serve_page(
                         "description": desc, "url": canonical},
         },
         "data": {"plan_id": plan_id, "api": api_base, "key": public_key, "page": path, "why": why,
+                 "flow": row["plan"].get("flow") or [],
                  "sections": [s for s in sections if s["type"] in ("chart", "roi_calculator", "enquiry_form")
                               or is_wc_renderer(s["type"])]},
         "tokens": {**design.to_tokens(), **overrides},

@@ -1,4 +1,4 @@
-// Builds @fluidbuddha/react, @fluidbuddha/vue, @fluidbuddha/components and @fluidbuddha/next: ESM + CJS with the shared
+// Builds @fluidbuddha/react, @fluidbuddha/vue, @fluidbuddha/components, @fluidbuddha/next and @fluidbuddha/edge: ESM + CJS with the shared
 // loader bundled in (the framework itself stays external), then type
 // declarations from tsc.
 import { build } from 'esbuild';
@@ -11,6 +11,7 @@ const packages = {
   vue: ['vue'],
   components: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime'],
   next: ['react', 'react/jsx-runtime'],
+  edge: [],
 };
 
 for (const [name, external] of Object.entries(packages)) {
@@ -31,4 +32,4 @@ for (const [name, external] of Object.entries(packages)) {
     '-p', path.join(dir, 'tsconfig.json'), '--emitDeclarationOnly', '--outDir', path.join(dir, 'dist/types'),
   ], { stdio: 'inherit' });
 }
-console.log('built @fluidbuddha/react, @fluidbuddha/vue, @fluidbuddha/components and @fluidbuddha/next');
+console.log('built @fluidbuddha/react, @fluidbuddha/vue, @fluidbuddha/components, @fluidbuddha/next and @fluidbuddha/edge');

@@ -45,6 +45,9 @@ export default async function Pricing({ searchParams }) {
 - The visitor's UTM tags, search terms, referrer and user agent are passed on, so the page
   fits their goal and crawlers get the canonical page. Their taste travels in the widget's
   `fbtaste` session cookie on your domain and is forwarded too.
+- **Free-form routes** (Phase 4): the widget mirrors its visitor id into the first-party
+  `fbvid` cookie; it is forwarded so each visitor gets — and keeps — their own page.
+  `page.freeform` is `true` when the page was made for that one visitor.
 - Responses are `Cache-Control: private, no-store`: pages differ per visitor.
 - `fetchComposedPage` never throws on network or server errors; it answers `notFound`
   (status 502/504), so your own page can render instead.
