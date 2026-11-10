@@ -14,7 +14,7 @@
 import { FluidBuddhaElement } from './ui/FluidBuddhaElement';
 import { FluidBuddhaOptions, optionsFromAttributes } from './core/config';
 
-export const VERSION = '0.1.0';
+export const VERSION = '2.0.0';
 export { FluidBuddhaElement };
 export { Session } from './core/Session';
 export { HostBridge } from './core/HostBridge';

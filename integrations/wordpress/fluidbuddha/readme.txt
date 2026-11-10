@@ -4,7 +4,7 @@ Tags: ai, chatbot, voice, sales, lead generation
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 2.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -49,6 +49,9 @@ The key may have been rotated in the console. Copy the install code again.
 Check that the page isn't in "Hide on these pages", that "Hide the agent from logged-in editors" is off (or log out), and that your website's domain in the console matches this site.
 
 == Changelog ==
+
+= 2.0.0 =
+* Version aligned with FluidBuddha 2.0. No change to how the plugin works.
 
 = 0.1.0 =
 * First release.

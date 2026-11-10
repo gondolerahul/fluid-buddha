@@ -3,7 +3,7 @@
  * Plugin Name:       FluidBuddha AI Agent
  * Plugin URI:        https://github.com/gondolerahul/fluid-buddha
  * Description:       Adds the FluidBuddha voice and chat sales agent to your site. Paste your install code from the FluidBuddha console and you're done.
- * Version:           0.1.0
+ * Version:           2.0.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            FluidBuddha
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'FLUIDBUDDHA_VERSION', '0.1.0' );
+define( 'FLUIDBUDDHA_VERSION', '2.0.0' );
 define( 'FLUIDBUDDHA_OPTION', 'fluidbuddha_settings' );
 
 require_once __DIR__ . '/includes/functions.php';

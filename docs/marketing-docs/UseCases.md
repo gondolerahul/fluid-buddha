@@ -3,11 +3,16 @@
 > **What this document is.** A catalogue of use cases that combine FluidBuddha's capabilities
 > into outcomes a website could not deliver before. Every capability used here is built and
 > described in the product documents in
-> [`docs/product-docs/version_1.0/`](../product-docs/version_1.0/): the
-> [Feature List](../product-docs/version_1.0/FeatureList.md), the
-> [Functional Specification](../product-docs/version_1.0/FunctionalSpecification.md)
+> [`docs/product-docs/version_2.0/`](../product-docs/version_2.0/): the
+> [Feature List](../product-docs/version_2.0/FeatureList.md), the
+> [Functional Specification](../product-docs/version_2.0/FunctionalSpecification.md)
 > (requirement IDs such as `FR-ACT-03`) and the
-> [Technical Specification](../product-docs/version_1.0/TechnicalSpecification.md).
+> [Technical Specification](../product-docs/version_2.0/TechnicalSpecification.md).
+>
+> **Updated for version 2.0.** UC-19 to UC-22 are new: they use the generative experience
+> (adaptive regions, composed pages, free-form pages, the component manifest). UC-16 and
+> UC-18 were revised because the product now does more there. Who to sell each use case to
+> is in [IdealCustomerProfiles.md](IdealCustomerProfiles.md).
 >
 > **How to read the ROI figures.** FluidBuddha's plan prices are real (Growth: ₹33,000 a month
 > for 2,000 conversations). Every other number in the worked examples (traffic, conversion
@@ -26,9 +31,10 @@
 4. [Marketing and growth use cases](#4-marketing-and-growth-use-cases) (UC-07 – UC-10)
 5. [Vertical use cases](#5-vertical-use-cases) (UC-11 – UC-14)
 6. [Platform and enterprise use cases](#6-platform-and-enterprise-use-cases) (UC-15 – UC-18)
-7. [Feature combination matrix](#7-feature-combination-matrix)
-8. [Proving ROI with the product itself](#8-proving-roi-with-the-product-itself)
-9. [Claims guidance for marketing](#9-claims-guidance-for-marketing)
+7. [Generative experience use cases](#7-generative-experience-use-cases-new-in-20) (UC-19 – UC-22, new in 2.0)
+8. [Feature combination matrix](#8-feature-combination-matrix)
+9. [Proving ROI with the product itself](#9-proving-roi-with-the-product-itself)
+10. [Claims guidance for marketing](#10-claims-guidance-for-marketing)
 
 ---
 
@@ -46,6 +52,9 @@ expensive human time, at a cost per conversation in the tens of rupees.
 | **Proof** | Spend is defended with causal lift, not anecdotes. | Holdout experiment, variant tests, campaign A/B, analytics, weekly digest |
 | **Falling unit cost** | Repeat questions replay from cache at near-zero model cost; costs are capped per site. | Answer and audio cache, lean/heavy routing, spend caps, cost alerts |
 | **Market intelligence** | Every question becomes structured data about objections, competitors and missing content. | Insights v1 and v2, knowledge gaps, feature-request grouping |
+| **Relevance before the first word (2.0)** | The page itself fits the visitor's goal from the first view, so fewer visitors bounce before any conversation starts. | Adaptive regions, visitor goals, composed and free-form pages, taste, plan bandits |
+| **Pages without a page-building team (2.0)** | Pages are composed from approved components and live records instead of being authored one by one. | Component manifest, bindings, entities and feeds, page planner, SSR, Next.js and edge adapters |
+| **Open to buyers' AI agents (2.0)** | The same page is readable and usable by an assistant, under the owner's rules. | Views, markdown, JSON-LD, agent policies, confirmation codes |
 
 ---
 
@@ -68,9 +77,13 @@ expensive human time, at a cost per conversation in the tens of rupees.
 | UC-13 | Long-cycle property buying with memory | Real estate | A site that remembers what an opted-in buyer explored weeks ago and picks up where they left off | Revenue capture | advance |
 | UC-14 | Admissions counsellor at midnight | Education | Programme guidance, application-fee payment and a recap the student forwards to parents, in one visit | Human time, speed | advance |
 | UC-15 | Agentic website, live in an afternoon (agencies) | Agencies, multi-brand groups | Turning a client's existing site into a voice agent with personas, brand styling and a tour from just its URL | Human time | basic |
-| UC-16 | Your website as a service for AI assistants | Forward-looking brands | Other AI assistants querying the site's grounded answers and prices, and booking or buying through scoped tokens | Revenue capture | basic (agent access) |
+| UC-16 | Your website as a service for AI assistants | Forward-looking brands | Other AI assistants reading each page as data and text, and completing its actions with their person's approval | Revenue capture | basic (agent access) |
 | UC-17 | The regulated enterprise's private agent | BFSI, healthcare, government suppliers | A voice agent inside the customer's own infrastructure, on their own model contract, with SSO, audit and an offline licence | Risk removed | any (self-hosted) |
-| UC-18 | The headless site that builds itself | Product-led, catalogue and API-driven businesses | A page composed for each visitor's question from content, live APIs and the brand system, instead of authored pages | Human time, revenue | extreme |
+| UC-18 | The headless site that builds itself | Product-led, catalogue and API-driven businesses | A page composed for each visitor's question from content, live APIs and the brand system, then edited in place as the conversation goes on | Human time, revenue | extreme |
+| UC-19 | The landing page that matches every ad | Performance marketing, paid acquisition | The hero, proof and call to action of an existing page rewritten for the campaign or search that brought the visitor, without slowing the page or risking SEO | Relevance, proof | any (regions) |
+| UC-20 | A thousand on-brand pages from your own records | SEO, catalogue, content and marketplace teams | Server-rendered pages for every product, plan, location or case study, composed from approved components and bound to live records, served from the customer's own domain | Pages without a team, revenue | any (pages) |
+| UC-21 | A page of one, safely | Digital leaders at considered-purchase brands | A page assembled for one visitor and one moment, within a budget, with pinned legal content, blocked routes and a human review feed | Relevance | any (free-form) |
+| UC-22 | Your design system, generating | Enterprises with a component library and a design team | The company's own React components, taken from Storybook and approved by an Admin, become the only building blocks AI may use, with prices and facts bound to APIs | Risk removed, pages without a team | any (manifest) |
 
 ---
 
@@ -550,7 +563,9 @@ scrape pages and often get facts wrong.
 **What was not possible before.** The website exposes its **own grounded agent** to other AI
 assistants through MCP, `llms.txt` and an OpenAPI "ask" endpoint, with the same guardrails and
 citations as the widget, and, with tokens the business issues, lets trusted assistants capture
-leads or run actions.
+leads or run actions. From version 2.0, every composed page is also a **view**: the same
+sections, live values and actions a person sees, as structured data and as text, with a rule
+per action for what an assistant may do.
 
 **How it works.**
 1. An Admin switches on agent access for the site (`FR-AGT-01`).
@@ -560,13 +575,25 @@ leads or run actions.
    (`FR-AGT-04`).
 4. Every call is logged by tool and by assistant, rate-limited and kept out of billing
    (`FR-AGT-05`, `FR-AGT-06`).
+5. **(2.0)** An assistant lists the site's views and reads `/pricing` as JSON or markdown,
+   with JSON-LD for plans and FAQs (`FR-VIEW-01` to `FR-VIEW-05`). It gets the same facts as
+   a person, because both come from the same plan.
+6. **(2.0)** Each action has a policy. "Get a quote" is `confirm`: the assistant receives a
+   summary and a one-time code, asks its person, and calls again with the code, which works
+   once, for the same inputs, within 10 minutes. "Buy now" can be `never`, so only a person
+   on the page can do it (`FR-VIEW-08`, `FR-VIEW-09`).
+7. **(2.0)** AI agents that fetch the page get a plain rendering: no motion, every step and
+   FAQ answer shown (`FR-VIEW-11`).
+8. **(2.0)** The console shows a funnel per assistant (read → opened a view → started an
+   action → completed) and where assistants got stuck (`FR-VIEW-14`).
 
 **Value and ROI.** Controls how AI assistants describe the business (grounded, cited, current)
 and opens a new channel where an assistant can book or buy on a buyer's behalf. This is an
 early-market capability: position it as being ready for the agentic web rather than as proven
 revenue today.
 
-**How to prove it.** Agent traffic by assistant and leads with source `agent`.
+**How to prove it.** Agent traffic by assistant, the task funnel and its failure points, and
+leads with source `agent`.
 
 ---
 
@@ -616,47 +643,233 @@ from the site's content, live data from its declared APIs and its brand design s
    (`FR-CMP-07`).
 2. It calls only operations declared in the site's OpenAPI spec for live data
    (`FR-CMP-08`).
-3. The page is styled with the brand's design tokens and built from up to 12 typed sections;
-   the model never writes HTML, so the page stays safe and on-brand.
+3. The page is styled with the brand's design tokens and built from up to 12 regions, each
+   one approved component; the model never writes HTML, so the page stays safe and on-brand.
 4. An enquiry form on the page becomes a lead.
+5. **(2.0)** Prices, plans and records are **bound** to the site's API or records instead of
+   being typed by the model, and the model never sees the bound values (`FR-BIND-01`,
+   `FR-BIND-07`).
+6. **(2.0)** "Show me only the enterprise plans" or "add a comparison with our current tool"
+   edits the page on screen in place, region by region, instead of redrawing it
+   (`FR-PATCH-01`).
 
-**Important caveat.** The design system and OpenAPI connection are configured by the platform
-operator (environment or files), not yet in the console, and API calls are simulated until a
-live API address is set. Position this as a premium, assisted-setup capability.
+**Important caveat.** From 2.0 the design system and the component manifest are managed in the
+console. The OpenAPI connection is still configured by the platform operator (environment or
+files), and API calls are simulated until a live API address is set. Position this as a
+premium, assisted-setup capability.
 
 **Value and ROI.** Every long-tail question gets a purpose-built page instead of a generic one,
 without content or design work per page.
 
 ---
 
-## 7. Feature combination matrix
+## 7. Generative experience use cases (new in 2.0)
 
-| Capability | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Voice conversation | ● | ● | ● |  | ● |  |  |  |  |  | ● | ● | ● | ● |  |  | ● |  |
-| Grounded answers + citations | ● | ● | ● | ● | ● | ● | ● |  |  | ● | ● | ● | ● | ● | ● | ● | ● | ● |
-| Generated components | ● |  |  | ● | ● |  |  |  |  |  |  |  | ● | ● |  |  |  |  |
-| Page control (navigate, scroll, spotlight, persona) | ● |  |  |  |  |  |  |  |  |  |  |  |  | ● | ● |  |  |  |
-| Guided tour |  |  |  |  |  |  |  |  |  |  |  |  |  | ● | ● |  |  |  |
-| Proactive triggers | ● |  |  |  |  |  |  | ● |  |  |  |  | ● |  | ● |  |  |  |
-| Lead capture + scoring + delivery | ● | ● | ● | ● |  | ● | ● |  |  |  |  |  | ● | ● |  | ● |  | ● |
-| Confirmable actions |  |  | ● |  |  | ● |  |  |  |  |  | ● | ● | ● |  | ● |  |  |
-| Recap pages |  |  |  | ● | ● |  |  |  |  |  |  |  |  | ● |  |  |  |  |
-| Live takeover + voice call |  | ● |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| Visitor memory |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |  |  |
-| Campaign pages |  |  |  |  |  |  | ● |  |  |  |  |  |  |  |  |  |  |  |
-| Holdout / A/B tests | ● |  | ● |  | ● | ● | ● | ● | ● |  | ● | ● | ● | ● | ● |  |  |  |
-| Insights + digest |  |  |  |  |  |  |  |  | ● | ● | ● |  |  |  | ● |  |  |  |
-| Hindi |  |  | ● |  |  |  |  |  |  |  | ● | ● |  | ● |  |  |  |  |
-| Templates + crawl onboarding |  |  |  |  |  |  |  |  |  |  |  | ● | ● | ● | ● |  |  |  |
-| Medical safety |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |  |  |  |
-| Agent endpoint (MCP) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |
-| SSO, audit, BYO model, self-host |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |
-| Extreme page generation + site APIs |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |
+These four use cases do not need a conversation to start. The website itself changes for the
+visitor. They work at every intelligence tier, because they are site-level switches rather
+than conversation tools.
+
+### UC-19 — The landing page that matches every ad
+
+**The moment.** A company runs forty ad groups and twelve email campaigns into three landing
+pages. Someone who searched "SOC 2 compliant payroll software" lands on a hero about "payroll
+made simple". The message they clicked on is not the message they see, so they leave. Building
+a page per ad group is the known fix and nobody has the time.
+
+**What was not possible before.** The hero, proof strip and call to action of the **existing**
+page are rewritten for the visitor's goal, worked out silently from the campaign, the search
+term and the landing path, before the visitor says anything. First paint is unchanged, search
+engines keep seeing the page's own content, and the lift is measured against that content.
+
+**How it works (feature combination).**
+1. The developer wraps three blocks in `<fb-region name="hero">…</fb-region>`. What is inside
+   stays as the fallback (`FR-REG-01`).
+2. Marketing declares each slot and which components it may use (`FR-REG-02`), and defines
+   visitor goals with rules such as `utm_campaign = security*` or path `/pricing*`. The
+   console suggests goals from the site's routes (`FR-INT-01`, `FR-INT-05`).
+3. On a page view the goal is resolved without waiting for a model: rules, then meaning, then
+   a general default (`FR-INT-03`).
+4. A cached plan fills the regions with content grounded in the site's own material. Any
+   number in the copy must appear in that material (`FR-REG-11`). On a miss the visitor sees
+   the original content and the plan is built in the background (`FR-REG-07`).
+5. A region is swapped in after a miss only if the visitor has not touched the page or the
+   region is below the fold (`FR-REG-08`).
+6. Marketing pins the version it likes, blocks any it does not (`FR-REG-13`), and can switch
+   on learning so traffic shifts to the version that earns more clicks (`FR-BAND-01`).
+7. Bots and crawlers always get the page's own content (`FR-REG-04`).
+
+**Value and ROI (illustrative worked example).**
+
+| Input | Assumption (replace with yours) |
+|---|---|
+| Paid visits a month to the three landing pages | 40,000 |
+| Cost per click | ₹60 → ₹24,00,000 a month of media |
+| Landing-page conversion today | 2.0 % → 800 leads |
+| Relative lift from message match | 15 % → 2.3 % → 920 leads |
+| **Extra leads from the same media spend** | **120 a month** |
+| Equivalent media saved at today's cost per lead (₹3,000) | ₹3,60,000 a month |
+
+The 15 % is an assumption, not a measured result. The point for buyers: the media budget is
+already spent, and this raises what it returns without one more landing page being built.
+
+**How to prove it.** Run a *Generated regions* A/B test (`FR-CON-AB-01a`): one arm sees the
+page's own content, the other the generated regions, on the site's own goal, with the same
+always-valid verdict as the holdout.
 
 ---
 
-## 8. Proving ROI with the product itself
+### UC-20 — A thousand on-brand pages from your own records
+
+**The moment.** A business has 800 products, 60 locations or 200 case studies. Each deserves a
+proper page for search and for buyers. The content team can write a few a week, so most
+records get a thin template page or none.
+
+**What was not possible before.** One route pattern such as `/products/:slug` gives every
+record a **server-rendered page composed from the company's approved components**, with the
+record's live data bound in, a canonical URL, structured data for search engines, and a
+version of the page for each visitor goal. It is served from the customer's own domain.
+
+**How it works.**
+1. Records come in by import (JSON or CSV) or by a content feed: any JSON feed, or a
+   WordPress site (`FR-ENT-02`, `FR-ENT-03`). Sync adds, updates and removes records to
+   match the feed (`FR-ENT-04`).
+2. An Editor registers the route with its purpose (`FR-PAGE-01`). The planner composes a
+   page from the components that fit and binds props to the record:
+   `entity:Product` with `key = route.slug` (`FR-BIND-01`, `FR-BIND-02`).
+3. Facts the business owns (price, specification, availability) are bound, never typed by
+   the model. A region whose data is missing is simply not drawn (`FR-BIND-06`).
+4. The page is rendered on the server and reads fully without JavaScript (`FR-PAGE-05`).
+   The owner picks a canonical version for search engines; variants for other goals are
+   `noindex` (`FR-PAGE-06`, `FR-PAGE-07`).
+5. `@fluidbuddha/next` or `@fluidbuddha/edge` serves it from the customer's own site. If
+   FluidBuddha is unreachable, the customer's own page is served (`FR-PAGE-08`,
+   `FR-PAGE-10`).
+6. The voice agent is on every page, and each page is also a view for AI assistants (UC-16).
+
+**Value and ROI (illustrative).** If a content team produces 10 pages a week at ₹4,000 of
+effort each, 800 pages is ₹32,00,000 and a year and a half of work. Here it is one route, one
+import and a review of the canonical page. The larger value is revenue from long-tail search
+and from buyers who find the exact page for their product. That depends on the market, so it
+should be measured, not promised.
+
+**How to prove it.** Organic entrances and conversions on the route before and after, the
+plans' reward rates in the console, and a holdout with the enquiry or purchase as the goal.
+
+---
+
+### UC-21 — A page of one, safely
+
+**The moment.** A considered purchase (enterprise software, a home loan, a university
+programme) is researched over several visits by people with very different needs. Segment
+pages help a little. Nobody can author a page per person, and legal will not approve a model
+writing pages freely.
+
+**What was not possible before.** On chosen routes, each identified visitor gets **their own
+page**, assembled for their goal and their taste. It stays the same when they come back, and
+it runs inside rules the owner sets: a daily budget, routes that can never be free-form,
+regions that must always appear unchanged, and a review feed.
+
+**How it works.**
+1. An Editor sets a route to *free-form* (`FR-G3-01`). Checkout, cart, legal, terms and
+   privacy paths are blocked by default.
+2. Most pages are **assembled** from fragments already written and proven on other pages, with
+   no model call and no waiting (`FR-G3-03`, `FR-G3-05`).
+3. A fresh composition by the model happens in the background, within a site budget (default
+   200 a day) and a visitor budget (default 3 a day) (`FR-G3-07`).
+4. The page may be a short flow of steps or use a two-column layout (`FR-PLAN-05`,
+   `FR-PLAN-06`).
+5. Required content such as a regulatory notice is a **pinned region** on every page,
+   unchanged (`FR-G3-08`).
+6. The visitor can open "Why this?" and their preferences, and change them (`FR-WHY-03`,
+   `FR-TASTE-09`). Prices are never personalised (`FR-TASTE-06`).
+7. A sample of pages, and every page with an automatic warning, goes to a reviewer. One
+   click blocks a page and its new fragments (`FR-G3-10`).
+8. Search engines and AI agents always get the canonical page (`FR-G3-02`).
+
+**Value and ROI.** This is the premium tier of relevance: the page a good salesperson would
+have laid out for this buyer. Illustrative: on a route with 10,000 identified visitors a month
+and a 3 % enquiry rate, a 10 % relative lift is 30 more enquiries a month. If one in ten
+closes at ₹6,00,000, that is ₹18,00,000 a month, against a model budget that is capped by
+design.
+
+**How to prove it.** A *Free-form pages* A/B test compares per-visitor pages with composed
+pages on the same routes (`FR-CON-AB-01a`).
+
+---
+
+### UC-22 — Your design system, generating
+
+**The moment.** A large company has a design system, a React component library, a Storybook
+and a brand team that has said no to every AI page builder, because those tools write their
+own markup and invent their own copy.
+
+**What was not possible before.** The company's **own components** become the only things AI
+may build with. Each prop carries a rule for who may fill it. An Admin approves every version
+of the list. The generated pages are therefore made of the same components the brand team
+already signed off.
+
+**How it works.**
+1. FluidBuddha writes the first draft of the component manifest from the published Storybook
+   or from the live site (`FR-CON-GX-07`, `FR-CON-GX-08`).
+2. Developers wrap their React components with `@fluidbuddha/components`. The `fb-manifest`
+   tool writes the manifest with the bundle's integrity hash (`FR-MAN-05`).
+3. Each prop gets a source rule: a headline may be written by the model; plan tiers are
+   `binding_only`, so they can only come from the pricing API (`FR-MAN-03`).
+4. Editors draft, see problems and a diff, and an **Admin approves** (`FR-CON-GX-06`). Until
+   then nothing changes for visitors.
+5. The widget runs the components only from the approved bundle and only if its hash
+   matches (`FR-MAN-06`).
+6. The design system in the console sets the tokens and the **tunables**: the only axes
+   personalisation may touch, and the only values allowed (`FR-DSN-03`).
+
+**Value and ROI.** This removes the objection that stops generative UI in an enterprise. The
+brand, legal and engineering teams each get the control they ask for, and the marketing team
+gets UC-19 to UC-21 on the company's real components. The value is the whole programme that
+would otherwise not be allowed to start.
+
+**How to prove it.** The manifest's version history and approvals are the evidence for the
+brand and security review. Results then come from UC-19, UC-20 and UC-21.
+
+---
+
+## 8. Feature combination matrix
+
+| Capability | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Voice conversation | ● | ● | ● |  | ● |  |  |  |  |  | ● | ● | ● | ● |  |  | ● |  |  |  |  |  |
+| Grounded answers + citations | ● | ● | ● | ● | ● | ● | ● |  |  | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |  |
+| Generated components | ● |  |  | ● | ● |  |  |  |  |  |  |  | ● | ● |  |  |  |  |  |  |  |  |
+| Page control (navigate, scroll, spotlight, persona) | ● |  |  |  |  |  |  |  |  |  |  |  |  | ● | ● |  |  |  |  |  |  |  |
+| Guided tour |  |  |  |  |  |  |  |  |  |  |  |  |  | ● | ● |  |  |  |  |  |  |  |
+| Proactive triggers | ● |  |  |  |  |  |  | ● |  |  |  |  | ● |  | ● |  |  |  |  |  |  |  |
+| Lead capture + scoring + delivery | ● | ● | ● | ● |  | ● | ● |  |  |  |  |  | ● | ● |  | ● |  | ● | ● | ● | ● |  |
+| Confirmable actions |  |  | ● |  |  | ● |  |  |  |  |  | ● | ● | ● |  | ● |  |  |  |  |  |  |
+| Recap pages |  |  |  | ● | ● |  |  |  |  |  |  |  |  | ● |  |  |  |  |  |  |  |  |
+| Live takeover + voice call |  | ● |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| Visitor memory |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |  |  |  |  |  |  |
+| Campaign pages |  |  |  |  |  |  | ● |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| Holdout / A/B tests | ● |  | ● |  | ● | ● | ● | ● | ● |  | ● | ● | ● | ● | ● |  |  |  | ● | ● | ● |  |
+| Insights + digest |  |  |  |  |  |  |  |  | ● | ● | ● |  |  |  | ● |  |  |  |  |  |  |  |
+| Hindi |  |  | ● |  |  |  |  |  |  |  | ● | ● |  | ● |  |  |  |  |  |  |  |  |
+| Templates + crawl onboarding |  |  |  |  |  |  |  |  |  |  |  | ● | ● | ● | ● |  |  |  |  |  |  |  |
+| Medical safety |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |  |  |  |  |  |  |  |
+| Agent endpoint (MCP) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |  |  |  |
+| SSO, audit, BYO model, self-host |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |  |  |
+| Extreme page generation + site APIs |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |  |
+| Adaptive regions + visitor goals (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |
+| Composed pages + SSR + canonical (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  | ● |  | ● | ● |  |
+| Bindings, records and feeds (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  | ● | ● | ● |
+| Component manifest + own components (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● | ● | ● | ● | ● |
+| Design system + tunables (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● | ● | ● | ● | ● |
+| Taste, preferences, "Why this?" (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  | ● |  |
+| Plan bandit (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● | ● |  |  |
+| Free-form pages, budgets, review (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |
+| Agent-ready views + policies (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  | ● |  |  |
+| Page edits in conversation (2.0) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ● |  |  |  |  |
+
+---
+
+## 9. Proving ROI with the product itself
 
 The strongest marketing claim FluidBuddha can make is not a number. It is that **every customer
 can measure their own number** inside the product.
@@ -669,6 +882,8 @@ can measure their own number** inside the product.
 | 4. Add the agent-only outcomes the holdout cannot see: scored leads, paid action runs, recap forwards, live calls. | Leads, Actions, Live |
 | 5. Subtract the cost: plan price plus AI spend per conversation, with replayed answers costing almost nothing. | Billing, Analytics |
 | 6. Send it to leadership every Monday. | Weekly digest |
+| 7. **(2.0)** For generated regions and free-form pages, run their own A/B test: the page's own content against generated regions, or composed pages against per-visitor pages. | A/B tests (subjects *Generated regions* and *Free-form pages*) |
+| 8. **(2.0)** Read each plan's views and reward rate to see which version earns its place. Learning shifts traffic; the test proves the lift. | Regions and Pages tabs |
 
 **Unit economics to quote.** On the Growth plan a conversation costs about ₹16.50 (₹33,000 ÷
 2,000) and ₹17 beyond the allowance. On Scale it is ₹12.50, then ₹10. Compare that with the
@@ -677,7 +892,7 @@ lead from paid media.
 
 ---
 
-## 9. Claims guidance for marketing
+## 10. Claims guidance for marketing
 
 To keep these use cases credible in a security review or a sales call:
 
@@ -695,5 +910,26 @@ To keep these use cases credible in a security review or a sales call:
 - **Qualify data residency** for self-hosted and BYO-model deals: speech and embeddings run on
   Google Vertex AI.
 - **Languages:** English and Hindi only.
+- **(2.0) Say "composes pages from your approved components and your own data"**, not "AI
+  designs your website". The model picks and fills components. It does not write markup,
+  styles or new components.
+- **(2.0) Say "prices and plans come from your systems"**, and explain the source rule. Do
+  not say generated copy "cannot be wrong": numbers in written copy are checked against the
+  cited material, which is a strong check, not a proof.
+- **(2.0) Say "never slows first paint; visitors see your own page until the generated one
+  is ready"**. Do not promise that every first-time visitor sees a personalised page: the
+  first visitor for a new goal gets the default while the plan is built.
+- **(2.0) Say "adapts presentation to seven stated preferences, with the visitor's
+  control"**, not "knows each visitor". Taste is stored only with "Remember me".
+- **(2.0) Say "search engines see your canonical page"**. Do not sell generated variants as
+  an SEO multiplier: variants are `noindex` by design.
+- **(2.0) Say "ready for AI agents, under your rules"**. Agent identity is not
+  cryptographically verified yet, and the approval step depends on the assistant asking its
+  person. Do not call it "secure agent payments".
+- **(2.0) Be clear about what has been proven.** The generative composers were verified with
+  test models, not yet with production traffic. Offer pilots with a region or free-form A/B
+  test rather than promised lift.
+- **(2.0) Signed-in applications are not covered yet.** Pages cannot show a logged-in user's
+  own data, because bindings use site-level credentials only.
 - **Capacity:** the recorded single-replica load test met the time-to-first-audio target at
   about 50 concurrent voice sessions; larger sites need more replicas.
