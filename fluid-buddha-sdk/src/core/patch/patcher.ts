@@ -49,7 +49,8 @@ export function applyPatch(
     const containers = Array.from(root.querySelectorAll(`[data-fb-plan="${patch.plan_id}"]`));
     for (const host of containers) {
       // A server-rendered page wraps its sections in .fbpage-inner.
-      const container = host.querySelector(':scope > .fbpage-inner') || host;
+      // Direct child, without `:scope` (jsdom 30 misses `:scope` inside shadow roots).
+      const container = Array.from(host.children).find((el) => el.classList.contains('fbpage-inner')) || host;
       const renderer = new PageRenderer(container as HTMLElement, (p) => enquiry(p.values));
       for (const op of patch.ops) {
         const cur = region(container, op.region);
