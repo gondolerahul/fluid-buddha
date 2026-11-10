@@ -13,7 +13,7 @@ pydantic-settings>=2.3
 pyjwt>=2.8
 cryptography>=50.0.2   # SSO ID-token signatures (RS/ES/PS) and stored-secret encryption
 bcrypt>=4.0   # used directly (no passlib) to avoid its bcrypt-version probing
-email-validator>=2.0  # pydantic EmailStr
+email-validator>=2.3.0  # pydantic EmailStr
 tzdata>=2024.1   # IANA time zones for zoneinfo (weekly digest at 9:00 local); Windows and slim images lack them
 PyYAML>=6.0   # vertical template packs (app/templates/*.yaml, M2-9)
 
