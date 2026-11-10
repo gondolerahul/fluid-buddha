@@ -1,6 +1,6 @@
 {
   "name": "@fluidbuddha/next",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "description": "Serve FluidBuddha composed pages (server-rendered, per visitor goal) from your Next.js site.",
   "type": "module",
   "main": "./dist/index.cjs",

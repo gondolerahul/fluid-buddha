@@ -1,6 +1,6 @@
 {
   "name": "fluid-buddha",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "description": "Framework-agnostic voice-first agentic UI overlay (<fluid-buddha>) — a Shadow-DOM Web Component injectable into any website via a single script tag.",
   "type": "module",
   "main": "./dist/fluid-buddha.cjs",

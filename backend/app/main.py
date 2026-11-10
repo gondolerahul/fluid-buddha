@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
     await dispose_engine()
 
 
-app = FastAPI(title="A2UI Orchestrator", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="A2UI Orchestrator", version="2.0.0", lifespan=lifespan)
 
 # The public widget and the admin API share this app but not a CORS policy:
 # CORS_ORIGINS covers the widget surface, ADMIN_CORS_ORIGINS the console-only
