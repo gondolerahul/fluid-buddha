@@ -6,7 +6,7 @@
 //
 // Renders nothing in place: the widget floats over the page. Mount it once,
 // near the root; unmounting removes it.
-import { useEffect, useRef } from 'react';
+import { createElement, useEffect, useRef, type ReactNode } from 'react';
 import {
   conversion,
   FluidBuddhaHooks,
@@ -57,6 +57,19 @@ export function FluidBuddha(props: FluidBuddhaProps): null {
   }, [installCode, server, position, lang, design, accent, greeting, autoStart, tour, navigation, has]);
 
   return null;
+}
+
+/**
+ * A generated region on your own page (Phase 1): FluidBuddha fills it for the
+ * visitor's goal; until then (and if it can't) your children show.
+ *
+ *   <FbRegion name="hero"><YourOwnHero /></FbRegion>
+ *
+ * Needs the widget on the page (<FluidBuddha installCode=… />), which loads
+ * the element. Declare the region in the console's Regions tab.
+ */
+export function FbRegion(props: { name: string; children?: ReactNode }) {
+  return createElement('fb-region', { name: props.name }, props.children);
 }
 
 export default FluidBuddha;

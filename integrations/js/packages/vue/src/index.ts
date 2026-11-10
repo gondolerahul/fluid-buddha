@@ -8,7 +8,7 @@
 //
 // Renders nothing in place: the widget floats over the page. Use it once, near
 // the root; unmounting removes it.
-import { defineComponent, onBeforeUnmount, onMounted, PropType, watch } from 'vue';
+import { defineComponent, h, onBeforeUnmount, onMounted, PropType, watch } from 'vue';
 import {
   conversion,
   DesignLevel,
@@ -84,6 +84,23 @@ export const FluidBuddha = defineComponent({
       unmount = null;
     });
     return () => null;
+  },
+});
+
+/**
+ * A generated region on your own page (Phase 1): FluidBuddha fills it for the
+ * visitor's goal; until then (and if it can't) the slot content shows.
+ *
+ *   <FbRegion name="hero"><YourOwnHero /></FbRegion>
+ *
+ * Needs the widget on the page. Tell Vue that `fb-region` is a custom element
+ * (compilerOptions.isCustomElement) if you also write it in templates directly.
+ */
+export const FbRegion = defineComponent({
+  name: 'FbRegion',
+  props: { name: { type: String, required: true } },
+  setup(props, { slots }) {
+    return () => h('fb-region', { name: props.name }, slots.default ? slots.default() : []);
   },
 });
 

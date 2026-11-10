@@ -20,7 +20,7 @@ from app.config import Settings
 from app.cortex.bridge import CortexBridge
 from app.cortex.query import citations, query_cortex
 from app.orchestrator.components import normalize_component
-from app.orchestrator.pagegen import build_extreme_brief, normalize_page
+from app.orchestrator.pagegen import build_extreme_brief
 from app.orchestrator.personas import valid_personas
 from app.orchestrator.profile import profile_for
 from app.orchestrator.prompts import build_reaction_system, build_thinker_system
@@ -90,6 +90,7 @@ class ThinkResult:
     components: list[ComponentPayload] = field(default_factory=list)
     pages: list[PageSpec] = field(default_factory=list)
     patches: list[ComponentPatch] = field(default_factory=list)
+    plan_patches: list[Any] = field(default_factory=list)   # PlanPatch (P2-4)
     # Contact details the visitor shared (capture_lead); saved by the transport
     # once the turn is recorded, so the lead links to its conversation.
     leads: list[Any] = field(default_factory=list)
@@ -127,6 +128,8 @@ class HeavyThinker:
         pii: Optional[PiiVault] = None,
         lang: str = "en",
         seen: str = "en",
+        on_screen_plan: Optional[dict] = None,
+        taste_brief: str = "",
     ) -> ThinkResult:
         extreme_brief = build_extreme_brief(site_key) if intelligence == "extreme" else None
         system = build_thinker_system(
@@ -135,10 +138,20 @@ class HeavyThinker:
             extreme_brief=extreme_brief, related=related, probe=probe,
             lang=lang, seen=seen,
         )
+        if taste_brief:  # the visitor's taste (Phase 3): shape, never facts
+            system += ("\nVISITOR TASTE: " + taste_brief + " Shape the answer's length and "
+                       "format to it; never change facts or prices for it.")
         gated_tools = tools_for(intelligence, site_key)
         on_screen = dict(on_screen or {})
         if on_screen and any(t.name == "patch_component" for t in gated_tools):
             system += _on_screen_block(on_screen)
+        # A composed page is on screen (P2-4): offer edits to it.
+        if on_screen_plan and intelligence == "extreme":
+            from app.experience.patch import outline
+            from app.orchestrator.tools import PATCH_PLAN
+
+            gated_tools = [*gated_tools, PATCH_PLAN]
+            system += "\n" + outline(on_screen_plan)
         messages: list[ChatMessage] = list(history) + [
             ChatMessage(role="user", text=user_text)
         ]
@@ -200,8 +213,12 @@ class HeavyThinker:
                     if call.name == "query_cortex":
                         cortex_calls += 1
                     tool_result = await self._handle_tool_call(
-                        call, bridge, result, site_key, on_screen, pii
+                        call, bridge, result, site_key, on_screen, pii,
+                        page_ctx={"persona": persona, "page": page, "lang": lang},
+                        on_screen_plan=on_screen_plan,
                     )
+                    if call.name == "patch_plan" and result.plan_patches:
+                        on_screen_plan = result.plan_patches[-1].plan
                     productive = True
                 messages.append(ChatMessage(
                     role="tool", tool_name=call.name, tool_result=tool_result
@@ -251,10 +268,64 @@ class HeavyThinker:
         )
         return result
 
+    @staticmethod
+    def _page_ctx(site_key: str, page_ctx: Optional[dict[str, Any]]) -> dict[str, Any]:
+        """Request context a page binding may read (``ctx.<name>``)."""
+        ctx = {k: v for k, v in (page_ctx or {}).items() if v}
+        ctx["site_key"] = site_key
+        ctx["currency"] = profile_for(site_key).currency
+        return ctx
+
+    async def _patch_plan(self, args: dict, site_key: str, bridge: CortexBridge, result: "ThinkResult",
+                          plan: Optional[dict], ctx: dict[str, Any]) -> dict:
+        """P2-4: apply ops to the page on screen; bind what changed."""
+        if not plan:
+            return {"ok": False, "error": "no composed page is on screen"}
+        from app.apis.registry import get_site_apis
+        from app.db import session_scope
+        from app.experience.binding import bind_plan
+        from app.experience.manifest import load_manifest
+        from app.experience.patch import apply_ops
+        from app.experience.plan import validate_plan
+        from app.experience.resolvers import make_resolver
+        from app.orchestrator.result import PlanPatch
+
+        raw, accepted, problems = apply_ops(plan, args.get("ops"))
+        manifest, registry = load_manifest(site_key), get_site_apis(site_key)
+        report = validate_plan(raw, manifest=manifest, catalogue=registry, site_key=site_key)
+        report.plan.plan_id = plan.get("plan_id") or report.plan.plan_id
+        problems += report.problems + report.dropped
+        kept = {r.id for r in report.plan.regions}
+        changed = {o["region"] for o in accepted if o["op"] in ("add", "replace")}
+        async with session_scope() as db:
+            bound = await bind_plan(report.plan, manifest=manifest, registry=registry, ctx=ctx,
+                                    resolve=make_resolver(db, None, site_key, bridge=bridge))
+        sections = {b.id: b.to_section() for b in bound if b.id in changed and b.state == "ready"}
+        ops = []
+        for o in accepted:
+            if o["op"] in ("add", "replace"):
+                if o["region"] not in sections:
+                    problems.append(f"{o['op']} {o['region']}: dropped (invalid or no data)")
+                    continue
+                ops.append({**o, "section": sections[o["region"]]})
+            elif o["op"] == "remove" or o["region"] in kept:
+                ops.append(o)
+        if not ops:
+            return {"ok": False, "problems": problems[:12] or ["nothing to change"]}
+        new_plan = report.plan.to_dict()
+        result.plan_patches.append(PlanPatch(plan_id=new_plan["plan_id"], ops=ops, plan=new_plan))
+        out: dict[str, Any] = {"ok": True, "plan_id": new_plan["plan_id"],
+                               "applied": [f"{o['op']} {o['region']}" for o in ops]}
+        if problems:
+            out["problems"] = problems[:12]
+        return out
+
     async def _handle_tool_call(
         self, call, bridge: CortexBridge, result: ThinkResult, site_key: str,
         on_screen: Optional[dict[str, dict]] = None,
         pii: Optional[PiiVault] = None,
+        page_ctx: Optional[dict[str, Any]] = None,
+        on_screen_plan: Optional[dict] = None,
     ):
         name = call.name
         args = call.args or {}
@@ -274,10 +345,21 @@ class HeavyThinker:
             return res
 
         if name == "generate_page":
-            title, sections = normalize_page(args.get("title"), args.get("sections"))
-            sync_id = _sync_id("page")
-            result.pages.append(PageSpec(sync_id=sync_id, title=title, sections=sections))
-            return {"ok": True, "sync_id": sync_id, "section_count": len(sections)}
+            # Experience Plan pipeline (P0-5): validate → bind → render. The
+            # model gets ids and problems back, never the bound data.
+            from app.experience.compose import compose_page
+
+            page, tool_result = await compose_page(
+                args, site_key=site_key, sync_id=_sync_id("page"),
+                ctx=self._page_ctx(site_key, page_ctx), bridge=bridge,
+            )
+            if page.sections:
+                result.pages.append(page)
+            return tool_result
+
+        if name == "patch_plan":
+            return await self._patch_plan(args, site_key, bridge, result, on_screen_plan,
+                                          self._page_ctx(site_key, page_ctx))
 
         if name == "call_site_api":
             from app.apis.registry import get_site_apis

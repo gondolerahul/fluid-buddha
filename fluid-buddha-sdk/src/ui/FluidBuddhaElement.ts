@@ -16,11 +16,15 @@ import { Arm, Experiment } from '../core/Experiment';
 import { TriggerRule, Triggers } from '../core/Triggers';
 import { Session } from '../core/Session';
 import { applyTokens, fetchDesignSystem } from '../core/designSystem';
+import { configureRegions } from '../core/Regions';
+import { loadPatcher } from '../core/patch/load';
+import { getTaste, initTaste, tasteEvent } from '../core/taste';
+import { loadPanel } from '../core/taste/load';
 import { Canvas } from './components/canvas';
 import { sourcesEl } from './citations';
 import { Level2Shell } from './level2/Level2Shell';
 import { Level3Shell } from './level3/Level3Shell';
-import { PageRenderer, EnquiryPayload } from './page/PageRenderer';
+import type { PageRenderer, EnquiryPayload } from './page/PageRenderer';
 import { AuraCanvas, AuraState } from './aura/AuraCanvas';
 import { stylesFor } from './styles';
 import { callBar, callPrompt } from './call';
@@ -60,6 +64,7 @@ export class FluidBuddhaElement extends HTMLElement {
   private level2?: Level2Shell;
   private level3?: Level3Shell;
   private pageRenderer?: PageRenderer;
+  private pageInner?: HTMLElement;
   private pageSurface?: HTMLDivElement;
 
   private trigger!: HTMLButtonElement;
@@ -110,6 +115,12 @@ export class FluidBuddhaElement extends HTMLElement {
     this.designSet = !!opts.design;
     this.accentSet = !!opts.accent;
     this.config = resolveConfig(opts);
+    // Generated regions on this page (Phase 1) use the widget's backend and key.
+    configureRegions({ api: this.config.api, key: this.config.key, site: this.config.site });
+    // The visitor's taste (Phase 3) and their preferences panel (loaded on demand).
+    const tasteCfg = { api: this.config.api, key: this.config.key, site: this.config.site };
+    initTaste(tasteCfg);
+    window.addEventListener('fluidbuddha:preferences', () => void loadPanel().then((m) => m.openPanel(tasteCfg)));
     this.style.setProperty('--fb-accent', this.config.accent);
     this.setAttribute('data-position', this.config.position);
     this.setAttribute('data-design', this.config.design);
@@ -285,7 +296,14 @@ export class FluidBuddhaElement extends HTMLElement {
     root.appendChild(surface);
 
     this.pageSurface = surface;
-    this.pageRenderer = new PageRenderer(inner, (p) => this.onEnquiry(p));
+    this.pageInner = inner;
+    // Edits of the page on this surface (P2-4); the patcher loads on first use.
+    window.addEventListener('fluidbuddha:plan_patch', (e) => {
+      const d = (e as CustomEvent<{ plan_id?: string }>).detail;
+      if (d?.plan_id && inner.getAttribute('data-fb-plan') === d.plan_id) {
+        void loadPatcher().then((m) => m.applyPatch(d as never, [surface], (v) => this.session.submitLead(v)));
+      }
+    });
 
     void fetchDesignSystem(this.config.api, this.config.site).then((ds) => {
       if (ds) {
@@ -297,9 +315,15 @@ export class FluidBuddhaElement extends HTMLElement {
   }
 
   private renderPage(page: PageSpec): void {
-    if (!this.pageRenderer || !this.pageSurface) return;
-    this.pageSurface.classList.remove('hidden');
-    this.pageRenderer.render(page);
+    const surface = this.pageSurface;
+    const inner = this.pageInner;
+    if (!surface || !inner) return;
+    // The page renderer loads with the first page (it isn't in the core script).
+    void loadPatcher().then((m) => {
+      this.pageRenderer ??= new m.PageRenderer(inner, (p) => this.onEnquiry(p));
+      surface.classList.remove('hidden');
+      this.pageRenderer.render(page);
+    });
   }
 
   /** The generated enquiry form posts straight to /leads (WS7) — the visitor's
@@ -413,11 +437,18 @@ export class FluidBuddhaElement extends HTMLElement {
     this.statusEl.append(h('span', 'dot'), document.createTextNode(' ' + t('online')));
     info.append(this.statusEl);
     profile.append(avatar, info);
+    const prefsBtn = h('button', 'icon-btn');
+    prefsBtn.setAttribute('aria-label', t('prefs'));
+    prefsBtn.title = t('prefs');
+    prefsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" '
+      + 'stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/>'
+      + '<circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>';
+    prefsBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('fluidbuddha:preferences')));
     const closeBtn = h('button', 'icon-btn');
     closeBtn.setAttribute('aria-label', t('close'));
     closeBtn.innerHTML = ICONS.close;
     closeBtn.addEventListener('click', () => this.close());
-    header.append(profile, closeBtn);
+    header.append(profile, prefsBtn, closeBtn);
     this.panel.append(header);
 
     // — Messages + generative canvas —
@@ -703,12 +734,13 @@ export class FluidBuddhaElement extends HTMLElement {
 
   private submitText(text: string): void {
     if (!text.trim()) return;
-    this.noteTalk();
+    this.noteTalk('typed');
     this.session.sendText(text.trim());
   }
 
   /** The visitor started talking: credit a trigger they clicked, stop nudging. */
-  private noteTalk(): void {
+  private noteTalk(kind: 'mic' | 'typed' = 'mic'): void {
+    if (!this.talked) tasteEvent(this.config, { type: kind });
     this.talked = true;
     this.shadowRoot?.querySelector('.fb-nudge')?.remove();
     this.triggers?.engaged();
@@ -742,7 +774,9 @@ export class FluidBuddhaElement extends HTMLElement {
       });
       section = (inView?.textContent || '').trim().slice(0, 80) || undefined;
     }
-    return { page, title, section, sections: this.pageSections() };
+    // A served composed page reports its plan, so the agent can edit it (P2-4).
+    const plan_id = document.querySelector('main[data-fb-plan]')?.getAttribute('data-fb-plan') || undefined;
+    return { page, title, section, sections: this.pageSections(), plan_id, taste: getTaste() || undefined };
   }
 
   private pageSections(): Array<{ id: string; label: string }> {

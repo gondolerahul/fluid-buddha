@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluidBuddha — See it on your own website (Option 3 mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fraunces:ital,opsz,wght@1,9..144,300&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Devanagari:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #eef0f3; --muted: #9aa0a8; --gold: #d8a93a; --gold2: #f3cf7a; --line: rgba(255,255,255,.1); --brand: #1f8a8a; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #06070a; color: var(--ink); font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .hi { font-family: 'Noto Sans Devanagari', Inter, sans-serif; }
+  em.s { font-family: Fraunces, serif; font-style: italic; font-weight: 300; color: var(--gold2); }
+  .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 60; display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; background: linear-gradient(180deg, rgba(6,7,10,.85), rgba(6,7,10,0)); }
+  .brand { font-weight: 600; font-size: 17px; } .brand i { font-style: normal; color: var(--gold); }
+  .nav .links { display: flex; gap: 26px; font-size: 14px; color: var(--muted); } .nav .links a { color: inherit; text-decoration: none; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 99px; padding: 12px 22px; font: 500 14px Inter, sans-serif; cursor: pointer; text-decoration: none; border: 1px solid transparent; }
+  .btn.gold { background: var(--gold); color: #1a1306; } .btn.gold:hover { background: var(--gold2); } .btn.ghost { border-color: rgba(255,255,255,.22); color: var(--ink); background: none; }
+  .tag { position: fixed; right: 32px; bottom: 18px; z-index: 60; font: 10.5px 'JetBrains Mono', monospace; letter-spacing: .08em; color: #5e636b; text-transform: uppercase; } .tag a { color: inherit; }
+
+  /* ============ stage ============ */
+  .stage { position: relative; height: 100vh; min-height: 700px; overflow: hidden; perspective: 1600px; background: radial-gradient(ellipse 70% 55% at 50% 45%, #14171d, #06070a 75%); }
+  .glow { position: absolute; left: 50%; top: 46%; width: 70vw; height: 70vh; transform: translate(-50%, -50%); background: radial-gradient(ellipse, color-mix(in srgb, var(--brand) 22%, transparent), transparent 65%); transition: background 1s; pointer-events: none; }
+  .ringwrap { position: absolute; inset: 0; z-index: 1; perspective: 1600px; transition: opacity 1s; }
+  .ring { position: absolute; left: 50%; top: 52%; width: 0; height: 0; transform-style: preserve-3d; }
+  .ring .spin { position: absolute; transform-style: preserve-3d; animation: spin 60s linear infinite; }
+  @keyframes spin { to { transform: rotateY(360deg); } }
+  .card { position: absolute; width: 190px; height: 124px; margin: -62px 0 0 -95px; border-radius: 10px; background: #fff; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.5); backface-visibility: hidden; transition: transform 1.1s cubic-bezier(.2,.8,.2,1), opacity 1s; }
+  .card .ch { height: 22px; background: var(--brand); display: flex; align-items: center; gap: 6px; padding: 0 8px; color: #fff; font: 600 9px Inter; }
+  .card .ch i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.85); }
+  .card .cb { padding: 9px 10px; font: 700 12px Inter; color: #1d2430; }
+  .card .cb::after { content: ''; display: block; margin-top: 8px; height: 6px; width: 80%; border-radius: 3px; background: #e5e8ec; box-shadow: 0 12px 0 #edf0f3, 0 24px 0 #edf0f3, 0 36px 0 #f2f4f6; }
+  .card.ghost { background: rgba(255,255,255,.05); box-shadow: none; border: 1px solid rgba(255,255,255,.08); } .card.ghost .ch { background: rgba(255,255,255,.06); } .card.ghost .cb { color: transparent; } .card.ghost .cb::after { background: rgba(255,255,255,.06); box-shadow: 0 12px 0 rgba(255,255,255,.05), 0 24px 0 rgba(255,255,255,.04), 0 36px 0 rgba(255,255,255,.03); }
+
+  .hero { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 6vw; transition: opacity .8s, transform .8s; }
+  .hero h1 { font: 600 clamp(40px, 6vw, 92px)/1.02 Inter; letter-spacing: -.045em; text-shadow: 0 4px 40px rgba(0,0,0,.6); }
+  .hero p { margin-top: 16px; max-width: 36em; font: 300 clamp(16px, 1.3vw, 19px)/1.55 Inter; color: #b9bec6; }
+  .urlbox { margin-top: 34px; display: flex; align-items: center; gap: 8px; width: min(620px, 92vw); padding: 8px 8px 8px 22px; border-radius: 99px; background: rgba(14,16,20,.75); border: 1px solid rgba(216,169,58,.45);
+            box-shadow: 0 0 0 6px rgba(216,169,58,.06), 0 20px 60px rgba(0,0,0,.5), 0 0 60px rgba(216,169,58,.18); backdrop-filter: blur(12px); }
+  .urlbox span { font: 500 16px 'JetBrains Mono'; color: #6b7179; } .urlbox input { flex: 1; background: none; border: 0; outline: none; color: var(--ink); font: 500 17px 'JetBrains Mono'; }
+  .examples { margin-top: 18px; font: 13px Inter; color: #7c828b; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
+  .examples button { font: 13px Inter; color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 99px; padding: 7px 13px; cursor: pointer; } .examples button:hover { border-color: var(--gold); }
+  .fine { margin-top: 22px; font: 11.5px Inter; color: #5e636b; }
+  .hero.out { opacity: 0; transform: translateY(-30px) scale(.97); pointer-events: none; }
+
+  /* reading */
+  .reading { position: absolute; inset: 0; z-index: 11; pointer-events: none; opacity: 0; transition: opacity .6s; }
+  .reading.on { opacity: 1; }
+  .rhead { position: absolute; top: 92px; left: 0; right: 0; text-align: center; }
+  .rhead h2 { font: 600 clamp(26px, 3vw, 42px) Inter; letter-spacing: -.03em; } .rhead h2 b { color: var(--gold2); font-weight: 600; }
+  .rhead p { margin-top: 8px; font: 12px 'JetBrains Mono'; color: #7c828b; letter-spacing: .06em; }
+  .steps { position: absolute; left: 4vw; top: 50%; transform: translateY(-50%); display: grid; gap: 16px; width: 300px; padding: 22px; border-radius: 18px; background: rgba(10,12,16,.72); border: 1px solid var(--line); backdrop-filter: blur(12px); }
+  .st { display: flex; gap: 12px; align-items: flex-start; opacity: .3; transition: opacity .4s; }
+  .st.on, .st.done { opacity: 1; }
+  .st .dot { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.25); display: grid; place-items: center; font: 600 12px Inter; color: #111; margin-top: 2px; }
+  .st.on .dot { border-color: var(--gold); box-shadow: 0 0 0 4px rgba(216,169,58,.15); animation: pulse 1s infinite; } @keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(216,169,58,.05); } }
+  .st.done .dot { background: var(--gold); border-color: var(--gold); } .st.done .dot::before { content: '✓'; }
+  .st b { display: block; font: 600 16px Inter; } .st small { font: 13px Inter; color: #8a9098; }
+  .facts { position: absolute; right: 4vw; top: 50%; transform: translateY(-50%); width: 310px; display: grid; gap: 10px; padding: 18px; border-radius: 18px; background: rgba(10,12,16,.72); border: 1px solid var(--line); backdrop-filter: blur(12px); }
+  .facts:empty { display: none; }
+  .facts h4 { font: 500 11px 'JetBrains Mono'; letter-spacing: .16em; text-transform: uppercase; color: var(--gold); margin: 6px 0 2px; opacity: 0; transition: opacity .4s; } .facts h4.on { opacity: 1; }
+  .fact { font: 13.5px Inter; padding: 9px 13px; border-radius: 10px; background: rgba(255,255,255,.05); border: 1px solid var(--line); opacity: 0; transform: translateX(20px); transition: all .5s cubic-bezier(.2,.8,.2,1); }
+  .fact.on { opacity: 1; transform: none; }
+  .sw { display: flex; gap: 8px; align-items: center; } .sw i { width: 26px; height: 26px; border-radius: 8px; box-shadow: 0 0 0 1px rgba(255,255,255,.2); }
+
+  /* reveal: their website, talking */
+  .reveal { position: absolute; inset: 0; z-index: 12; opacity: 0; pointer-events: none; transition: opacity .8s; display: flex; align-items: center; justify-content: center; gap: 4vw; padding: 70px 5vw 0; }
+  .reveal.on { opacity: 1; pointer-events: auto; }
+  .site { position: relative; width: min(860px, 60vw); aspect-ratio: 16 / 11; border-radius: 14px; background: #fff; overflow: hidden; box-shadow: 0 60px 120px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08);
+          transform: rotateY(8deg) rotateX(3deg); transition: transform 1.2s cubic-bezier(.2,.8,.2,1); color: #1d2430; }
+  .reveal.on .site { transform: rotateY(4deg) rotateX(1deg); }
+  .bar { height: 30px; background: #eceef1; display: flex; align-items: center; gap: 7px; padding: 0 12px; } .bar i { width: 10px; height: 10px; border-radius: 50%; background: #d5d8dc; }
+  .bar .url { margin-left: 10px; flex: 1; height: 19px; border-radius: 6px; background: #fff; font: 11px Inter; color: #6b7280; display: flex; align-items: center; padding: 0 10px; }
+  .snav { height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid #eef0f2; }
+  .slogo { display: flex; align-items: center; gap: 9px; font: 700 15px Inter; color: #111; } .slogo b { width: 26px; height: 26px; border-radius: 8px; background: var(--brand); color: #fff; display: grid; place-items: center; font: 700 13px Inter; }
+  .slinks { display: flex; gap: 16px; font: 12px Inter; color: #5b6470; } .scta { font: 600 12px Inter; color: #fff; background: var(--brand); padding: 8px 12px; border-radius: 8px; }
+  .shero { padding: 34px 26px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 20px; align-items: center; background: linear-gradient(160deg, color-mix(in srgb, var(--brand) 9%, #fff), #fff 60%); }
+  .shero h3 { font: 700 30px/1.1 Inter; letter-spacing: -.03em; } .shero p { margin-top: 12px; font: 14px/1.5 Inter; color: #56606b; }
+  .shero .scta { display: inline-block; margin-top: 16px; padding: 10px 14px; }
+  .art { height: 180px; border-radius: 16px; background: linear-gradient(140deg, color-mix(in srgb, var(--brand) 85%, #000), var(--brand)); position: relative; overflow: hidden; }
+  .art::before { content: ''; position: absolute; width: 160px; height: 160px; border-radius: 50%; right: -30px; top: -40px; background: rgba(255,255,255,.18); }
+  .art::after { content: ''; position: absolute; left: 20px; bottom: 20px; width: 55%; height: 12px; border-radius: 6px; background: rgba(255,255,255,.7); box-shadow: 0 -22px 0 rgba(255,255,255,.4); }
+  .ssec { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 4px 26px 26px; } .ssec div { border: 1px solid #e8ebef; border-radius: 10px; padding: 12px; font: 600 13px Inter; } .ssec small { display: block; font: 400 11.5px Inter; color: #6b7480; margin-top: 4px; }
+  .orb { position: absolute; right: 16px; bottom: 16px; width: 50px; height: 50px; border-radius: 50%; background: radial-gradient(circle at 38% 34%, #fff2c6, #d8a93a 45%, #6b4d12); box-shadow: 0 0 0 7px rgba(216,169,58,.18), 0 10px 30px rgba(216,169,58,.5); }
+  .panel { position: absolute; right: 14px; bottom: 14px; width: 300px; top: 44px; border-radius: 16px; background: linear-gradient(170deg, #222126, #121215); border: 1px solid rgba(216,169,58,.28); box-shadow: 0 30px 70px rgba(0,0,0,.45); color: #eef0f3;
+           display: flex; flex-direction: column; transform: translateY(20px) scale(.96); opacity: 0; transition: all .6s cubic-bezier(.2,.8,.2,1); transform-origin: 100% 100%; }
+  .panel.on { transform: none; opacity: 1; }
+  .ph { display: flex; align-items: center; gap: 9px; padding: 11px 12px; border-bottom: 1px solid rgba(255,255,255,.07); } .ph .av { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 38% 34%, #fff2c6, #d8a93a 50%, #6b4d12); }
+  .ph b { display: block; font: 600 12.5px Inter; } .ph small { font: 10px 'JetBrains Mono'; color: var(--gold); letter-spacing: .1em; text-transform: uppercase; }
+  .pb { flex: 1; padding: 10px; display: flex; flex-direction: column; justify-content: flex-end; gap: 7px; overflow: hidden; }
+  .msg { flex-shrink: 0; font: 12px/1.45 Inter; padding: 8px 10px; border-radius: 12px; max-width: 92%; animation: pop .35s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px); } }
+  .msg.me { align-self: flex-end; background: #2c3038; border-bottom-right-radius: 4px; } .msg.ai { align-self: flex-start; background: rgba(216,169,58,.12); border: 1px solid rgba(216,169,58,.25); border-bottom-left-radius: 4px; }
+  .msg .src { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; } .msg .src a { font: 9.5px 'JetBrains Mono'; color: var(--gold); border: 1px solid rgba(216,169,58,.35); border-radius: 99px; padding: 2px 7px; text-decoration: none; }
+  .msg .safe { display: inline-block; margin-top: 6px; font: 9.5px 'JetBrains Mono'; color: #7fd18b; border: 1px solid rgba(127,209,139,.4); border-radius: 99px; padding: 2px 7px; }
+  .msg .bk { display: inline-block; margin-top: 7px; background: var(--gold); color: #1a1306; font: 600 10.5px Inter; padding: 5px 10px; border-radius: 99px; }
+  .typing { display: inline-flex; gap: 3px; } .typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); animation: blink 1s infinite; } .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .pf { height: 42px; border-top: 1px solid rgba(255,255,255,.07); display: flex; align-items: center; padding: 0 10px; font: 11px Inter; color: #7c828b; }
+  .ask { width: min(340px, 30vw); }
+  .ask .k { font: 500 11px 'JetBrains Mono'; letter-spacing: .16em; text-transform: uppercase; color: var(--gold); }
+  .ask h3 { margin: 10px 0 8px; font: 600 clamp(22px, 2.2vw, 32px)/1.15 Inter; letter-spacing: -.03em; } .ask p { font: 14.5px/1.55 Inter; color: #a0a6ae; }
+  .qs { margin-top: 18px; display: grid; gap: 8px; }
+  .qs button { text-align: left; font: 14px Inter; color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; cursor: pointer; transition: border-color .3s, opacity .3s; }
+  .qs button:hover { border-color: var(--gold); } .qs button.used { opacity: .45; } .qs.busy button { pointer-events: none; opacity: .4; }
+  .qs button small { display: block; font: 10px 'JetBrains Mono'; color: var(--gold); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 3px; }
+  .again { margin-top: 16px; font: 13px Inter; color: #8a9098; background: none; border: 0; cursor: pointer; text-decoration: underline; }
+  .sim { position: absolute; left: 32px; bottom: 18px; z-index: 20; font: 11px Inter; color: #5e636b; white-space: nowrap; }
+
+  /* regular sections */
+  section.after { position: relative; padding: 120px 6vw; max-width: 1240px; margin: 0 auto; }
+  .eyebrow { font: 500 11px 'JetBrains Mono'; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); }
+  section.after h2 { margin-top: 14px; font: 600 clamp(32px, 4vw, 58px)/1.05 Inter; letter-spacing: -.04em; max-width: 16em; } section.after .lead { margin-top: 14px; font: 300 18px/1.55 Inter; color: #b0b6be; max-width: 38em; }
+  .checks { margin-top: 48px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .chk { display: flex; gap: 14px; border-radius: 18px; padding: 22px; border: 1px solid var(--line); background: #0b0c10; }
+  .chk i { flex: none; width: 30px; height: 30px; border-radius: 50%; background: rgba(216,169,58,.15); color: var(--gold2); display: grid; place-items: center; font-style: normal; font-weight: 600; }
+  .chk b { display: block; font: 600 16.5px Inter; } .chk span { display: block; margin-top: 4px; color: #a0a6ae; font-size: 14px; line-height: 1.5; }
+  .live { margin-top: 48px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: center; }
+  .code { font: 13px/1.7 'JetBrains Mono'; background: #040508; border: 1px solid #23262c; border-radius: 16px; padding: 20px; color: #c9ced6; } .code b { color: #7fe3f0; font-weight: 400; } .code i { color: var(--gold2); font-style: normal; }
+  .plat { display: flex; flex-wrap: wrap; gap: 8px; } .plat span { font: 13px Inter; color: #b0b6be; border: 1px solid var(--line); border-radius: 99px; padding: 7px 13px; }
+  .plans2 { margin-top: 48px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .pl { border-radius: 20px; padding: 26px 22px; border: 1px solid var(--line); background: #0b0c10; } .pl.hot { border-color: rgba(216,169,58,.6); background: linear-gradient(170deg, rgba(216,169,58,.1), #0b0c10 60%); }
+  .pl small { font: 500 11px 'JetBrains Mono'; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); } .pl b { display: block; margin: 12px 0 2px; font: 600 32px Inter; letter-spacing: -.03em; } .pl .per { font: 13px Inter; color: #8a9098; }
+  .pl ul { list-style: none; margin: 18px 0 22px; display: grid; gap: 8px; font: 14px Inter; color: #c2c7ce; } .pl li::before { content: '✓  '; color: var(--gold); }
+  footer { border-top: 1px solid var(--line); padding: 26px 6vw; color: #5f646c; font-size: 12px; text-align: center; line-height: 1.6; }
+  @media (max-width: 1000px) { .steps, .facts { display: none; } .reveal { flex-direction: column; padding-top: 90px; } .site { width: 92vw; } .ask { width: 92vw; } .checks, .plans2, .live { grid-template-columns: 1fr; } .nav .links { display: none; } }
+</style>
+</head>
+<body>
+<nav class="nav"><div class="brand">Fluid<i>Buddha</i></div><div class="links"><a href="#saw">What you get</a><a href="#live">Go live</a><a href="#price">Pricing</a></div><a class="btn gold" href="#price" style="padding:10px 18px">Start free</a></nav>
+<div class="tag"><a href="index.html">Option 3 · See it on your own website · mockup</a></div>
+
+<div class="stage" id="stage">
+  <div class="glow"></div>
+  <div class="ringwrap" id="ringwrap"><div class="ring"><div class="spin" id="spin"></div></div></div>
+
+  <!-- 1. enter your website -->
+  <div class="hero" id="hero">
+    <h1>Enter your website.<br><em class="s">Hear it talk.</em></h1>
+    <p>In about a minute, see what your own website sounds like when it can answer your customers' questions, using only what's already on it.</p>
+    <form class="urlbox" id="form"><span>https://</span><input id="url" placeholder="yourbusiness.com" autocomplete="off" spellcheck="false"><button class="btn gold">Show me</button></form>
+    <div class="examples">Or try an example:<button data-t="dental">Bright Smile Dental</button><button data-t="saas">Northwind CRM</button><button data-t="coaching">Apex Coaching</button></div>
+    <div class="fine">No sign-up. The preview reads a few of your public pages and is deleted after 24 hours.</div>
+  </div>
+
+  <!-- 2. reading -->
+  <div class="reading" id="reading">
+    <div class="rhead"><h2>Reading <b id="dom">yourbusiness.com</b></h2><p id="timer">0.0 s · 0 pages</p></div>
+    <div class="steps">
+      <div class="st" id="s1"><div class="dot"></div><div><b>Reading your pages</b><small id="s1s">Following links from your homepage</small></div></div>
+      <div class="st" id="s2"><div class="dot"></div><div><b>Learning what you sell</b><small>Products, prices, timings, FAQs</small></div></div>
+      <div class="st" id="s3"><div class="dot"></div><div><b>Finding your customers</b><small>Who your pages are written for</small></div></div>
+      <div class="st" id="s4"><div class="dot"></div><div><b>Picking up your brand</b><small>Colours, logo, style</small></div></div>
+    </div>
+    <div class="facts" id="facts"></div>
+  </div>
+
+  <!-- 3. your website, talking -->
+  <div class="reveal" id="reveal">
+    <div class="site" id="site">
+      <div class="bar"><i></i><i></i><i></i><div class="url" id="surl">🔒 brightsmile.in</div></div>
+      <div class="snav"><div class="slogo"><b id="sletter">B</b><span id="sname">Bright Smile Dental</span></div><div class="slinks" id="slinks"></div><div class="scta" id="scta">Book now</div></div>
+      <div class="shero"><div><h3 id="stag">Gentle dental care in Koramangala</h3><p id="ssub"></p><span class="scta" id="scta2">Book a visit</span></div><div class="art"></div></div>
+      <div class="ssec" id="ssec"></div>
+      <div class="orb" id="orb"></div>
+      <div class="panel" id="panel"><div class="ph"><div class="av"></div><div><b id="pname">Pragya · Bright Smile</b><small id="pst">speaking</small></div></div><div class="pb" id="pb"></div><div class="pf">Ask anything… 🎙</div></div>
+    </div>
+    <div class="ask">
+      <div class="k">Your website, live</div>
+      <h3 id="askh">Ask it what your customers ask.</h3>
+      <p>Every answer comes from the pages it just read, with a link to the source.</p>
+      <div class="qs" id="qs"></div>
+      <button class="again" id="again">← Try another website</button>
+    </div>
+  </div>
+  <div class="sim" id="sim">Mockup: reading is simulated here. The real preview reads your actual pages.</div>
+</div>
+
+<section class="after" id="saw">
+  <div class="eyebrow">What you just saw</div>
+  <h2>That's your website, doing a salesperson's job.</h2>
+  <div class="checks">
+    <div class="chk"><i>✓</i><div><b>Answers from your own content</b><span>Your pages, price lists and PDFs. Nothing invented.</span></div></div>
+    <div class="chk"><i>✓</i><div><b>Shows where each answer came from</b><span>Every answer links to the page it used.</span></div></div>
+    <div class="chk"><i>✓</i><div><b>Speaks English and Hindi</b><span>By voice or text, even if your site is only in English.</span></div></div>
+    <div class="chk"><i>✓</i><div><b>Books, quotes and captures leads</b><span>Meetings, quotes and trials, only after the visitor says yes.</span></div></div>
+    <div class="chk"><i>✓</i><div><b>Sends hot leads to your team</b><span>Slack alerts, your CRM, and live takeover when you're online.</span></div></div>
+    <div class="chk"><i>✓</i><div><b>Knows its limits</b><span>If something isn't on your site, it says so and offers your team.</span></div></div>
+  </div>
+</section>
+<section class="after" id="live">
+  <div class="eyebrow">Make it live</div>
+  <h2>Keep it. One line of code, and it's on your real website.</h2>
+  <div class="live">
+    <div class="code">&lt;<b>script</b> <i>src</i>="https://…/widget/loader.js"<br>&nbsp;&nbsp;<i>data-key</i>="fbk_your_key" async&gt;&lt;/<b>script</b>&gt;</div>
+    <div><div class="plat"><span>WordPress</span><span>Shopify</span><span>Webflow</span><span>Framer</span><span>Google Tag Manager</span><span>React</span><span>Any website</span></div>
+      <p style="margin-top:16px;color:#a0a6ae;line-height:1.55">The preview uses a few pages. Your full setup reads more of your site, and you can add PDFs and price lists. Most businesses are live the same afternoon.</p></div>
+  </div>
+</section>
+<section class="after" id="price">
+  <div class="eyebrow">Pricing</div>
+  <h2>Start free. Pay for conversations, not seats.</h2>
+  <div class="plans2">
+    <div class="pl"><small>Free</small><b>₹0</b><span class="per">per month</span><ul><li>100 conversations</li><li>Voice and text</li><li>Lead capture</li></ul><a class="btn ghost" href="#">Start free</a></div>
+    <div class="pl hot"><small>Growth</small><b>₹33,000</b><span class="per">per month</span><ul><li>2,000 conversations</li><li>₹17 per extra conversation</li><li>Bookings, quotes, Slack</li></ul><a class="btn gold" href="#">Start a trial</a></div>
+    <div class="pl"><small>Scale</small><b>₹1,25,000</b><span class="per">per month</span><ul><li>10,000 conversations</li><li>₹10 per extra conversation</li><li>A/B tests and lift reports</li></ul><a class="btn ghost" href="#">Talk to us</a></div>
+    <div class="pl"><small>Enterprise</small><b>Custom</b><span class="per">volume pricing</span><ul><li>Unlimited conversations</li><li>SSO, audit log, self-hosting</li><li>Your own AI model</li></ul><a class="btn ghost" href="#">Contact sales</a></div>
+  </div>
+</section>
+<footer>Mockup. The three example businesses are fictional and their details are illustrative. For a typed website, the reading is simulated. The real product crawls the site (respecting robots.txt). FluidBuddha plans and prices are real.</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------- example businesses (and a generic one for any typed address) ---------- */
+const T = {
+  dental: { name: 'Bright Smile Dental', short: 'Bright Smile', domain: 'brightsmile.in', color: '#1f8a8a', font: 'Poppins',
+    tag: 'Gentle dental care in Koramangala', sub: 'Cleaning, whitening, braces and implants. Open 7 days a week.', cta: 'Book a visit',
+    pages: ['Home', 'Treatments', 'Teeth whitening', 'Braces', 'Implants', 'Prices', 'Our doctors', 'Contact'],
+    cards: [['Teeth whitening', 'From ₹6,500'], ['Braces', 'From ₹35,000'], ['First check-up', 'Free']],
+    facts: ['Teeth whitening · ₹6,500 a session', 'Open Sundays, 10 AM – 2 PM', 'First check-up is free', '4 dentists in Koramangala'],
+    people: ['Families with children', 'Working professionals', 'Senior patients'],
+    qs: [
+      { q: 'How much is teeth whitening?', a: 'Teeth whitening is ₹6,500 per session, and your first check-up is free. Shall I book you a slot?', src: ['prices', 'teeth-whitening'], book: 'Book a check-up' },
+      { q: 'Are you open on Sunday?', a: 'Yes. We are open on Sundays from 10 AM to 2 PM at our Koramangala clinic.', src: ['contact'] },
+      { q: 'My tooth hurts. Is it serious?', tagq: 'Safety', a: "I can't give medical advice. I can book you an appointment with one of our dentists today.", safe: true },
+      { q: 'Braces kitne ke hain? Hindi mein bataiye.', tagq: 'Hindi', hi: true, a: 'ब्रेसेज़ ₹35,000 से शुरू होते हैं, और पहली जांच मुफ़्त है। क्या मैं आपकी जांच बुक कर दूँ?', src: ['braces', 'prices'] },
+    ] },
+  saas: { name: 'Northwind CRM', short: 'Northwind', domain: 'northwindcrm.com', color: '#4f46e5', font: 'Inter',
+    tag: 'The CRM your sales team will actually use', sub: 'Pipeline, follow-ups and WhatsApp in one place. Built for Indian SMBs.', cta: 'Start free trial',
+    pages: ['Home', 'Features', 'Pricing', 'Integrations', 'Security', 'Customers', 'Docs', 'Contact'],
+    cards: [['Pipeline', 'See every deal'], ['WhatsApp', 'Follow up in one click'], ['Reports', 'Know your numbers']],
+    facts: ['Starter · ₹1,499 per user / month', 'Integrates with Tally and Zoho Books', '14-day free trial', 'Data stored in India'],
+    people: ['Sales heads', 'Founders', 'IT admins'],
+    qs: [
+      { q: 'How much does it cost for 10 users?', a: 'Starter is ₹1,499 per user a month, so about ₹14,990 a month for 10 users. There is a 14-day free trial.', src: ['pricing'], book: 'Start the trial' },
+      { q: 'Does it work with Tally?', a: 'Yes. Northwind syncs invoices and customers with Tally and Zoho Books.', src: ['integrations'] },
+      { q: 'Where is our data stored?', a: 'Your data is stored on servers in India, and you can export it anytime.', src: ['security'] },
+      { q: 'Do you have an office in Dubai?', tagq: 'Not on the site', a: "I don't have that information on this website. I can ask the team to get back to you." },
+    ] },
+  coaching: { name: 'Apex Coaching Classes', short: 'Apex', domain: 'apexcoaching.in', color: '#d9480f', font: 'Montserrat',
+    tag: 'JEE and NEET coaching that gets results', sub: 'Small batches, weekly tests and doubt sessions every day. Pune and online.', cta: 'Book a free demo class',
+    pages: ['Home', 'JEE course', 'NEET course', 'Fees', 'Results', 'Faculty', 'Batches', 'Contact'],
+    cards: [['JEE 2-year', '₹1.2 lakh'], ['NEET 2-year', '₹1.1 lakh'], ['Scholarship test', 'Every month']],
+    facts: ['JEE 2-year course · ₹1.2 lakh', 'New batch starts 15 June', 'Weekend batches available', 'Monthly scholarship test'],
+    people: ['Class 11–12 students', 'Parents'],
+    qs: [
+      { q: 'What are the fees for JEE?', a: 'The 2-year JEE course is ₹1.2 lakh. You can pay in 4 instalments, and scholarships of up to 50% are available.', src: ['fees', 'jee-course'], book: 'Book a free demo class' },
+      { q: 'When does the next batch start?', a: 'The next batch starts on 15 June. Weekend batches are also available.', src: ['batches'] },
+      { q: 'NEET ki fees kitni hai?', tagq: 'Hindi', hi: true, a: 'NEET का 2 साल का कोर्स ₹1.1 लाख का है। स्कॉलरशिप टेस्ट हर महीने होता है।', src: ['neet-course', 'fees'] },
+      { q: 'Do you guarantee a rank under 1000?', tagq: 'Not on the site', a: "Our website doesn't make that promise, so I won't either. I can share our past results, or connect you with a counsellor.", src: ['results'] },
+    ] },
+};
+function fromDomain(d) {
+  const clean = d.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').toLowerCase() || 'yourbusiness.com';
+  const base = clean.split('.')[0].replace(/[-_]/g, ' ');
+  const name = base.replace(/\b\w/g, c => c.toUpperCase());
+  let h = 0; for (const c of clean) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const color = `hsl(${h % 360} 55% 40%)`;
+  return { name, short: name, domain: clean, color, font: 'your site font', custom: true,
+    tag: `Welcome to ${name}`, sub: 'This is a stand-in for your homepage. The live preview shows your real pages.', cta: 'Contact us',
+    pages: ['Home', 'Products', 'Pricing', 'About', 'FAQ', 'Contact', 'Blog', 'Careers'],
+    cards: [['Your products', 'from your pages'], ['Your prices', 'from your pages'], ['Your FAQs', 'from your pages']],
+    facts: ['Your products and services', 'Your prices and plans', 'Your timings and locations', 'Your FAQs'],
+    people: ['Your customers', 'Partners'],
+    qs: [
+      { q: `What does ${name} offer?`, a: `In the live preview I answer this from ${clean}/products, in your words, with a link to that page.`, src: ['products'] },
+      { q: 'How much does it cost?', a: `In the live preview I answer from ${clean}/pricing. If prices aren't on your site, I say so and offer your team.`, src: ['pricing'] },
+      { q: 'Kya aap Hindi mein baat kar sakte hain?', tagq: 'Hindi', hi: true, a: 'हाँ! आपकी वेबसाइट अंग्रेज़ी में हो, तब भी मैं हिंदी में जवाब दे सकती हूँ।' },
+    ] };
+}
+
+/* ---------- background ring of pages ---------- */
+const spin = $('#spin'); let cards = [];
+function ring(pages, ghost) {
+  spin.innerHTML = ''; const n = pages.length, R = Math.max(420, n * 58);
+  cards = pages.map((t, i) => { const c = document.createElement('div'); c.className = 'card' + (ghost ? ' ghost' : '');
+    c.innerHTML = `<div class="ch"><i></i>${ghost ? '' : t}</div><div class="cb">${ghost ? '.' : t}</div>`;
+    c.dataset.a = (i / n) * 360; c.style.transform = `rotateY(${c.dataset.a}deg) translateZ(${R}px) translateY(${(i % 3 - 1) * 70}px)`;
+    spin.appendChild(c); return c; });
+}
+ring(Array.from({ length: 14 }, (_, i) => 'Page ' + i), true);
+
+/* ---------- the flow ---------- */
+let current = null, running = false;
+async function run(tpl) {
+  if (running) return; running = true; current = tpl;
+  document.documentElement.style.setProperty('--brand', tpl.color);
+  $('#hero').classList.add('out'); await sleep(500);
+  $('#dom').textContent = tpl.domain; $('#reading').classList.add('on');
+  const t0 = performance.now(); let pages = 0;
+  const tick = setInterval(() => { $('#timer').textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s · ${pages} pages`; }, 100);
+  // step 1: pages fly in and form the ring
+  $('#s1').classList.add('on'); spin.innerHTML = ''; ring([], false);
+  const n = tpl.pages.length, R = 380;
+  for (let i = 0; i < n; i++) {
+    const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="ch"><i></i>${tpl.domain}</div><div class="cb">${tpl.pages[i]}</div>`;
+    c.style.opacity = 0; c.style.transform = `rotateY(${(i / n) * 360}deg) translateZ(${R * 3}px) translateY(-200px)`; spin.appendChild(c);
+    requestAnimationFrame(() => requestAnimationFrame(() => { c.style.opacity = 1; c.style.transform = `rotateY(${(i / n) * 360}deg) translateZ(${R}px) translateY(${(i % 3 - 1) * 60}px)`; }));
+    pages = i + 1; $('#s1s').textContent = `${pages} of ${n} pages read`; await sleep(320);
+  }
+  $('#s1').classList.replace('on', 'done');
+  // step 2: what you sell
+  $('#s2').classList.add('on'); const facts = $('#facts'); facts.innerHTML = '<h4>What it learned</h4>';
+  await sleep(100); facts.firstChild.classList.add('on');
+  for (const f of tpl.facts) { const d = document.createElement('div'); d.className = 'fact'; d.textContent = f; facts.appendChild(d); await sleep(60); d.classList.add('on'); await sleep(420); }
+  $('#s2').classList.replace('on', 'done');
+  // step 3: who your customers are
+  $('#s3').classList.add('on'); const h3 = document.createElement('h4'); h3.textContent = 'Your customers'; facts.appendChild(h3); await sleep(60); h3.classList.add('on');
+  for (const pp of tpl.people) { const d = document.createElement('div'); d.className = 'fact'; d.textContent = pp; facts.appendChild(d); await sleep(60); d.classList.add('on'); await sleep(320); }
+  $('#s3').classList.replace('on', 'done');
+  // step 4: brand
+  $('#s4').classList.add('on'); const h4 = document.createElement('h4'); h4.textContent = 'Your brand'; facts.appendChild(h4); await sleep(60); h4.classList.add('on');
+  const d = document.createElement('div'); d.className = 'fact sw'; d.innerHTML = `<i style="background:${tpl.color}"></i><i style="background:#fff"></i><i style="background:#1d2430"></i><span style="margin-left:6px">${tpl.font} · rounded corners</span>`;
+  facts.appendChild(d); await sleep(60); d.classList.add('on'); await sleep(700);
+  $('#s4').classList.replace('on', 'done'); clearInterval(tick);
+  $('#timer').textContent = `Done in ${((performance.now() - t0) / 1000).toFixed(1)} s · ${pages} pages`;
+  await sleep(700);
+  // reveal: their website, ready to talk
+  buildSite(tpl); $('#reading').classList.remove('on'); $('#ringwrap').style.opacity = 0; await sleep(300);
+  $('#reveal').classList.add('on'); await sleep(900);
+  $('#orb').style.opacity = 0; $('#panel').classList.add('on'); await sleep(400);
+  await aiSay(`Hi! I'm Pragya, ${tpl.short}'s assistant. Ask me anything about ${tpl.name}.`);
+  running = false;
+}
+function buildSite(t) {
+  $('#surl').textContent = '🔒 ' + t.domain; $('#sletter').textContent = t.name[0]; $('#sname').textContent = t.name;
+  $('#slinks').innerHTML = t.pages.slice(1, 5).map(p => `<span>${p}</span>`).join('');
+  $('#scta').textContent = t.cta.split(' ').slice(0, 2).join(' '); $('#scta2').textContent = t.cta;
+  $('#stag').textContent = t.tag; $('#ssub').textContent = t.sub;
+  $('#ssec').innerHTML = t.cards.map(([a, b]) => `<div>${a}<small>${b}</small></div>`).join('');
+  $('#pname').textContent = 'Pragya · ' + t.short; $('#pb').innerHTML = '';
+  $('#askh').textContent = `Ask ${t.short} what your customers ask.`;
+  $('#qs').innerHTML = t.qs.map((q, i) => `<button data-i="${i}" class="${q.hi ? 'hi' : ''}">${q.tagq ? `<small>${q.tagq}</small>` : ''}${q.q}</button>`).join('');
+  $('#qs').querySelectorAll('button').forEach(b => b.onclick = () => ask(+b.dataset.i, b));
+}
+function addMsg(cls, html) { const m = document.createElement('div'); m.className = 'msg ' + cls; m.innerHTML = html; $('#pb').appendChild(m); return m; }
+async function aiSay(text, extra = '', hi = false) {
+  $('#pst').textContent = 'speaking';
+  const m = addMsg('ai' + (hi ? ' hi' : ''), ''); const words = text.split(' ');
+  for (let i = 0; i < words.length; i++) { m.innerHTML = words.slice(0, i + 1).join(' '); await sleep(55); }
+  if (extra) m.insertAdjacentHTML('beforeend', extra);
+}
+async function ask(i, btn) {
+  if (running) return; running = true; $('#qs').classList.add('busy');
+  const q = current.qs[i]; btn.classList.add('used');
+  addMsg('me' + (q.hi ? ' hi' : ''), q.q); $('#pst').textContent = 'listening'; await sleep(500);
+  $('#pst').textContent = 'thinking'; const t = addMsg('ai', '<span class="typing"><i></i><i></i><i></i></span>'); await sleep(700); t.remove();
+  let extra = '';
+  if (q.src) extra += `<div class="src">${q.src.map(s => `<a href="#">${current.domain}/${s} ↗</a>`).join('')}</div>`;
+  if (q.safe) extra += `<span class="safe">Medical safety mode</span>`;
+  if (q.book) extra += `<br><span class="bk">${q.book}</span>`;
+  await aiSay(q.a, extra, q.hi);
+  $('#qs').classList.remove('busy'); running = false;
+}
+$('#form').onsubmit = e => { e.preventDefault(); const v = $('#url').value.trim(); if (!v) { $('#url').focus(); return; } run(fromDomain(v)); };
+document.querySelectorAll('.examples button').forEach(b => b.onclick = () => run(T[b.dataset.t]));
+$('#again').onclick = () => { $('#reveal').classList.remove('on'); $('#panel').classList.remove('on'); $('#orb').style.opacity = 1; $('#ringwrap').style.opacity = 1;
+  ['s1', 's2', 's3', 's4'].forEach(id => $('#' + id).className = 'st'); $('#facts').innerHTML = ''; $('#s1s').textContent = 'Following links from your homepage';
+  ring(Array.from({ length: 14 }, (_, i) => 'Page ' + i), true); document.documentElement.style.setProperty('--brand', '#1f8a8a'); $('#hero').classList.remove('out'); $('#url').value = ''; };
+window.__o3 = { run, T, ask };
+</script>
+</body>
+</html>

@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluidBuddha — PLACES, PLEASE (Concept C mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+  :root { --black: #0b0a09; --amber: #f2b35e; --gold: #c9a24a; --blue: #3f6bff; --silver: #c7ccd3; --ink: #ece7dd; --muted: #958f86; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #050404; color: var(--ink); font-family: Inter, system-ui, sans-serif; overflow-x: hidden; }
+  canvas#stage { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; z-index: 0; }
+  .rim { position: fixed; inset: 0; pointer-events: none; z-index: 50; box-shadow: inset 0 0 0 1px rgba(242,179,94,.14), inset 0 0 60px rgba(242,179,94,.07); animation: breathe 5.5s ease-in-out infinite; transition: box-shadow .6s; }
+  body.speaking .rim { box-shadow: inset 0 0 0 1px rgba(242,179,94,.4), inset 0 0 110px rgba(242,179,94,.18); }
+  body.listening .rim { box-shadow: inset 0 0 0 1px rgba(199,204,211,.45), inset 0 0 90px rgba(199,204,211,.15); }
+  @keyframes breathe { 50% { opacity: .55; } }
+  .flash { position: fixed; inset: 0; z-index: 30; pointer-events: none; background: radial-gradient(ellipse at 50% 30%, rgba(255,250,235,.55), rgba(255,250,235,0) 70%); opacity: 0; }
+  .flash.go { animation: thunk .7s ease-out; }
+  @keyframes thunk { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+
+  header.top { position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: flex; align-items: center; justify-content: space-between; padding: 22px 32px; }
+  .brand { font-family: Fraunces, serif; font-size: 20px; color: var(--ink); } .brand i { color: var(--gold); font-style: normal; }
+  .top-right { display: flex; gap: 10px; }
+  .pill { font: 11px 'JetBrains Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border: 1px solid rgba(255,255,255,.12);
+          border-radius: 99px; padding: 7px 12px; background: rgba(10,9,8,.45); backdrop-filter: blur(8px); text-decoration: none; }
+  button.pill { cursor: pointer; color: var(--ink); } button.pill:hover { border-color: var(--amber); }
+  .programme { position: fixed; left: 32px; top: 84px; z-index: 40; display: flex; flex-direction: column; gap: 10px; }
+  .programme a { font: 10px 'JetBrains Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: #6f6a63; text-decoration: none; }
+  .programme a:hover, .programme a.on { color: var(--amber); }
+  .programme span { font: 9px 'JetBrains Mono', monospace; letter-spacing: .2em; color: #4d4944; margin-bottom: 4px; }
+
+  section { position: relative; z-index: 5; min-height: 100vh; display: flex; flex-direction: column; pointer-events: none; }
+  section * { pointer-events: auto; }
+  .eyebrow { font: 11px 'JetBrains Mono', monospace; letter-spacing: .2em; text-transform: uppercase; color: var(--amber); }
+  h1, h2 { font-family: Fraunces, serif; font-weight: 300; letter-spacing: -0.025em; line-height: 1.04; color: #f4efe6; }
+  h1 em, h2 em { font-style: italic; color: var(--amber); }
+
+  #house { align-items: center; justify-content: flex-end; text-align: center; padding-bottom: 19vh; }
+  #house h1 { font-size: clamp(40px, 5.6vw, 88px); opacity: 0; transition: opacity 2.4s ease 1.2s; }
+  #house h1.in { opacity: 1; }
+  #house .ask { font: italic 300 clamp(26px, 2.8vw, 40px) Fraunces, serif; color: var(--amber); margin-top: 8px; opacity: 0; transition: opacity 2s ease 3.4s; }
+  #house .ask.in { opacity: 1; }
+  .footlights { margin-top: 30px; width: min(620px, 88vw); opacity: 0; transition: opacity 1.6s ease 4.6s; }
+  .footlights.in { opacity: 1; }
+  .prompt { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(242,179,94,.45); padding: 10px 4px; box-shadow: 0 14px 30px -18px rgba(242,179,94,.6); }
+  .prompt input { flex: 1; background: none; border: 0; outline: none; color: var(--ink); font: 300 20px Fraunces, serif; }
+  .prompt input::placeholder { color: #8a8378; font-style: italic; }
+  .prompt button { background: none; border: 1px solid rgba(242,179,94,.5); color: var(--amber); border-radius: 99px; padding: 8px 14px; font: 11px 'JetBrains Mono', monospace; letter-spacing: .14em; cursor: pointer; }
+  .cues { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+  .cue { font: 13px Inter, sans-serif; color: var(--ink); background: rgba(14,12,10,.55); border: 1px solid rgba(236,231,221,.14); border-radius: 6px; padding: 9px 13px;
+         cursor: pointer; backdrop-filter: blur(8px); transition: border-color .3s, opacity .3s; }
+  .cue::before { content: attr(data-n); font: 10px 'JetBrains Mono', monospace; color: var(--amber); margin-right: 8px; letter-spacing: .1em; }
+  .cue:hover { border-color: var(--amber); }
+  .cue.dare { border-style: dashed; border-color: rgba(63,107,255,.6); }
+  .busy .cue, .busy .prompt { opacity: .35; pointer-events: none; }
+
+  .side { justify-content: center; padding: 0 6vw 0 calc(6vw + 90px); max-width: 640px; }
+  .side h2 { font-size: clamp(34px, 4.2vw, 64px); margin: 16px 0 18px; }
+  .side p { color: #c6bfb3; line-height: 1.6; font-size: 16.5px; max-width: 30em; }
+  .side .cues { justify-content: flex-start; }
+  .side .panel { background: linear-gradient(90deg, rgba(5,4,4,.82), rgba(5,4,4,.4) 70%, rgba(5,4,4,0)); padding: 28px 30px 28px 0; border-radius: 0 20px 20px 0; }
+  body.staged .side .panel h2, body.staged .side .panel p { opacity: 0; max-height: 0; margin: 0; overflow: hidden; }
+  .side .panel h2, .side .panel p { transition: opacity .8s, max-height .8s, margin .8s; max-height: 400px; }
+  body.staged .side { justify-content: flex-end; padding-bottom: 17vh; }
+  body.staged .side .panel { background: linear-gradient(90deg, rgba(5,4,4,.7), rgba(5,4,4,0)); }
+  .gels { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+  .gel { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(236,231,221,.14); background: rgba(14,12,10,.6);
+         color: var(--ink); cursor: pointer; font: 14px Inter, sans-serif; backdrop-filter: blur(8px); transition: border-color .3s; }
+  .gel i { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 14px currentColor; }
+  .gel:hover, .gel.on { border-color: currentColor; }
+  .cueboard { margin-top: 18px; font: 11px 'JetBrains Mono', monospace; color: #7e786f; letter-spacing: .08em; }
+  .cueboard b { color: var(--amber); font-weight: 500; }
+
+  .tag { position: fixed; z-index: 20; pointer-events: auto; transform: translate(-50%, 0) scale(.85); opacity: 0; transition: opacity .6s, transform .6s cubic-bezier(.2,1.5,.3,1);
+         background: linear-gradient(180deg, #d9b56a, #9c7a33); color: #1d1608; border-radius: 4px; padding: 7px 12px 7px 26px; font: 500 11px 'JetBrains Mono', monospace; letter-spacing: .08em; text-transform: uppercase; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+  .tag::before { content: ''; position: absolute; left: 10px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: #2a2010; box-shadow: inset 0 1px 1px rgba(255,255,255,.4); }
+  .tag.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  .tag small { display: block; font-size: 9.5px; opacity: .75; letter-spacing: .06em; text-transform: none; margin-top: 2px; }
+  .adlib { position: fixed; z-index: 20; left: 50%; bottom: 30vh; transform: translateX(-50%); font: italic 300 clamp(26px, 3vw, 44px) Fraunces, serif; color: #9bb0ff; opacity: 0; transition: opacity 1.4s; text-shadow: 0 0 30px rgba(63,107,255,.6); pointer-events: none; white-space: nowrap; }
+  .adlib.on { opacity: 1; }
+
+  .captions { position: fixed; left: 50%; bottom: 6vh; transform: translateX(-50%); z-index: 45; width: min(760px, 92vw); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+  .cap { background: rgba(14,12,10,.6); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 10px 16px; font: 15.5px/1.45 Inter, sans-serif; color: #f4efe6; transition: opacity 1s, transform 1s; text-align: center; }
+  .cap.visitor { color: var(--silver); font-style: italic; } .cap.old { opacity: .4; transform: scale(.97); }
+  .cap .w { opacity: 0; transition: opacity .35s; } .cap .w.on { opacity: 1; }
+  .status { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 45; font: 10.5px 'JetBrains Mono', monospace; letter-spacing: .3em; text-transform: uppercase; color: var(--amber); opacity: 0; transition: opacity .5s; }
+  .status.on { opacity: .85; }
+  .truth { position: absolute; left: calc(6vw + 90px); bottom: 2vh; font: 10.5px 'JetBrains Mono', monospace; color: #78726a; max-width: 70vw; letter-spacing: .04em; }
+  #house .truth { left: 50%; transform: translateX(-50%); text-align: center; }
+  .truth b { color: var(--gold); font-weight: 400; }
+  .loading { position: fixed; inset: 0; z-index: 70; background: #050404; display: grid; place-items: center; font: 11px 'JetBrains Mono', monospace; letter-spacing: .3em; color: #6f6a63; transition: opacity 1.2s; }
+  .loading.gone { opacity: 0; pointer-events: none; }
+  @media (max-width: 760px) { .programme { display: none; } .side { padding: 0 6vw; } .truth { left: 6vw; } }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div class="rim"></div>
+<div class="flash" id="flash"></div>
+<div class="loading" id="loading">HOUSE OPENING…</div>
+<header class="top">
+  <div class="brand">Fluid<i>Buddha</i></div>
+  <div class="top-right"><a class="pill" href="index.html">Concept C · Places, please · mockup</a><button class="pill" id="soundBtn">Sound off</button></div>
+</header>
+<nav class="programme" id="programme"><span>PROGRAMME</span><a href="#house" data-i="0">I. House lights down</a><a href="#places" data-i="1">III. Places, please</a><a href="#cue7" data-i="2">V. Lighting cue 7</a></nav>
+<div class="status" id="status"></div>
+<div class="captions" id="captions"></div>
+<div class="tag" id="tag">grounded · 88% match<small>prompt book → How it works ↗</small></div>
+<div class="adlib" id="adlib">We don't ad-lib.</div>
+
+<!-- I. HOUSE LIGHTS DOWN -->
+<section id="house">
+  <h1 id="h1">There's no website here.</h1>
+  <div class="ask" id="askline">Ask for one.</div>
+  <div class="footlights" id="footlights">
+    <form class="prompt" id="prompt"><input id="q" placeholder="So, what is FluidBuddha?" autocomplete="off"><button>Go</button></form>
+    <div class="cues" id="cues1">
+      <button class="cue" data-n="Q1" data-k="what">What is FluidBuddha?</button>
+      <button class="cue" data-n="Q2" data-k="pricing">Show me pricing</button>
+      <button class="cue" data-n="Q3" data-k="tour">How do I install it?</button>
+    </div>
+  </div>
+  <div class="truth"><b>Product beat:</b> proactive opener · ghost light = the dormant state · no menu: every section is composed on request (Extreme tier)</div>
+</section>
+
+<!-- III. PLACES, PLEASE -->
+<section id="places" class="side">
+  <div class="panel">
+    <div class="eyebrow">Act III · Places, please</div>
+    <h2>Every page you could want is <em>already hanging</em> in the dark.</h2>
+    <p>The fly tower holds the site's whole repertoire: typed, safe sections. Ask, and the right ones are lit and flown in. Pragya's line waits until the set has landed.</p>
+    <div class="cues" id="cues2">
+      <button class="cue" data-n="Q1" data-k="what">What is FluidBuddha?</button>
+      <button class="cue" data-n="Q2" data-k="pricing">Show me pricing</button>
+      <button class="cue dare" data-n="OFF-BOOK" data-k="dare">Can you integrate with my coffee machine?</button>
+    </div>
+  </div>
+  <div class="truth"><b>Product beat:</b> runtime page composition from typed sections · speech held until the component renders · grounding = the prompt book · below 0.45 confidence: "not in my material"</div>
+</section>
+
+<!-- V. LIGHTING CUE 7 -->
+<section id="cue7" class="side">
+  <div class="panel">
+    <div class="eyebrow">Act V · Lighting cue 7</div>
+    <h2>Who's in <em>the house?</em></h2>
+    <p>Tell Pragya who you are, and the whole theatre is re-lit and re-cast for you: different gels, different flats. On a real site this is the 300 ms persona switch, played at the scale of a stage.</p>
+    <div class="gels" id="gels">
+      <button class="gel" data-p="cto" style="color:#7fe3f0"><i style="background:#7fe3f0"></i>I'm the CTO</button>
+      <button class="gel" data-p="cfo" style="color:#8fb59c"><i style="background:#6e8f7a"></i>I'm the CFO</button>
+      <button class="gel" data-p="founder" style="color:#e8873a"><i style="background:#e8873a"></i>I'm a founder</button>
+    </div>
+    <div class="cueboard" id="cueboard">LX <b>Q7</b> · STANDBY · plot: <b>house gold</b></div>
+  </div>
+  <div class="truth"><b>Product beat:</b> adaptive persona (locks on self-identification) · data-fb-persona with the 300 ms blurred cross-fade · onSetPersona drives the lighting</div>
+</section>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------------- Pragya: captions / status / optional voice ---------------- */
+let soundOn = false;
+$('#soundBtn').onclick = () => { soundOn = !soundOn; $('#soundBtn').textContent = soundOn ? 'Sound on' : 'Sound off'; if (!soundOn) speechSynthesis.cancel(); };
+function setState(s) { document.body.classList.remove('listening', 'thinking', 'speaking'); if (s !== 'dormant') document.body.classList.add(s); const st = $('#status'); st.textContent = s === 'dormant' ? '' : s; st.classList.toggle('on', s !== 'dormant'); }
+function caption(text, who = 'pragya') {
+  const box = $('#captions'); [...box.children].forEach(c => c.classList.add('old')); while (box.children.length > 2) box.firstChild.remove();
+  const el = document.createElement('div'); el.className = 'cap ' + who;
+  if (who === 'visitor') el.textContent = text; else el.innerHTML = text.split(' ').map(w => `<span class="w">${w}</span>`).join(' ');
+  box.appendChild(el); setTimeout(() => el.classList.add('old'), 14000); return el;
+}
+function say(text) {
+  return new Promise(res => {
+    setState('speaking'); const el = caption(text); const ws = [...el.querySelectorAll('.w')]; const dur = Math.max(1200, ws.length * 330);
+    ws.forEach((w, i) => setTimeout(() => w.classList.add('on'), (i / ws.length) * dur * 0.92));
+    let done = false; const fin = () => { if (!done) { done = true; res(); } };
+    if (soundOn) { const u = new SpeechSynthesisUtterance(text); const v = speechSynthesis.getVoices().find(x => /en-IN/.test(x.lang)) || speechSynthesis.getVoices().find(x => /en-GB|en-US/.test(x.lang)); if (v) u.voice = v; u.onend = fin; speechSynthesis.speak(u); setTimeout(fin, dur + 6000); }
+    else setTimeout(fin, dur);
+  });
+}
+
+/* ---------------- Section faces: each flat is a real, typed page section ---------------- */
+const W = 1280, H = 800;
+const serif = (s, w = 300, it = '') => `${it} ${w} ${s}px Fraunces, serif`, sans = (s, w = 400) => `${w} ${s}px Inter, sans-serif`, mono = s => `500 ${s}px "JetBrains Mono", monospace`;
+function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function baseFace(g, label) {
+  const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, '#19181b'); grd.addColorStop(1, '#0c0c0e'); g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  const gl = g.createRadialGradient(W * 0.8, -100, 0, W * 0.8, -100, 900); gl.addColorStop(0, 'rgba(201,162,74,.14)'); gl.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gl; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(201,162,74,.5)'; g.lineWidth = 3; g.strokeRect(18, 18, W - 36, H - 36);
+  g.fillStyle = '#c9a24a'; g.font = mono(20); g.fillText('SECTION · ' + label, 64, 82);
+  g.fillStyle = 'rgba(236,231,221,.35)'; g.textAlign = 'right'; g.fillText('fluidbuddha.com', W - 64, 82); g.textAlign = 'left';
+}
+function btn(g, x, y, text, solid) { g.font = sans(26, 500); const w = g.measureText(text).width + 64; rr(g, x, y, w, 64, 32); if (solid) { g.fillStyle = '#c9a24a'; g.fill(); g.fillStyle = '#1b1407'; } else { g.strokeStyle = 'rgba(236,231,221,.4)'; g.lineWidth = 2; g.stroke(); g.fillStyle = '#ece7dd'; } g.fillText(text, x + 32, y + 41); return w; }
+function box(g, x, y, w, h, title, sub, hot) { rr(g, x, y, w, h, 18); g.fillStyle = hot ? 'rgba(201,162,74,.14)' : 'rgba(255,255,255,.04)'; g.fill(); g.strokeStyle = hot ? 'rgba(201,162,74,.8)' : 'rgba(236,231,221,.22)'; g.lineWidth = 2; g.stroke(); g.fillStyle = '#f4efe6'; g.font = serif(36, 400); g.fillText(title, x + 26, y + 58); if (sub) { g.fillStyle = '#a49d92'; g.font = sans(21); sub.split('\n').forEach((l, i) => g.fillText(l, x + 26, y + 96 + i * 28)); } }
+function arrow(g, x1, y1, x2, y2) { g.strokeStyle = '#c9a24a'; g.lineWidth = 3; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); const a = Math.atan2(y2 - y1, x2 - x1); g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - 16 * Math.cos(a - .45), y2 - 16 * Math.sin(a - .45)); g.lineTo(x2 - 16 * Math.cos(a + .45), y2 - 16 * Math.sin(a + .45)); g.fillStyle = '#c9a24a'; g.fill(); }
+const PAINT = {
+  hero: g => { baseFace(g, 'HERO'); g.fillStyle = '#f4efe6'; g.font = serif(104); g.fillText('Your website,', 64, 300); g.font = serif(104, 300, 'italic'); g.fillStyle = '#e3b65b'; g.fillText('performed live.', 64, 410);
+    g.fillStyle = '#bdb6aa'; g.font = sans(30); g.fillText('A voice-first sales agent that talks, shows and acts on your pages,', 64, 500); g.fillText('answering only from your own content.', 64, 542); const w = btn(g, 64, 610, 'Talk to the site', true); btn(g, 64 + w + 20, 610, 'Book a demo'); },
+  features: g => { baseFace(g, 'FEATURE GRID'); g.fillStyle = '#f4efe6'; g.font = serif(70); g.fillText('Talks. Shows. Acts.', 64, 210);
+    [['Talks', 'Spoken answers in under\na second. English and\nHindi. Interrupt anytime.'], ['Shows', 'Draws diagrams, charts\nand calculators while\nit speaks.'], ['Acts', 'Scrolls, navigates and\nspotlights your pages\nas you talk.']].forEach(([t, s], i) => box(g, 64 + i * 390, 300, 360, 380, t, '\n' + s, i === 1)); },
+  flowchart: g => { baseFace(g, 'FLOWCHART'); g.fillStyle = '#f4efe6'; g.font = serif(66); g.fillText('Live in an afternoon.', 64, 200);
+    box(g, 64, 330, 330, 190, 'One script tag', 'Paste it once.\nNever edit again.', false); arrow(g, 404, 425, 466, 425);
+    box(g, 476, 330, 330, 190, 'We read your site', 'Crawl, ingest, personas,\nbrand design.', false); arrow(g, 816, 425, 878, 425);
+    box(g, 888, 330, 330, 190, 'A live agent', 'Grounded in your pages,\nwith sources.', true);
+    g.fillStyle = '#8e877c'; g.font = mono(18); g.fillText('GENERATED COMPONENT · flowchart · typed JSON, never HTML', 64, 640); },
+  pricing: g => { baseFace(g, 'PRICING TABLE'); g.fillStyle = '#f4efe6'; g.font = serif(66); g.fillText('Priced per conversation.', 64, 200);
+    [['Free', '₹0', '100 conversations'], ['Growth', '₹33,000', '2,000 conversations · ₹17 after'], ['Scale', '₹1,25,000', '10,000 conversations · ₹10 after']].forEach(([n, p, s], i) => {
+      const x = 64 + i * 390, hot = i === 1; rr(g, x, 270, 360, 420, 20); g.fillStyle = hot ? 'rgba(201,162,74,.13)' : 'rgba(255,255,255,.035)'; g.fill(); g.strokeStyle = hot ? '#c9a24a' : 'rgba(236,231,221,.2)'; g.lineWidth = 2; g.stroke();
+      g.fillStyle = '#c9a24a'; g.font = mono(20); g.fillText(n.toUpperCase(), x + 28, 320); g.fillStyle = '#f4efe6'; g.font = serif(64, 400); g.fillText(p, x + 28, 410); g.fillStyle = '#9d968b'; g.font = sans(20); g.fillText('per month', x + 28, 446); g.fillStyle = '#cfc8bc'; g.font = sans(21); g.fillText(s, x + 28, 520); }); },
+  roi: g => { baseFace(g, 'ROI CALCULATOR'); g.fillStyle = '#f4efe6'; g.font = serif(62); g.fillText('What could it be worth?', 64, 200);
+    [['Monthly visitors', '40,000', .55], ['Visitors who talk', '6 %', .3], ['Close rate of engaged', '4 %', .4]].forEach(([l, v, k], i) => { const y = 290 + i * 110; g.fillStyle = '#bdb6aa'; g.font = sans(24); g.fillText(l, 64, y); g.fillStyle = '#f4efe6'; g.textAlign = 'right'; g.fillText(v, 640, y); g.textAlign = 'left'; rr(g, 64, y + 22, 576, 8, 4); g.fillStyle = 'rgba(236,231,221,.15)'; g.fill(); rr(g, 64, y + 22, 576 * k, 8, 4); g.fillStyle = '#c9a24a'; g.fill(); g.beginPath(); g.arc(64 + 576 * k, y + 26, 15, 0, 7); g.fillStyle = '#f4efe6'; g.fill(); });
+    g.fillStyle = '#9d968b'; g.font = sans(22); g.fillText('Added pipeline per month', 760, 320); g.fillStyle = '#e3b65b'; g.font = serif(84, 400); g.fillText('₹6,40,000', 760, 420);
+    g.save(); g.translate(950, 560); g.rotate(-0.12); g.strokeStyle = '#d0644e'; g.lineWidth = 4; g.strokeRect(-150, -36, 300, 72); g.fillStyle = '#d0644e'; g.font = mono(30); g.textAlign = 'center'; g.fillText('ILLUSTRATIVE', 0, 11); g.restore(); },
+  holdout: g => { baseFace(g, 'CHART · HOLDOUT'); g.fillStyle = '#f4efe6'; g.font = serif(62); g.fillText('Measured, not claimed.', 64, 200);
+    g.fillStyle = '#bdb6aa'; g.font = sans(24); g.fillText('1 in 10 visitors never meets Pragya. That is how we measure her.', 64, 258);
+    [['With Pragya', .78, '#c9a24a'], ['Holdout (no agent)', .52, 'rgba(236,231,221,.35)']].forEach(([l, k, c], i) => { const y = 350 + i * 130; g.fillStyle = '#cfc8bc'; g.font = sans(22); g.fillText(l, 64, y); rr(g, 64, y + 18, 900 * k, 54, 10); g.fillStyle = c; g.fill(); });
+    g.fillStyle = '#9d968b'; g.font = mono(22); g.fillText('VERDICT · ', 64, 690); g.fillStyle = '#e3b65b'; g.fillText('COLLECTING', 210, 690); g.fillStyle = '#6f6a63'; g.fillText('  (always-valid mSPRT · safe to check daily)', 380, 690); },
+  diagram: g => { baseFace(g, 'COMPONENT DIAGRAM'); g.fillStyle = '#f4efe6'; g.font = serif(60); g.fillText('One socket. Everything at once.', 64, 196);
+    box(g, 64, 300, 250, 170, 'Browser', '<fluid-buddha>\nShadow DOM'); arrow(g, 324, 385, 388, 385);
+    box(g, 398, 270, 300, 230, 'One WebSocket', 'audio · UI · page\ncommands · state', true); arrow(g, 708, 385, 772, 385);
+    box(g, 782, 300, 210, 170, 'Thinker', 'lean | heavy'); arrow(g, 1002, 385, 1046, 385); box(g, 1052, 300, 170, 170, 'CORTEX', 'your\ncontent');
+    g.fillStyle = '#8e877c'; g.font = mono(19); g.fillText('ack < 1 s · sentence-ahead speech · audio waits for the diagram', 64, 620); },
+  security: g => { baseFace(g, 'SECURITY'); g.fillStyle = '#f4efe6'; g.font = serif(66); g.fillText('Fits a security review.', 64, 200);
+    ['OIDC single sign-on', 'Two-factor (TOTP)', 'Audit log · 1 year', 'SOC 2 control pack', 'Self-hosted edition', 'Bring your own model', 'PII masking', 'Retention & erasure'].forEach((t, i) => { const x = 64 + (i % 2) * 580, y = 270 + Math.floor(i / 2) * 104; rr(g, x, y, 550, 80, 14); g.fillStyle = 'rgba(255,255,255,.04)'; g.fill(); g.strokeStyle = 'rgba(127,227,240,.35)'; g.lineWidth = 2; g.stroke(); g.fillStyle = '#7fe3f0'; g.font = mono(22); g.fillText('✓', x + 26, y + 50); g.fillStyle = '#ece7dd'; g.font = sans(26); g.fillText(t, x + 64, y + 50); }); },
+  install: g => { baseFace(g, 'INSTALL'); g.fillStyle = '#f4efe6'; g.font = serif(66); g.fillText('One line. Any site.', 64, 200);
+    rr(g, 64, 270, 1152, 150, 18); g.fillStyle = '#070708'; g.fill(); g.strokeStyle = 'rgba(201,162,74,.35)'; g.stroke(); g.font = mono(27); g.fillStyle = '#7fe3f0'; g.fillText('<script', 100, 360); g.fillStyle = '#e3b65b'; g.fillText(' src', 230, 360); g.fillStyle = '#cfc8bc'; g.fillText('="…/widget/loader.js" ', 296, 360); g.fillStyle = '#e3b65b'; g.fillText('data-key', 668, 360); g.fillStyle = '#cfc8bc'; g.fillText('="fbk_…" async>', 812, 360);
+    g.fillStyle = '#bdb6aa'; g.font = sans(26); g.fillText('WordPress · Shopify · Webflow · Framer · GTM · React · Vue', 64, 500); g.fillStyle = '#8e877c'; g.font = sans(22); g.fillText('Everything else (voice, knowledge, tours, tests) is set from the console.', 64, 560); },
+  trial: g => { baseFace(g, 'CTA'); g.fillStyle = '#f4efe6'; g.font = serif(96); g.fillText('Start free.', 64, 330); g.font = serif(54, 300, 'italic'); g.fillStyle = '#e3b65b'; g.fillText('100 conversations, on us.', 64, 420); btn(g, 64, 520, 'Start a 14-day trial', true); g.fillStyle = '#8e877c'; g.font = sans(21); g.fillText('Nothing runs until you confirm. Say "haan" if you like.', 64, 650); },
+  languages: g => { baseFace(g, 'TEXT'); g.fillStyle = '#f4efe6'; g.font = serif(100); g.fillText('English.', 64, 300); g.fillStyle = '#e3b65b'; g.font = '400 100px "Tiro Devanagari Hindi", "Nirmala UI", serif'; g.fillText('हिन्दी।', 64, 430); g.fillStyle = '#f4efe6'; g.font = serif(100, 300, 'italic'); g.fillText('Hinglish.', 64, 560); g.fillStyle = '#9d968b'; g.font = sans(24); g.fillText('Answers in Hindi, even when your website is written in English.', 64, 660); },
+  faq: g => { baseFace(g, 'FAQ'); g.fillStyle = '#f4efe6'; g.font = serif(62); g.fillText('Will it make things up?', 64, 210); g.fillStyle = '#cfc8bc'; g.font = sans(28); ['It answers from your content, and shows its sources.', 'Below a confidence threshold, it says it doesn\'t know,', 'and offers to connect the visitor with your team.'].forEach((l, i) => g.fillText(l, 64, 320 + i * 46)); g.fillStyle = '#c9a24a'; g.font = mono(22); g.fillText('grounded · NN % match  →  Sources', 64, 520); },
+};
+
+/* ---------------- Three.js stage ---------------- */
+const canvas = $('#stage');
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); }
+catch (e) { $('#loading').textContent = 'THIS MOCKUP NEEDS WEBGL · OPEN IT IN CHROME OR EDGE WITH HARDWARE ACCELERATION ON'; throw e; }
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); $('#loading').textContent = 'THE 3D VIEW PAUSED · RELOAD TO RESUME'; $('#loading').classList.remove('gone'); });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x040303);
+scene.fog = new THREE.FogExp2(0x060505, 0.042);
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 120);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.7, 0.35, 0.9);
+composer.addPass(bloom); composer.addPass(new OutputPass());
+
+function canvasTex(w, h, paint, repeat) { const c = document.createElement('canvas'); c.width = w; c.height = h; paint(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); } return t; }
+const rand = (s => () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296))(9);
+
+// stage floor: matte black boards, scuffs, chalk tape marks
+const floorTex = canvasTex(1024, 1024, (g, w, h) => {
+  g.fillStyle = '#1c1a18'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 16; i++) { g.fillStyle = `rgba(${i % 2 ? 255 : 0},${i % 2 ? 255 : 0},${i % 2 ? 255 : 0},.018)`; g.fillRect(0, i * 64, w, 64); g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, i * 64, w, 1.5); }
+  for (let i = 0; i < 900; i++) { g.strokeStyle = `rgba(220,210,190,${rand() * .05})`; g.lineWidth = rand() * 2; g.beginPath(); const x = rand() * w, y = rand() * h; g.moveTo(x, y); g.lineTo(x + (rand() - .5) * 60, y + (rand() - .5) * 8); g.stroke(); }
+  g.strokeStyle = 'rgba(235,230,220,.55)'; g.lineWidth = 7;
+  [[300, 500], [700, 380], [520, 760]].forEach(([x, y]) => { g.beginPath(); g.moveTo(x - 22, y - 22); g.lineTo(x + 22, y + 22); g.moveTo(x + 22, y - 22); g.lineTo(x - 22, y + 22); g.stroke(); });
+  g.beginPath(); g.moveTo(100, 900); g.lineTo(160, 900); g.lineTo(160, 840); g.stroke(); g.beginPath(); g.moveTo(924, 900); g.lineTo(864, 900); g.lineTo(864, 840); g.stroke();
+  g.fillStyle = 'rgba(235,230,220,.4)'; g.font = '600 26px Inter'; g.fillText('CS', 500, 520);
+}, [2, 2]);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 30), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.82, metalness: 0.05 }));
+floor.rotation.x = -Math.PI / 2; floor.position.z = -2; floor.receiveShadow = true; scene.add(floor);
+
+// black masking: back curtain + legs
+const curtainTex = canvasTex(1024, 256, (g, w, h) => { for (let x = 0; x < w; x++) { const v = 0.5 + 0.5 * Math.sin(x / 9) * Math.sin(x / 23 + 1); g.fillStyle = `rgb(${18 + v * 22},${12 + v * 14},${11 + v * 12})`; g.fillRect(x, 0, 1, h); } }, [3, 1]);
+const curtainMat = new THREE.MeshStandardMaterial({ map: curtainTex, roughness: 1 });
+const back = new THREE.Mesh(new THREE.PlaneGeometry(44, 22), curtainMat); back.position.set(0, 9, -9); back.receiveShadow = true; scene.add(back);
+[-10, 10].forEach(x => { const leg = new THREE.Mesh(new THREE.PlaneGeometry(14, 22), curtainMat); leg.position.set(x, 9, -2); leg.rotation.y = x < 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(leg); });
+const teaser = new THREE.Mesh(new THREE.PlaneGeometry(30, 3), curtainMat); teaser.position.set(0, 9.7, 4.6); scene.add(teaser);
+
+// fly tower: steel battens and grid
+const steel = new THREE.MeshStandardMaterial({ color: 0x3a3a3e, metalness: 0.8, roughness: 0.4 });
+const BATTEN_Z = [-1, -3.2, -5.4];
+BATTEN_Z.forEach(z => { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 18, 8), steel); b.rotation.z = Math.PI / 2; b.position.set(0, 13.4, z); scene.add(b); });
+for (let x = -8; x <= 8; x += 2) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 9), steel); r.position.set(x, 15, -3); scene.add(r); }
+
+// seat backs in the stalls (row M silhouettes)
+const seatGeo = new THREE.BoxGeometry(0.56, 0.78, 0.12); const seatMat = new THREE.MeshStandardMaterial({ color: 0x0b0a0a, roughness: 0.9 });
+const seats = new THREE.InstancedMesh(seatGeo, seatMat, 26); const m4 = new THREE.Matrix4();
+for (let i = 0; i < 26; i++) { const row = i < 13 ? 0 : 1, k = i % 13; m4.makeTranslation((k - 6) * 0.64 + row * 0.32, 0.72 - row * 0.12, 10.8 + row * 1.0); seats.setMatrixAt(i, m4); }
+scene.add(seats);
+
+// lights
+const ambient = new THREE.AmbientLight(0x2a2018, 0.7); scene.add(ambient);
+const hemi = new THREE.HemisphereLight(0xc9a24a, 0x000000, 0.0); scene.add(hemi);
+const moon = new THREE.DirectionalLight(0x8494b0, 0.22); moon.position.set(2, 16, 10); scene.add(moon);
+const wash = new THREE.SpotLight(0xc9a24a, 0, 40, 0.75, 0.85, 0); wash.position.set(0, 15, 8); wash.target.position.set(0, 0, -1.5); scene.add(wash, wash.target);
+
+// the ghost light
+const ghost = new THREE.Group(); ghost.position.set(0, 0, 1.8); scene.add(ghost);
+const blackMetal = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, metalness: 0.7, roughness: 0.45 });
+const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.06, 24), blackMetal); base.position.y = 0.03; base.castShadow = true; ghost.add(base);
+const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.55, 10), blackMetal); pole.position.y = 0.8; pole.castShadow = true; ghost.add(pole);
+const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 2.6, 1.2) });
+const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.075, 24, 16), bulbMat); bulb.position.y = 1.68; ghost.add(bulb);
+const cage = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 1), new THREE.MeshBasicMaterial({ color: 0x2a2622, wireframe: true })); cage.position.y = 1.68; ghost.add(cage);
+const ghostLight = new THREE.PointLight(0xf2b35e, 10, 26, 1.1); ghostLight.position.y = 1.68; ghostLight.castShadow = true; ghostLight.shadow.mapSize.set(1024, 1024); ghostLight.shadow.bias = -0.002; ghost.add(ghostLight);
+
+// volumetric light shafts (followspots in haze)
+const coneMat = col => new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  uniforms: { uColor: { value: new THREE.Color(col) }, uOpacity: { value: 0 } },
+  vertexShader: `varying float vY; varying vec3 vN; varying vec3 vV; void main(){ vY = uv.y; vN = normalize(normalMatrix*normal); vec4 mv = modelViewMatrix*vec4(position,1.); vV = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }`,
+  fragmentShader: `uniform vec3 uColor; uniform float uOpacity; varying float vY; varying vec3 vN; varying vec3 vV; void main(){ float edge = pow(abs(dot(vN, vV)), 1.6); float a = uOpacity * edge * (0.18 + 0.82*vY) * smoothstep(0.0, 0.25, vY); gl_FragColor = vec4(uColor * a, a); }`,
+});
+const SLOTS = [
+  { p: new THREE.Vector3(-4.15, 2.45, -0.9), ry: 0.22 },
+  { p: new THREE.Vector3(0, 2.75, -1.8), ry: 0 },
+  { p: new THREE.Vector3(4.15, 2.45, -0.9), ry: -0.22 },
+];
+const spots = SLOTS.map(s => {
+  const sp = new THREE.SpotLight(0xf2b35e, 0, 30, 0.32, 0.6, 0); sp.position.set(s.p.x * 0.6, 14, s.p.z + 7); sp.target.position.copy(s.p); scene.add(sp, sp.target);
+  const len = sp.position.distanceTo(s.p) + 0.5;
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(2.1, len, 40, 1, true), coneMat(0xf2b35e));
+  cone.position.copy(sp.position).lerp(s.p, 0.5); cone.lookAt(s.p); cone.rotateX(-Math.PI / 2);
+  scene.add(cone); return { sp, cone, level: 0, target: 0 };
+});
+
+// the flats: twelve typed sections hanging dark in the fly loft
+const FLAT_W = 3.5, FLAT_H = 2.19;
+const ORDER = ['hero', 'features', 'flowchart', 'pricing', 'roi', 'holdout', 'diagram', 'security', 'install', 'trial', 'languages', 'faq'];
+const flats = {};
+const ropeMat = new THREE.LineBasicMaterial({ color: 0x4a3e32, transparent: true, opacity: 0.4 });
+function buildFlats() {
+  ORDER.forEach((id, i) => {
+    const row = Math.floor(i / 4), col = i % 4;
+    const home = new THREE.Vector3(-5.4 + col * 3.6, 10.7 + row * 0.45, BATTEN_Z[row]);
+    const grp = new THREE.Group(); grp.position.copy(home);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(FLAT_W + 0.1, FLAT_H + 0.1, 0.06), new THREE.MeshStandardMaterial({ color: 0x141416, metalness: 0.5, roughness: 0.5 }));
+    frame.castShadow = true; grp.add(frame);
+    const tex = canvasTex(W, H, g => PAINT[id](g));
+    const faceMat = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.11, 0.11, 0.11) });
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(FLAT_W, FLAT_H), faceMat); face.position.z = 0.032; grp.add(face);
+    scene.add(grp);
+    const rope = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]), ropeMat);
+    scene.add(rope);
+    flats[id] = { id, grp, faceMat, rope, home, light: 0.11, lightTarget: 0.11, anim: null, slot: -1 };
+  });
+}
+const easeOutBack = t => { const c1 = 1.25, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const easeInOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function flyIn(id, slot) {
+  const f = flats[id], s = SLOTS[slot]; f.slot = slot;
+  f.anim = { from: f.grp.position.clone(), fromRy: f.grp.rotation.y, to: s.p.clone(), toRy: s.ry, t0: performance.now(), dur: 2300, mode: 'in' };
+}
+function flyOut(id) {
+  const f = flats[id]; if (f.slot >= 0) spots[f.slot].target = 0; f.slot = -1;
+  f.anim = { from: f.grp.position.clone(), fromRy: f.grp.rotation.y, to: f.home.clone(), toRy: 0, t0: performance.now(), dur: 1900, mode: 'out' };
+}
+function updateFlat(f, now) {
+  const a = f.anim;
+  if (a) {
+    const t = Math.min(1, (now - a.t0) / a.dur), p = f.grp.position;
+    if (a.mode === 'in') { // track along the batten in the loft, then fly down on the lines with a soft overshoot
+      const k1 = easeInOut(Math.min(1, t / 0.32)), k2 = t < 0.32 ? 0 : easeOutBack((t - 0.32) / 0.68);
+      p.x = a.from.x + (a.to.x - a.from.x) * k1; p.z = a.from.z + (a.to.z - a.from.z) * k1; p.y = a.from.y + (a.to.y - a.from.y) * k2;
+      f.grp.rotation.y = a.fromRy + (a.toRy - a.fromRy) * k1;
+      if (t >= 1) { f.anim = null; spots[f.slot].target = 1; }
+    } else {
+      const k1 = easeInOut(Math.min(1, t / 0.6)), k2 = t < 0.6 ? 0 : easeInOut((t - 0.6) / 0.4);
+      p.y = a.from.y + (a.to.y - a.from.y) * k1; p.x = a.from.x + (a.to.x - a.from.x) * k2; p.z = a.from.z + (a.to.z - a.from.z) * k2;
+      f.grp.rotation.y = a.fromRy * (1 - k2);
+      if (t > 0.5) f.lightTarget = 0.11;
+      if (t >= 1) f.anim = null;
+    }
+  }
+  f.light += (f.lightTarget - f.light) * 0.06;
+  f.faceMat.color.setScalar(f.light);
+  // lines up to the grid
+  const pos = f.rope.geometry.attributes.position, p = f.grp.position, c = Math.cos(f.grp.rotation.y), s = Math.sin(f.grp.rotation.y);
+  const hx = FLAT_W * 0.42;
+  [[-hx], [hx]].forEach(([dx], i) => { pos.setXYZ(i * 2, p.x + dx * c, p.y + FLAT_H / 2 + 0.05, p.z - dx * s); pos.setXYZ(i * 2 + 1, p.x + dx * c, 13.4, p.z - dx * s); });
+  pos.needsUpdate = true;
+}
+
+/* ---------------- camera direction ---------------- */
+const SHOTS = {
+  stalls: { p: new THREE.Vector3(0, 1.75, 12.9), l: new THREE.Vector3(0, 0.55, 0) },
+  loft: { p: new THREE.Vector3(0, 4.6, 9.2), l: new THREE.Vector3(0, 10.6, -3.2) },
+  stage: { p: new THREE.Vector3(0, 2.95, 11.8), l: new THREE.Vector3(0, 2.35, -1) },
+  cue: { p: new THREE.Vector3(0.5, 2.15, 12.6), l: new THREE.Vector3(0.2, 2.65, -1.2) },
+};
+const cam = { p: SHOTS.stalls.p.clone(), l: SHOTS.stalls.l.clone(), tp: SHOTS.stalls.p.clone(), tl: SHOTS.stalls.l.clone(), k: 1.2 };
+let sectionShot = 'stalls', override = null;
+function shot(name, k = 1.2) { cam.tp.copy(SHOTS[name].p); cam.tl.copy(SHOTS[name].l); cam.k = k; }
+function applySectionShot() { if (!override) shot(sectionShot, 0.9); }
+const narrow = () => innerWidth < 760;
+
+/* ---------------- gels (persona lighting plots) ---------------- */
+const GELS = {
+  house: { name: 'house gold', wash: 0xc9a24a, spot: 0xf2b35e, hemi: 0.0, fog: 0x060505, washI: 0 },
+  cto: { name: 'work-light cyan', wash: 0xdff7ff, spot: 0x7fe3f0, hemi: 0.12, fog: 0x04090b, washI: 2.6 },
+  cfo: { name: 'ledger green + steel', wash: 0xa9b4bd, spot: 0x8fb59c, hemi: 0.10, fog: 0x050806, washI: 2.4 },
+  founder: { name: 'footlight amber', wash: 0xe8873a, spot: 0xffa45c, hemi: 0.10, fog: 0x0a0604, washI: 2.6 },
+};
+let gel = { wash: new THREE.Color(GELS.house.wash), spot: new THREE.Color(GELS.house.spot), fog: new THREE.Color(GELS.house.fog), washI: 0, hemi: 0 };
+let gelTarget = GELS.house;
+let fogPulse = 0;
+
+/* ---------------- render loop ---------------- */
+const t0 = performance.now(); let last = t0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; const el = (now - t0) / 1000;
+  // ghost light breathes on a 5.5 s cycle; flares when Pragya speaks
+  const speaking = document.body.classList.contains('speaking');
+  const breath = 0.78 + 0.22 * Math.sin(el * 2 * Math.PI / 5.5);
+  ghostLight.intensity = (speaking ? 15 : 10) * breath; bulbMat.color.setRGB(4 * breath, 2.6 * breath, 1.2 * breath);
+  // gel crossfade
+  const gk = 1 - Math.exp(-dt * 7);
+  gel.wash.lerp(new THREE.Color(gelTarget.wash), gk); gel.spot.lerp(new THREE.Color(gelTarget.spot), gk); gel.fog.lerp(new THREE.Color(gelTarget.fog), gk);
+  gel.washI += (gelTarget.washI - gel.washI) * gk; gel.hemi += (gelTarget.hemi - gel.hemi) * gk;
+  wash.color.copy(gel.wash); wash.intensity = gel.washI; hemi.color.copy(gel.spot); hemi.intensity = gel.hemi; scene.fog.color.copy(gel.fog);
+  fogPulse *= Math.exp(-dt * 1.6); scene.fog.density = 0.042 + fogPulse * 0.05;
+  spots.forEach(s => { s.level += (s.target - s.level) * (1 - Math.exp(-dt * 4)); s.sp.intensity = s.level * 9; s.sp.color.copy(gel.spot); s.cone.material.uniforms.uOpacity.value = s.level * 0.13; s.cone.material.uniforms.uColor.value.copy(gel.spot); });
+  Object.values(flats).forEach(f => updateFlat(f, now));
+  // camera: slow 12-second push-in from row M while the house settles
+  const ck = 1 - Math.exp(-dt * cam.k);
+  const push = sectionShot === 'stalls' && !override ? Math.min(1, el / 14) * 1.3 : 0;
+  const tp = cam.tp.clone(); tp.z -= push;
+  cam.p.lerp(tp, ck); cam.l.lerp(cam.tl, ck);
+  const sway = 0.03; camera.position.set(cam.p.x + Math.sin(el * 0.3) * sway, cam.p.y + Math.sin(el * 0.23) * sway * 0.6, cam.p.z); camera.lookAt(cam.l);
+  composer.render();
+  positionTag();
+}
+function resize() { camera.aspect = innerWidth / innerHeight; camera.fov = narrow() ? 52 : 38; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); }
+addEventListener('resize', resize);
+
+/* grounding tag pinned to the centre flat (the prompt book's brass tag) */
+let tagOn = false; const tagEl = $('#tag'), v3 = new THREE.Vector3();
+function positionTag() {
+  const centre = Object.values(flats).find(f => f.slot === 1 && !f.anim);
+  if (!tagOn || !centre) { tagEl.classList.remove('on'); return; }
+  v3.set(FLAT_W * 0.32, -FLAT_H / 2 - 0.02, 0.05).applyMatrix4(centre.grp.matrixWorld).project(camera);
+  tagEl.style.left = ((v3.x + 1) / 2 * innerWidth) + 'px'; tagEl.style.top = ((1 - v3.y) / 2 * innerHeight) + 'px'; tagEl.classList.add('on');
+}
+
+/* ---------------- the show ---------------- */
+const QA = {
+  what: { q: 'So, what is FluidBuddha?', set: ['features', 'hero', 'flowchart'], pct: 88, src: 'How it works',
+    a: ['FluidBuddha turns your website into a live sales agent that talks, shows and acts.', 'Add one script tag, and I answer from your own content, out loud, with sources.'] },
+  pricing: { q: 'Show me pricing.', set: ['roi', 'pricing', 'holdout'], pct: 91, src: 'Pricing',
+    a: ['Growth is ₹33,000 a month for 2,000 conversations.', 'And you can prove the lift yourself, with a built-in holdout.'] },
+  tour: { q: 'How do I install it?', set: ['flowchart', 'install', 'trial'], pct: 86, src: 'Install',
+    a: ['It is one line of code on any site.', 'I read your pages, and you are live in an afternoon.'] },
+  dare: { q: 'Can you integrate with my coffee machine?', set: null,
+    a: ["That isn't in my material, and I'd rather not guess.", 'I can bring in someone from the team.'] },
+};
+const PERSONA = {
+  cto: { q: "I'm the CTO.", set: ['security', 'diagram', 'install'], line: 'Then let me show you the machinery: one socket, your content, your identity provider.' },
+  cfo: { q: "I'm the CFO.", set: ['roi', 'pricing', 'holdout'], line: "Then let's talk numbers: cost per conversation, and how you'd prove the lift." },
+  founder: { q: "I'm a founder.", set: ['flowchart', 'trial', 'languages'], line: "Then here's the short version: one line of code, live this afternoon." },
+};
+let busy = false;
+const onStage = () => Object.values(flats).filter(f => f.slot >= 0 || (f.anim && f.anim.mode === 'in'));
+function setBusy(b) { document.body.classList.add('staged'); busy = b; document.querySelectorAll('.cues, .gels, #prompt').forEach(e => e.classList.toggle('busy', b)); }
+async function strike() { const cur = onStage(); if (!cur.length) return; tagOn = false; cur.forEach(f => flyOut(f.id)); await sleep(1300); }
+async function flyInSet(set, crane = true) {
+  if (crane) { override = true; shot('loft', 1.4); await sleep(1900); }
+  set.forEach((id, i) => setTimeout(() => { flats[id].lightTarget = 1; }, i * 260));
+  await sleep(1000);
+  set.forEach((id, i) => setTimeout(() => flyIn(id, i), i * 260));
+  await sleep(700); override = null; shot(sectionShot === 'stalls' ? 'stage' : sectionShot, 1.0);
+  await sleep(2300 + 520); // "the line waits for the set"
+}
+async function ask(key, typed) {
+  if (busy) return; setBusy(true);
+  const A = { ...QA[key] }; if (typed) A.q = typed;
+  $('#adlib').classList.remove('on');
+  caption('“' + A.q + '”', 'visitor'); setState('listening'); await sleep(650); setState('thinking'); await sleep(420);
+  const ack = say('Standby…');
+  if (sectionShot === 'stalls') { document.getElementById('places').scrollIntoView({ behavior: 'smooth' }); await sleep(900); }
+  await ack; setState('thinking');
+  await strike();
+  if (!A.set) { // off-book: the cue light stays dark, the book stays shut
+    override = true; shot('stage', 1); await sleep(900);
+    Object.values(flats).forEach(f => { f.lightTarget = 0.2; setTimeout(() => f.lightTarget = 0.03, 260); setTimeout(() => f.lightTarget = 0.11, 2600); });
+    await say(A.a[0]); $('#adlib').classList.add('on'); await say(A.a[1]); override = null;
+  } else {
+    await flyInSet(A.set);
+    $('#tag').innerHTML = `grounded · ${A.pct}% match<small>prompt book → ${A.src} ↗</small>`; tagOn = true;
+    await say(A.a[0]); await say(A.a[1]);
+  }
+  setState('dormant'); setBusy(false);
+}
+async function cue7(p) {
+  if (busy) return; setBusy(true);
+  const P = PERSONA[p]; document.querySelectorAll('.gel').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  caption('“' + P.q + '”', 'visitor'); setState('listening'); await sleep(600);
+  // the lamp thunk: haze rolls in and the whole gel plot crossfades
+  const fl = $('#flash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go'); fogPulse = 1;
+  gelTarget = GELS[p]; $('#cueboard').innerHTML = `LX <b>Q7</b> · GO · plot: <b>${GELS[p].name}</b>`;
+  setState('thinking'); await strike();
+  await flyInSet(P.set, false);
+  tagOn = false; await say(P.line); setState('dormant'); setBusy(false);
+}
+document.querySelectorAll('.cue').forEach(b => b.onclick = () => ask(b.dataset.k));
+document.querySelectorAll('.gel').forEach(b => b.onclick = () => cue7(b.dataset.p));
+$('#prompt').onsubmit = e => { e.preventDefault(); const v = $('#q').value.trim() || 'So, what is FluidBuddha?'; $('#q').value = ''; const t = v.toLowerCase();
+  const k = /price|pric|cost|plan/.test(t) ? 'pricing' : /install|script|setup|wordpress|shopify/.test(t) ? 'tour' : /what|how|explain|fluid/.test(t) ? 'what' : 'dare'; ask(k, v); };
+
+/* scroll → shot */
+const secShot = { house: 'stalls', places: 'stage', cue7: 'cue' };
+new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { sectionShot = secShot[e.target.id]; applySectionShot();
+  document.querySelectorAll('.programme a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id)); } }), { rootMargin: '-48% 0px -48% 0px' })
+  .observe(document.getElementById('house'));
+['places', 'cue7'].forEach(id => new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { sectionShot = secShot[id]; applySectionShot();
+  document.querySelectorAll('.programme a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + id)); } }), { rootMargin: '-48% 0px -48% 0px' }).observe(document.getElementById(id)));
+
+/* boot: wait for fonts so the flats paint with the brand type */
+await Promise.all([document.fonts.load('300 40px Fraunces'), document.fonts.load('italic 300 40px Fraunces'), document.fonts.load('400 20px Inter'), document.fonts.load('500 20px "JetBrains Mono"')]).catch(() => {});
+buildFlats(); resize(); requestAnimationFrame(frame);
+$('#loading').classList.add('gone');
+setTimeout(() => { $('#h1').classList.add('in'); $('#askline').classList.add('in'); $('#footlights').classList.add('in'); }, 200);
+// proactive opener after ~6 s, as the ghost light flares
+setTimeout(async () => { if (!busy && sectionShot === 'stalls') { await say("Welcome. There's nothing on stage yet. Ask, and I'll build the page for you."); setState('dormant'); } }, 6500);
+window.__fb = { flats, spots, shot, ask, cue7 };
+</script>
+</body>
+</html>

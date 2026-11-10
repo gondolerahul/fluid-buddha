@@ -21,6 +21,7 @@ from app.analytics.usage import TurnMetrics, record_turn
 from app.db import session_scope
 from app.experiments.apply import session_settings
 from app.design.system import ensure_design
+from app.experience.manifest import ensure_manifest
 from app.live import visitor as live
 from app.memory import store as memory
 from app.orchestrator.profile import ensure_profile, profile_for
@@ -111,6 +112,7 @@ async def chat(req: ChatRequest, request: Request) -> dict:
     # Load the site's agent profile (name, personas, sitemap) for the prompts.
     await ensure_profile(resolved.site_key)
     await ensure_design(resolved.site_key)  # themes Extreme pages (WS9)
+    await ensure_manifest(resolved.site_key)  # the site's approved components (P0-7)
     await ensure_extras(resolved.site_key)  # the site's actions + components (M2-8)
     current_site.set(resolved.site_key)     # its own model provider, if any (M3-4)
 

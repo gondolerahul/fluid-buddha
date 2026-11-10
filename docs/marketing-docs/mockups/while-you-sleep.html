@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluidBuddha — While you were asleep (Option 2 mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fraunces:ital,opsz,wght@1,9..144,300&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #eef0f3; --muted: #9aa0a8; --gold: #d8a93a; --gold2: #f3cf7a; --line: rgba(255,255,255,.1); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #05070d; color: var(--ink); font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .hi { font-family: 'Noto Sans Devanagari', Inter, sans-serif; }
+  em.s { font-family: Fraunces, serif; font-style: italic; font-weight: 300; color: var(--gold2); }
+  .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 60; display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; background: linear-gradient(180deg, rgba(5,7,13,.8), rgba(5,7,13,0)); }
+  .brand { font-weight: 600; font-size: 17px; } .brand i { font-style: normal; color: var(--gold); }
+  .nav .links { display: flex; gap: 26px; font-size: 14px; color: var(--muted); } .nav .links a { color: inherit; text-decoration: none; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 99px; padding: 11px 20px; font: 500 14px Inter, sans-serif; cursor: pointer; text-decoration: none; border: 1px solid transparent; }
+  .btn.gold { background: var(--gold); color: #1a1306; } .btn.ghost { border-color: rgba(255,255,255,.22); color: var(--ink); }
+  .tag { position: fixed; right: 32px; bottom: 18px; z-index: 60; font: 10.5px 'JetBrains Mono', monospace; letter-spacing: .08em; color: #5e636b; text-transform: uppercase; } .tag a { color: inherit; }
+
+  #track { height: 1150vh; position: relative; }
+  .stage { position: sticky; top: 0; height: 100vh; overflow: hidden; perspective: 1500px; }
+  #sky { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .layer { position: absolute; inset: 0; will-change: opacity, transform; pointer-events: none; }
+  .layer * { pointer-events: auto; }
+
+  /* clock */
+  .clock { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); z-index: 40; text-align: center; }
+  .clock b { display: block; font: 300 clamp(30px, 3.6vw, 54px)/1 Inter; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  .clock span { font: 500 11px 'JetBrains Mono'; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+
+  /* A: the office at night */
+  .office { position: absolute; inset: 0; transform-origin: 50% 36%; }
+  .win { position: absolute; left: 50%; top: 17%; width: 66vw; height: 52vh; margin-left: -32vw; border-radius: 6px; box-shadow: 0 0 0 100vmax #090a0e; border: 10px solid #15171c; }
+  .win::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 10px; margin-left: -5px; background: #15171c; }
+  .win::after { content: ''; position: absolute; inset: 0; background: linear-gradient(120deg, rgba(255,255,255,.06), transparent 40%); }
+  .desk { position: absolute; left: -10%; right: -10%; bottom: 0; height: 30vh; background: linear-gradient(180deg, #241a14, #120d0a); border-top: 2px solid #3a2a20; }
+  .lampglow { position: absolute; left: 18vw; bottom: 16vh; width: 46vw; height: 40vh; background: radial-gradient(ellipse at 30% 60%, rgba(255,196,120,.38), transparent 62%); mix-blend-mode: screen; }
+  .lamp { position: absolute; left: 20vw; bottom: 24vh; width: 90px; height: 160px; }
+  .lamp .sh { position: absolute; left: 0; top: 0; width: 90px; height: 54px; background: linear-gradient(#3b3530, #1f1b18); clip-path: polygon(22% 0, 78% 0, 100% 100%, 0 100%); }
+  .lamp .bulb { position: absolute; left: 30px; top: 46px; width: 30px; height: 14px; border-radius: 50%; background: #ffd9a0; box-shadow: 0 0 30px #ffc57a; }
+  .lamp .pole { position: absolute; left: 43px; top: 54px; width: 4px; height: 96px; background: #2a2622; } .lamp .ft { position: absolute; left: 20px; bottom: 0; width: 50px; height: 10px; border-radius: 50%; background: #2a2622; }
+  .laptop { position: absolute; left: 50%; bottom: 23vh; width: 420px; height: 0; margin-left: -210px; transform-style: preserve-3d; transform: rotateX(14deg); }
+  .lap-base { position: absolute; left: 0; bottom: -260px; width: 420px; height: 260px; background: linear-gradient(#b9bcc2, #8d9097); border-radius: 10px; transform-origin: top; transform: rotateX(88deg); }
+  .lap-lid { position: absolute; left: 0; bottom: 0; width: 420px; height: 270px; transform-origin: bottom; transform-style: preserve-3d; border-radius: 12px 12px 4px 4px; background: #1a1c20; padding: 12px; backface-visibility: hidden; }
+  .lap-lid .scr { width: 100%; height: 100%; border-radius: 4px; background: #0f1116; overflow: hidden; color: #e8eaee; font: 11px Inter; padding: 14px; }
+  .lap-lid .back { position: absolute; inset: 0; border-radius: 12px; background: linear-gradient(#a7aab0, #7e8188); transform: rotateY(180deg); backface-visibility: hidden; }
+  .scr .row { display: flex; justify-content: space-between; padding: 8px 10px; margin-top: 8px; border-radius: 8px; background: #181b22; }
+  .scr .live { display: inline-flex; align-items: center; gap: 6px; color: #7fd18b; } .scr .live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #7fd18b; }
+  .screenglow { position: absolute; left: 50%; bottom: 22vh; width: 600px; height: 340px; margin-left: -300px; background: radial-gradient(ellipse at 50% 70%, rgba(140,170,255,.22), transparent 65%); mix-blend-mode: screen; }
+  .dark { position: absolute; inset: 0; background: #000; opacity: 0; }
+
+  /* C: the phone */
+  .phone-wrap { position: absolute; left: 31%; top: 54%; transform-style: preserve-3d; }
+  .phone { position: absolute; width: 300px; height: 612px; margin-left: -150px; margin-top: -306px; border-radius: 46px; background: #0d0e11; padding: 11px; box-shadow: 0 0 0 2px #2a2c31, 0 60px 120px rgba(0,0,0,.7), 0 0 120px rgba(255,190,120,.18); transform-style: preserve-3d; }
+  .phone .scr { position: relative; width: 100%; height: 100%; border-radius: 36px; overflow: hidden; background: #f7f4ef; }
+  .notch { position: absolute; left: 50%; top: 8px; width: 92px; height: 26px; margin-left: -46px; border-radius: 99px; background: #0d0e11; z-index: 5; }
+  .m-site { position: absolute; inset: 0; color: #2b2520; }
+  .m-nav { height: 70px; padding: 38px 18px 0; display: flex; justify-content: space-between; font: 700 13px Inter; color: #2f4a3a; } .m-nav span { font-weight: 500; color: #8a7f74; }
+  .m-hero { margin: 8px 14px; height: 210px; border-radius: 18px; background: linear-gradient(160deg, #e9e1d4, #d5c7b2); position: relative; overflow: hidden; }
+  .m-hero::before { content: ''; position: absolute; left: 14px; right: 14px; bottom: 16px; height: 74px; border-radius: 8px; background: linear-gradient(90deg, #f6f1ea 0 30%, #2f4a3a 30% 34%, #f6f1ea 34% 64%, #2f4a3a 64% 68%, #f6f1ea 68%); box-shadow: 0 -40px 0 -18px #c9b89d; }
+  .m-hero b { position: absolute; left: 16px; top: 16px; font: 700 21px/1.15 Inter; color: #2b2520; width: 70%; }
+  .m-sec { margin: 14px 18px; font: 12px/1.5 Inter; color: #6d6359; }
+  .fb { position: absolute; left: 0; right: 0; bottom: 0; height: 88%; border-radius: 26px 26px 0 0; background: linear-gradient(175deg, #232227, #121215); color: #eef0f3; transform: translateY(100%); display: flex; flex-direction: column; }
+  .fb-head { display: flex; align-items: center; gap: 10px; padding: 16px 16px 12px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .fb-head .av { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 38% 34%, #fff2c6, #d8a93a 50%, #6b4d12); box-shadow: 0 0 18px rgba(216,169,58,.5); }
+  .fb-head b { display: block; font: 600 13px Inter; } .fb-head small { font: 10px 'JetBrains Mono'; color: var(--gold); letter-spacing: .12em; text-transform: uppercase; }
+  .fb-body { flex: 1; padding: 12px; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; overflow: hidden; }
+  .bub { flex-shrink: 0; font: 12.5px/1.45 Inter; padding: 9px 11px; border-radius: 14px; max-width: 90%; opacity: 0; }
+  .bub.me { align-self: flex-end; background: #2f333b; color: #e3e6ea; border-bottom-right-radius: 4px; }
+  .bub.ai { align-self: flex-start; background: rgba(216,169,58,.12); border: 1px solid rgba(216,169,58,.26); border-bottom-left-radius: 4px; }
+  .bub .src { display: inline-block; margin-top: 7px; font: 9.5px 'JetBrains Mono'; color: var(--gold); border: 1px solid rgba(216,169,58,.35); border-radius: 99px; padding: 2px 7px; }
+  .bub .voice { display: flex; align-items: center; gap: 2px; height: 14px; margin-bottom: 5px; } .bub .voice i { width: 2px; border-radius: 2px; background: #9aa3ad; }
+  .opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .opts div { border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 7px 6px; text-align: center; font: 10px Inter; color: #b9bec6; } .opts b { display: block; font: 600 13px Inter; color: #fff; margin-top: 2px; }
+  .opts div.hot { border-color: rgba(216,169,58,.6); background: rgba(216,169,58,.08); }
+  .quote { position: relative; background: #1d1c21; border: 1px solid rgba(216,169,58,.4); border-radius: 12px; padding: 10px 11px; font: 11.5px Inter; }
+  .quote b { display: block; font: 600 12.5px Inter; } .quote .yes { margin-top: 8px; display: inline-block; background: var(--gold); color: #1a1306; font: 600 11px Inter; padding: 5px 11px; border-radius: 99px; }
+  .quote .ok { position: absolute; right: 10px; top: 10px; font: 600 10px 'JetBrains Mono'; color: #7fd18b; border: 1px solid #7fd18b; border-radius: 4px; padding: 2px 6px; opacity: 0; }
+  .fb-foot { height: 64px; border-top: 1px solid rgba(255,255,255,.07); display: flex; align-items: center; justify-content: center; }
+  .fb-foot .mic { width: 44px; height: 44px; border-radius: 50%; background: var(--gold); position: relative; }
+  .fb-foot .mic::after { content: ''; position: absolute; inset: -7px; border-radius: 50%; border: 2px solid rgba(216,169,58,.6); opacity: var(--ring, 0); transform: scale(calc(1 + var(--ring, 0) * .3)); }
+  .roomglow { position: absolute; left: 10%; top: 20%; width: 50%; height: 70%; background: radial-gradient(ellipse, rgba(255,180,110,.16), transparent 65%); }
+
+  /* D: the laptop at 2:14 AM */
+  .lap2 { position: absolute; left: 30%; top: 52%; width: 560px; height: 362px; margin-left: -280px; margin-top: -181px; border-radius: 16px; background: #15171b; padding: 14px; box-shadow: 0 0 0 2px #2a2c31, 0 50px 110px rgba(0,0,0,.7), 0 0 140px rgba(120,150,255,.14); transform-style: preserve-3d; }
+  .lap2 .scr { width: 100%; height: 100%; border-radius: 6px; background: #f7f4ef; overflow: hidden; position: relative; }
+  .lap2 .chin { position: absolute; left: -40px; right: -40px; bottom: -22px; height: 22px; border-radius: 0 0 18px 18px; background: linear-gradient(#a9acb2, #74777e); }
+  .lap2 .site2 { position: absolute; inset: 0; padding: 18px 22px; color: #2b2520; font: 12px Inter; }
+  .lap2 .site2 h5 { font: 700 22px/1.2 Inter; width: 55%; margin-top: 22px; } .lap2 .site2 .bar2 { display: flex; justify-content: space-between; font: 700 13px Inter; color: #2f4a3a; }
+  .lap2 .panel2 { position: absolute; right: 14px; bottom: 14px; width: 270px; border-radius: 16px; background: linear-gradient(175deg, #232227, #121215); color: #eef0f3; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 20px 50px rgba(0,0,0,.4); }
+
+  /* E: morning */
+  .morning { position: absolute; inset: 0; }
+  .sunwash { position: absolute; inset: 0; background: radial-gradient(ellipse 70% 60% at 80% 20%, rgba(255,210,150,.35), transparent 60%); mix-blend-mode: screen; }
+  .table { position: absolute; left: -10%; right: -10%; bottom: 0; height: 38vh; background: linear-gradient(180deg, #c8a582, #8e6c4f); transform: perspective(900px) rotateX(48deg); transform-origin: bottom; }
+  .phone2-wrap { position: absolute; left: 32%; top: 60%; transform-style: preserve-3d; }
+  .phone2 { position: absolute; width: 260px; height: 530px; margin-left: -130px; margin-top: -265px; border-radius: 40px; background: #0d0e11; padding: 10px; transform: rotateX(48deg) rotateZ(-12deg); box-shadow: 0 50px 60px rgba(70,40,10,.45); }
+  .phone2 .scr { width: 100%; height: 100%; border-radius: 32px; background: linear-gradient(180deg, #1c2233, #39304a 55%, #e6a26e); overflow: hidden; padding: 46px 12px 12px; }
+  .phone2 .t { text-align: center; color: #fff; font: 200 54px Inter; letter-spacing: -.03em; } .phone2 .d { text-align: center; color: #e2e6ee; font: 12px Inter; margin-bottom: 16px; }
+  .note { background: rgba(245,246,248,.86); backdrop-filter: blur(10px); color: #111; border-radius: 16px; padding: 10px 12px; margin-bottom: 8px; font: 11.5px/1.4 Inter; opacity: 0; transform: translateY(-14px); }
+  .note .h { display: flex; justify-content: space-between; font: 600 10.5px Inter; color: #555; margin-bottom: 3px; } .note .h i { font-style: normal; font-weight: 400; color: #888; }
+  .note b { font-weight: 700; }
+
+  /* scene copy */
+  .copy { position: absolute; z-index: 30; opacity: 0; will-change: opacity, transform; pointer-events: none; }
+  .copy * { pointer-events: auto; }
+  .c-center { left: 0; right: 0; text-align: center; }
+  .c-center h1, .c-center h2, .c-center p { text-shadow: 0 2px 30px rgba(0,0,0,.85); }
+  .c-center h1 { font: 600 clamp(38px, 5.6vw, 88px)/1.02 Inter; letter-spacing: -.045em; }
+  .c-center h2 { font: 600 clamp(28px, 3.6vw, 54px)/1.08 Inter; letter-spacing: -.035em; }
+  .c-center p { margin: 16px auto 0; max-width: 36em; font: 300 clamp(15px, 1.25vw, 19px)/1.55 Inter; color: #c3c8d0; }
+  .c-center .cta { margin-top: 24px; display: flex; gap: 12px; justify-content: center; }
+  .c-side { right: 5vw; top: 50%; width: min(420px, 34vw); padding: 26px 28px; border-radius: 20px; background: rgba(8,10,16,.5); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.08); }
+  .c-side .time { font: 500 11px 'JetBrains Mono'; letter-spacing: .16em; color: var(--gold); text-transform: uppercase; margin-bottom: 14px; }
+  .c-side h3 { font: 600 clamp(24px, 2.4vw, 36px)/1.12 Inter; letter-spacing: -.03em; margin-bottom: 18px; }
+  .c-side ol { list-style: none; display: grid; gap: 12px; } .c-side li { font: 400 clamp(15px, 1.25vw, 19px)/1.4 Inter; color: #6f7680; transition: color .3s; } .c-side li.on { color: #eef0f3; } .c-side li.on::before { content: '→ '; color: var(--gold); }
+  .scrollhint { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 30; font: 11px 'JetBrains Mono'; letter-spacing: .18em; color: #8a909a; text-transform: uppercase; }
+  .stats { display: flex; gap: 14px; justify-content: center; margin-top: 26px; flex-wrap: wrap; }
+  .stat { min-width: 150px; border: 1px solid rgba(255,255,255,.16); background: rgba(10,12,18,.45); backdrop-filter: blur(10px); border-radius: 16px; padding: 14px 18px; }
+  .stat b { display: block; font: 600 30px Inter; letter-spacing: -.02em; } .stat span { font: 12px Inter; color: #c3c8d0; }
+
+  /* regular sections */
+  section.after { position: relative; padding: 130px 6vw; max-width: 1240px; margin: 0 auto; }
+  .eyebrow { font: 500 11px 'JetBrains Mono'; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); }
+  section.after h2 { margin-top: 14px; font: 600 clamp(32px, 4vw, 58px)/1.05 Inter; letter-spacing: -.04em; max-width: 16em; }
+  section.after .lead { margin-top: 14px; font: 300 18px/1.55 Inter; color: #b0b6be; max-width: 38em; }
+  .steps { margin-top: 56px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .step { border-radius: 22px; padding: 28px; min-height: 260px; background: linear-gradient(170deg, #121625, #0a0c14); border: 1px solid var(--line); }
+  .step .n { font: 600 13px 'JetBrains Mono'; color: var(--gold); } .step h3 { margin: 12px 0 8px; font: 600 23px/1.2 Inter; letter-spacing: -.02em; } .step p { color: #a6acb4; font-size: 15px; line-height: 1.55; }
+  .code { margin-top: 20px; font: 12px/1.6 'JetBrains Mono'; background: #04050a; border: 1px solid #23262c; border-radius: 12px; padding: 14px; color: #c9ced6; } .code b { color: #7fe3f0; font-weight: 400; } .code i { color: var(--gold2); font-style: normal; }
+  .gets { margin-top: 56px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .get { border-radius: 18px; padding: 24px; border: 1px solid var(--line); background: #0a0c14; }
+  .get .ic { width: 38px; height: 38px; border-radius: 10px; background: rgba(216,169,58,.12); color: var(--gold2); display: grid; place-items: center; font-size: 18px; margin-bottom: 14px; }
+  .get h3 { font: 600 18px Inter; } .get p { margin-top: 6px; color: #a0a6ae; font-size: 14.5px; line-height: 1.55; }
+  .plans2 { margin-top: 56px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .pl { border-radius: 20px; padding: 26px 22px; border: 1px solid var(--line); background: #0a0c14; } .pl.hot { border-color: rgba(216,169,58,.6); background: linear-gradient(170deg, rgba(216,169,58,.1), #0a0c14 60%); }
+  .pl small { font: 500 11px 'JetBrains Mono'; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); } .pl b { display: block; margin: 12px 0 2px; font: 600 32px Inter; letter-spacing: -.03em; } .pl .per { font: 13px Inter; color: #8a9098; }
+  .pl ul { list-style: none; margin: 18px 0 22px; display: grid; gap: 8px; font: 14px Inter; color: #c2c7ce; } .pl li::before { content: '✓  '; color: var(--gold); }
+  .final { text-align: center; padding: 140px 6vw 160px; background: radial-gradient(ellipse at 50% 100%, rgba(243,178,122,.18), transparent 60%); }
+  .final h2 { margin: 0 auto; font: 600 clamp(36px, 5vw, 72px)/1.03 Inter; letter-spacing: -.045em; max-width: 14em; } .final .cta { margin-top: 30px; display: flex; gap: 12px; justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 26px 6vw; color: #5f646c; font-size: 12px; text-align: center; line-height: 1.6; }
+  @media (max-width: 900px) { .steps, .gets, .plans2 { grid-template-columns: 1fr; } .c-side { left: 6vw; right: 6vw; width: auto; top: 76%; } .phone-wrap, .phone2-wrap, .lap2 { left: 50%; } .nav .links { display: none; } }
+</style>
+</head>
+<body>
+<nav class="nav"><div class="brand">Fluid<i>Buddha</i></div><div class="links"><a href="#how">How it works</a><a href="#gets">What you get</a><a href="#price">Pricing</a></div><a class="btn gold" href="#price">Start free</a></nav>
+<div class="tag"><a href="index.html">Option 2 · While you were asleep · mockup</a></div>
+
+<div id="track">
+ <div class="stage">
+  <canvas id="sky"></canvas>
+  <div class="clock" id="clock"><b id="clockT">10:30 PM</b><span id="clockD">Tuesday night</span></div>
+
+  <!-- A: the office at night -->
+  <div class="layer office" id="office">
+    <div class="win"></div>
+    <div class="desk"></div>
+    <div class="lampglow" id="lampglow"></div>
+    <div class="lamp"><div class="sh"></div><div class="bulb" id="bulb"></div><div class="pole"></div><div class="ft"></div></div>
+    <div class="screenglow" id="screenglow"></div>
+    <div class="laptop" id="laptop"><div class="lap-base"></div>
+      <div class="lap-lid" id="lid"><div class="scr"><b style="font-size:12px">Greenleaf Interiors · today</b><div class="row"><span>Visitors on your website</span><span class="live">23 now</span></div><div class="row"><span>Sales team</span><span style="color:#e0675a">Offline after 7 PM</span></div><div class="row"><span>Enquiry form</span><span>Replies next working day</span></div></div><div class="back"></div></div></div>
+    <div class="dark" id="dark"></div>
+  </div>
+
+  <!-- C: Ananya's phone -->
+  <div class="layer" id="sceneC">
+    <div class="roomglow"></div>
+    <div class="phone-wrap" id="phoneWrap"><div class="phone" id="phone"><div class="scr"><div class="notch"></div>
+      <div class="m-site"><div class="m-nav">Greenleaf<span>☰</span></div><div class="m-hero"><b>Modular kitchens that fit your home</b></div><div class="m-sec">Designed in Bengaluru · 10-year warranty · Free design consultation</div></div>
+      <div class="fb" id="fb">
+        <div class="fb-head"><div class="av"></div><div><b>Pragya · Greenleaf</b><small id="fbState">listening</small></div></div>
+        <div class="fb-body">
+          <div class="bub me" id="b1"><div class="voice" id="voice"></div><span id="b1t"></span></div>
+          <div class="bub ai hi" id="b2">अच्छा सवाल! एक सेकंड, मैं दिखाती हूँ।</div>
+          <div class="bub ai hi" id="b3"><span id="b3t"></span>
+            <div class="opts" id="opts"><div>Essential<b>₹2.8L</b></div><div class="hot">Premium<b>₹3.6L</b></div><div>Luxe<b>₹4.5L</b></div></div>
+            <span class="src">Source · Kitchen pricing page</span></div>
+          <div class="bub me" id="b4">Quote email kar do please</div>
+          <div class="bub ai" id="b5" style="padding:0;background:none;border:0;max-width:100%"><div class="quote"><span class="ok" id="qok">Sent ✓</span><b>Send a detailed quote?</b>Premium 3BHK kitchen · to your email<br><span class="yes hi">हाँ, भेजिए</span></div></div>
+          <div class="bub me" id="b6">Haan</div>
+          <div class="bub ai hi" id="b7">भेज दिया! कोई और सवाल हो तो पूछिए।</div>
+        </div>
+        <div class="fb-foot"><div class="mic" id="mic"></div></div>
+      </div></div></div></div>
+  </div>
+
+  <!-- D: 2:14 AM, someone else -->
+  <div class="layer" id="sceneD">
+    <div class="lap2" id="lap2"><div class="scr"><div class="site2"><div class="bar2">Greenleaf Interiors<span style="font-weight:500;color:#8a7f74">Kitchens · Wardrobes · Contact</span></div><h5>Modular kitchens that fit your home</h5></div>
+      <div class="panel2"><div class="fb-head" style="padding:0 0 8px"><div class="av"></div><div><b>Pragya · Greenleaf</b><small>speaking</small></div></div>
+        <div class="bub me" id="d1" style="opacity:1">Do you also sell second-hand cars?</div>
+        <div class="bub ai" id="d2">I don't have that information on this website. I can ask the team to get back to you.</div></div>
+    </div><div class="chin"></div></div>
+  </div>
+
+  <!-- E: morning -->
+  <div class="layer morning" id="sceneE">
+    <div class="sunwash"></div><div class="table"></div>
+    <div class="phone2-wrap"><div class="phone2"><div class="scr"><div class="t">8:00</div><div class="d">Wednesday, 8 January</div>
+      <div class="note" id="n1"><div class="h">SLACK · #sales<i>now</i></div>🔥 <b>Hot lead: Ananya</b> · score 82<br>Premium 3BHK kitchen · quote sent at 12:06 AM</div>
+      <div class="note" id="n2"><div class="h">FLUIDBUDDHA<i>8:00 AM</i></div><b>Last night on your website</b><br>14 conversations · 3 quotes sent · 1 design visit booked</div>
+      <div class="note" id="n3"><div class="h">FLUIDBUDDHA<i>8:00 AM</i></div>Most asked: <b>"Kitchen price for a 3BHK"</b><br>Not on your site yet: <b>EMI options</b></div>
+    </div></div></div>
+  </div>
+
+  <!-- copy -->
+  <div class="copy c-center" id="cA" style="top:24vh"><h1>You've gone home.<br><em class="s">Your customers haven't.</em></h1><p>Most people look at your website in the evening, after work. That's exactly when nobody is there to answer them.</p></div>
+  <div class="copy c-center" id="cB" style="top:24vh"><h2>11:58 PM. Across town, Ananya is planning her new kitchen.</h2><p>She has one question, and she's not going to fill in a form and wait until tomorrow.</p></div>
+  <div class="copy c-side" id="cC"><div class="time">11:58 PM · On your website</div><h3>Your website answers her. Right now. In Hindi.</h3>
+    <ol><li id="c1">She asks by voice, in Hinglish.</li><li id="c2">It answers in Hindi, from your own price list.</li><li id="c3">It shows three options side by side.</li><li id="c4">She asks for a quote. It sends one, after she says "haan".</li></ol></div>
+  <div class="copy c-side" id="cD"><div class="time">2:14 AM · Another visitor</div><h3>Not every question is about your business.</h3>
+    <ol><li class="on">If the answer isn't on your website, it says so.</li><li class="on">It doesn't guess.</li><li class="on">It offers your team instead.</li></ol></div>
+  <div class="copy c-side" id="cE"><div class="time">8:00 AM · Your phone</div><h3>You wake up to customers, not missed chances.</h3>
+    <ol><li class="on">The hot lead is already in Slack.</li><li class="on">A summary of the night is waiting.</li><li class="on">You know what customers asked, and what your site is missing.</li></ol></div>
+  <div class="copy c-center" id="cF" style="top:22vh"><h2>And it does this every night.<br><em class="s">And every day.</em></h2>
+    <div class="stats"><div class="stat"><b>&lt; 1 sec</b><span>to the first spoken reply</span></div><div class="stat"><b>24 × 7</b><span>answering, in English and Hindi</span></div><div class="stat"><b>Your website</b><span>is its only source, and it shows it</span></div></div>
+    <div class="cta" style="margin-top:28px"><a class="btn gold" href="#price">Start free</a><a class="btn ghost" href="#how">See how it works</a></div></div>
+  <div class="scrollhint" id="hint">Scroll to live through the night ↓</div>
+ </div>
+</div>
+
+<section class="after" id="how">
+  <div class="eyebrow">How it works</div>
+  <h2>Set it up this afternoon. It works tonight.</h2>
+  <p class="lead">No new website and no developers for weeks. FluidBuddha learns from the website you already have.</p>
+  <div class="steps">
+    <div class="step"><div class="n">01</div><h3>Add one line of code</h3><p>Paste it once on WordPress, Shopify, Webflow or any site.</p><div class="code">&lt;<b>script</b> <i>src</i>="…/loader.js"<br>&nbsp;&nbsp;<i>data-key</i>="fbk_…" async&gt;&lt;/<b>script</b>&gt;</div></div>
+    <div class="step"><div class="n">02</div><h3>It learns your business</h3><p>It reads your pages, price lists and PDFs, and answers only from them, with sources.</p></div>
+    <div class="step"><div class="n">03</div><h3>Your website answers, day and night</h3><p>By voice or text, in English and Hindi. Hot leads go straight to your team.</p></div>
+  </div>
+</section>
+<section class="after" id="gets">
+  <div class="eyebrow">What you get</div>
+  <h2>A salesperson who never logs off.</h2>
+  <div class="gets">
+    <div class="get"><div class="ic">🎙</div><h3>Instant answers, out loud</h3><p>Voice or text, English or Hindi. The first reply comes in under a second.</p></div>
+    <div class="get"><div class="ic">✓</div><h3>Answers only from your website</h3><p>It uses only your website's content and shows the source. If it doesn't know, it says so.</p></div>
+    <div class="get"><div class="ic">📊</div><h3>It shows, not just tells</h3><p>Price comparisons, charts and calculators appear while it talks.</p></div>
+    <div class="get"><div class="ic">📅</div><h3>Quotes, bookings, payments</h3><p>It sends quotes and books visits, but only after the visitor says yes.</p></div>
+    <div class="get"><div class="ic">⚡</div><h3>Leads to your team, instantly</h3><p>Slack alerts, your CRM, and live takeover when you're online.</p></div>
+    <div class="get"><div class="ic">☀</div><h3>A morning summary</h3><p>What people asked, what's missing from your site, and how many became leads.</p></div>
+  </div>
+</section>
+<section class="after" id="price">
+  <div class="eyebrow">Pricing</div>
+  <h2>Pay for conversations, not seats.</h2>
+  <div class="plans2">
+    <div class="pl"><small>Free</small><b>₹0</b><span class="per">per month</span><ul><li>100 conversations</li><li>Voice and text</li><li>Lead capture</li></ul><a class="btn ghost" href="#">Start free</a></div>
+    <div class="pl hot"><small>Growth</small><b>₹33,000</b><span class="per">per month</span><ul><li>2,000 conversations</li><li>₹17 per extra conversation</li><li>Quotes, bookings, Slack</li></ul><a class="btn gold" href="#">Start a trial</a></div>
+    <div class="pl"><small>Scale</small><b>₹1,25,000</b><span class="per">per month</span><ul><li>10,000 conversations</li><li>₹10 per extra conversation</li><li>A/B tests and lift reports</li></ul><a class="btn ghost" href="#">Talk to us</a></div>
+    <div class="pl"><small>Enterprise</small><b>Custom</b><span class="per">volume pricing</span><ul><li>Unlimited conversations</li><li>SSO, audit log, self-hosting</li><li>Your own AI model</li></ul><a class="btn ghost" href="#">Contact sales</a></div>
+  </div>
+</section>
+<section class="final"><h2>Tonight, someone will visit your website with a question. <em class="s">Let it answer.</em></h2><div class="cta"><a class="btn gold" href="#">Start free · 100 conversations</a><a class="btn ghost" href="#">Talk to this website</a></div></section>
+<footer>Mockup. "Greenleaf Interiors", Ananya and all overnight numbers are illustrative examples. FluidBuddha plans and prices are real.</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const seg = (p, a, b) => clamp((p - a) / (b - a));
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const lerp = (a, b, t) => a + (b - a) * t;
+function kf(p, f) { if (p <= f[0][0]) return f[0][1]; for (let i = 1; i < f.length; i++) if (p <= f[i][0]) { const [p0, v0] = f[i - 1], [p1, v1] = f[i], t = ease((p - p0) / (p1 - p0)); return Array.isArray(v0) ? v0.map((x, j) => lerp(x, v1[j], t)) : lerp(v0, v1, t); } return f[f.length - 1][1]; }
+const mix = (a, b, t) => a.map((x, i) => Math.round(lerp(x, b[i], t)));
+const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+
+/* ---------------- the city: procedural skyline, lit windows, stars, moon and sunrise ---------------- */
+const cv = $('#sky'), g = cv.getContext('2d'); let W, H, layers = [], stars = [], target;
+function rnd(s) { return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+function build() {
+  const dpr = Math.min(devicePixelRatio || 1, 2); W = cv.width = innerWidth * dpr; H = cv.height = innerHeight * dpr; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  const r = rnd(7); layers = [];
+  [[0.22, 0.34, 26, 0.35], [0.30, 0.46, 40, 0.6], [0.38, 0.6, 60, 1]].forEach(([minH, maxH, bw, depth], li) => {
+    const bs = []; let x = -W * 0.3;
+    while (x < W * 1.3) { const w = (bw + r() * bw * 1.4) * dpr, h = H * (minH + r() * (maxH - minH));
+      const cols = Math.max(2, Math.floor(w / (9 * dpr))), rows = Math.floor(h / (13 * dpr)); const wins = [];
+      for (let c = 0; c < cols; c++) for (let rr = 0; rr < rows; rr++) if (r() < 0.4) wins.push({ c, r: rr, off: r(), warm: r() < 0.75 });
+      bs.push({ x, w, h, cols, rows, wins, tone: 10 + li * 6 + r() * 6 }); x += w + (r() * 8 - 2) * dpr; }
+    layers.push({ bs, depth });
+  });
+  stars = Array.from({ length: 220 }, () => ({ x: r() * W, y: r() * H * 0.6, s: r() * 1.4 * dpr + .3, tw: r() * 6 }));
+  // the window we fly into: a lit window in the front layer, near the centre
+  const front = layers[2].bs; const b = front.reduce((best, bb) => Math.abs(bb.x + bb.w / 2 - W * 0.56) < Math.abs(best.x + best.w / 2 - W * 0.56) ? bb : best, front[0]);
+  const wv = b.wins.find(w => w.r === Math.floor(b.rows * 0.55)) || b.wins[0]; wv.off = 2; wv.warm = true; wv.hero = true;
+  const cw = b.w / b.cols; target = { x: b.x + wv.c * cw + cw * 0.5, y: H - b.h + wv.r * 13 * dpr + 13 * dpr * 0.45 + 4 * dpr };
+}
+build(); addEventListener('resize', () => { build(); render(); });
+
+function drawSky(p, time) {
+  // time of day: 0 night … 1 morning
+  const dawn = kf(p, [[0.62, 0], [0.70, 0.55], [0.78, 1]]);
+  const night = 1 - dawn;
+  const top = dawn < .55 ? mix([6, 9, 20], [58, 78, 120], dawn / .55) : mix([58, 78, 120], [126, 170, 214], (dawn - .55) / .45);
+  const bot = dawn < .55 ? mix([22, 30, 58], [243, 170, 112], dawn / .55) : mix([243, 170, 112], [253, 222, 184], (dawn - .55) / .45);
+  // camera: fly into Ananya's window between 11:40 and 11:58
+  const zoom = p < 0.255 ? kf(p, [[0.13, 1], [0.21, 2.4], [0.245, 18]]) : kf(p, [[0.255, 1.35], [0.62, 1.15], [0.75, 1]]), fade = kf(p, [[0.225, 0], [0.25, 1]]);
+  const blur = kf(p, [[0.25, 0], [0.27, 1], [0.62, 1], [0.66, 0]]);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  const sg = g.createLinearGradient(0, 0, 0, H); sg.addColorStop(0, rgb(top)); sg.addColorStop(1, rgb(bot)); g.fillStyle = sg; g.fillRect(0, 0, W, H);
+  g.save();
+  const tx = lerp(W / 2, target.x, seg(zoom, 1, 2) * 0 + (zoom > 1 ? 1 : 0)), ty = lerp(H / 2, target.y, zoom > 1 ? 1 : 0);
+  g.translate(W / 2, H / 2); g.scale(zoom, zoom); g.translate(-(zoom > 1 ? lerp(W / 2, target.x, clamp((zoom - 1) / 2)) : W / 2), -(zoom > 1 ? lerp(H / 2, target.y, clamp((zoom - 1) / 2)) : H / 2));
+  // stars and moon
+  stars.forEach(s => { g.globalAlpha = night * (0.5 + 0.5 * Math.sin(time / 900 + s.tw)) * 0.9; g.fillStyle = '#fff'; g.fillRect(s.x, s.y, s.s, s.s); });
+  g.globalAlpha = night; g.fillStyle = '#f4efe1'; g.beginPath(); g.arc(W * 0.82, H * 0.16, H * 0.035, 0, 7); g.fill();
+  g.globalAlpha = night * 0.25; g.beginPath(); g.arc(W * 0.82, H * 0.16, H * 0.07, 0, 7); g.fill();
+  // the sun rises
+  const sunY = H * kf(p, [[0.64, 0.98], [0.82, 0.5]]); g.globalAlpha = dawn;
+  const sun = g.createRadialGradient(W * 0.78, sunY, 0, W * 0.78, sunY, H * 0.32); sun.addColorStop(0, 'rgba(255,236,190,1)'); sun.addColorStop(0.12, 'rgba(255,214,150,.9)'); sun.addColorStop(1, 'rgba(255,190,120,0)');
+  g.fillStyle = sun; g.fillRect(0, 0, W, H); g.globalAlpha = 1;
+  // buildings (out of focus while we are indoors with the phone and laptop)
+  g.filter = blur > 0.05 ? `blur(${Math.round(blur * 7 * (W / innerWidth))}px)` : 'none';
+  const nightT = seg(p, 0, 0.62); // windows switch off as the night goes on
+  layers.forEach((L, li) => {
+    const par = (li - 1) * 14 * Math.sin(time / 9000);
+    L.bs.forEach(b => {
+      const tone = mix([b.tone, b.tone + 2, b.tone + 8], [70 + li * 18, 62 + li * 14, 60 + li * 10], dawn * (0.4 + li * 0.2));
+      g.fillStyle = rgb(tone); g.fillRect(b.x + par, H - b.h, b.w, b.h);
+      const cw = b.w / b.cols;
+      b.wins.forEach(w => {
+        const lit = w.hero ? 1 : (nightT < w.off * 0.9 + 0.1 ? 1 : 0) * night;
+        if (lit < .05) return;
+        g.globalAlpha = lit * (w.hero && zoom > 1.5 ? 1 : 0.85);
+        g.fillStyle = w.warm ? (w.hero ? '#ffd79a' : '#f2c27a') : '#9fc1ff';
+        g.fillRect(b.x + par + w.c * cw + cw * 0.22, H - b.h + w.r * 13 * (W / innerWidth) + 4, cw * 0.56, 7 * (W / innerWidth));
+      });
+      g.globalAlpha = 1;
+    });
+  });
+  g.filter = 'none';
+  g.restore();
+  // the window fills the screen, then we are inside with her
+  if (fade > 0) { g.fillStyle = `rgba(255,214,160,${fade * (1 - seg(p, 0.25, 0.28))})`; g.fillRect(0, 0, W, H); }
+  if (blur > 0) { g.fillStyle = `rgba(6,7,12,${blur * 0.72})`; g.fillRect(0, 0, W, H); }
+  // a soft horizon glow from the city at night
+  const hg = g.createLinearGradient(0, H * 0.55, 0, H); hg.addColorStop(0, 'rgba(255,170,90,0)'); hg.addColorStop(1, `rgba(255,170,90,${0.12 * night})`); g.fillStyle = hg; g.fillRect(0, 0, W, H);
+}
+
+/* clock */
+function clockAt(p) {
+  const mins = kf(p, [[0, 22 * 60 + 30], [0.12, 22 * 60 + 41], [0.16, 23 * 60 + 40], [0.24, 23 * 60 + 58], [0.48, 24 * 60 + 6], [0.52, 26 * 60 + 14], [0.62, 26 * 60 + 15], [0.66, 31 * 60 + 40], [0.74, 32 * 60], [1, 32 * 60 + 2]]);
+  const m = Math.floor(mins) % (24 * 60), h = Math.floor(m / 60), mm = m % 60, ap = h < 12 ? 'AM' : 'PM', h12 = ((h + 11) % 12) + 1;
+  return `${h12}:${String(mm).padStart(2, '0')} ${ap}`;
+}
+
+/* voice waveform bars in the visitor's bubble */
+$('#voice').innerHTML = Array.from({ length: 26 }, () => '<i></i>').join('');
+const vbars = [...$('#voice').children];
+
+const track = $('#track');
+function progress() { const r = track.getBoundingClientRect(); return clamp(-r.top / (r.height - innerHeight)); }
+const vis = (el, o, extra = '') => { el.style.opacity = o; el.style.visibility = o < .01 ? 'hidden' : 'visible'; if (extra) el.style.transform = extra; };
+const Q = '3BHK ke liye modular kitchen ka kitna kharcha aayega?';
+const A = 'आपके 3BHK किचन के लिए, हमारी प्राइस लिस्ट के हिसाब से ₹2.8 से ₹4.5 लाख तक लगता है। ये तीन विकल्प हैं:';
+
+function render(time = performance.now()) {
+  const p = progress();
+  drawSky(p, time);
+  $('#clockT').textContent = clockAt(p);
+  $('#clockD').textContent = p < 0.25 ? 'Tuesday night' : p < 0.64 ? 'Wednesday, after midnight' : 'Wednesday morning';
+  $('#clock').style.opacity = kf(p, [[0.94, 1], [0.97, 0]]);
+
+  /* A: the office goes dark, then we push out through the window */
+  const officeO = kf(p, [[0.12, 1], [0.16, 0]]);
+  vis($('#office'), officeO, `scale(${kf(p, [[0.11, 1], [0.17, 2.6]])})`);
+  const lidA = kf(p, [[0.04, -12], [0.10, -92]]);
+  $('#lid').style.transform = `rotateX(${lidA}deg)`;
+  $('#screenglow').style.opacity = kf(p, [[0.06, 1], [0.10, 0]]);
+  const lamp = kf(p, [[0.10, 1], [0.105, 0]]); $('#lampglow').style.opacity = lamp; $('#bulb').style.opacity = 0.25 + 0.75 * lamp;
+  $('#dark').style.opacity = kf(p, [[0.10, 0], [0.11, 0.35]]);
+  vis($('#cA'), kf(p, [[0, 1], [0.09, 1], [0.12, 0]]), `translateY(${kf(p, [[0.09, 0], [0.12, -20]])}px)`);
+  vis($('#cB'), kf(p, [[0.15, 0], [0.17, 1], [0.22, 1], [0.24, 0]]));
+
+  /* C: Ananya's phone */
+  const cO = kf(p, [[0.26, 0], [0.28, 1], [0.48, 1], [0.505, 0]]);
+  vis($('#sceneC'), cO);
+  $('#phoneWrap').style.transform = `translateY(${kf(p, [[0.26, 60], [0.30, 0]])}px) rotateY(${kf(p, [[0.26, 26], [0.32, 14], [0.48, 8]]) + Math.sin(time / 2200) * 2}deg) rotateX(${4 + Math.sin(time / 2700) * 1.5}deg)`;
+  vis($('#cC'), kf(p, [[0.28, 0], [0.30, 1], [0.48, 1], [0.50, 0]]), `translateY(calc(-50% + ${kf(p, [[0.28, 16], [0.30, 0]])}px))`);
+  [['c1', .30], ['c2', .345], ['c3', .375], ['c4', .42]].forEach(([id, a]) => $('#' + id).classList.toggle('on', p >= a));
+  $('#fb').style.transform = `translateY(${kf(p, [[0.285, 100], [0.30, 0]])}%)`;
+  const listening = p > 0.30 && p < 0.33;
+  $('#mic').style.setProperty('--ring', listening ? 0.6 + 0.4 * Math.sin(time / 110) : 0);
+  $('#fbState').textContent = p < 0.33 ? 'listening' : p < 0.34 ? 'thinking' : 'speaking';
+  const bub = (id, a) => { const o = kf(p, [[a, 0], [a + 0.006, 1]]); const el = $('#' + id); el.style.opacity = o; el.style.display = o < .01 ? 'none' : ''; };
+  bub('b1', 0.302); $('#b1t').textContent = Q.slice(0, Math.round(Q.length * seg(p, 0.305, 0.33)));
+  vbars.forEach((b, i) => b.style.height = (listening ? 3 + Math.abs(Math.sin(time / 120 + i * 0.7)) * 11 : 3) + 'px');
+  bub('b2', 0.335); bub('b3', 0.35); $('#b3t').textContent = A.slice(0, Math.round(A.length * seg(p, 0.352, 0.375)));
+  $('#opts').style.opacity = kf(p, [[0.375, 0], [0.382, 1]]);
+  bub('b4', 0.40); bub('b5', 0.41); bub('b6', 0.425);
+  const ok = kf(p, [[0.43, 0], [0.436, 1]]); $('#qok').style.opacity = ok; $('#qok').style.transform = `scale(${1.5 - .5 * ok}) rotate(8deg)`;
+  bub('b7', 0.44);
+
+  /* D: 2:14 AM */
+  vis($('#sceneD'), kf(p, [[0.505, 0], [0.525, 1], [0.60, 1], [0.625, 0]]));
+  $('#lap2').style.transform = `rotateY(${kf(p, [[0.50, 22], [0.56, 12], [0.62, 6]])}deg) rotateX(5deg) translateZ(${kf(p, [[0.50, -120], [0.54, 0]])}px)`;
+  const d2 = kf(p, [[0.545, 0], [0.555, 1]]); $('#d2').style.opacity = d2;
+  vis($('#cD'), kf(p, [[0.525, 0], [0.545, 1], [0.60, 1], [0.62, 0]]), 'translateY(-50%)');
+
+  /* E: morning */
+  vis($('#sceneE'), kf(p, [[0.70, 0], [0.74, 1], [0.88, 1], [0.91, 0]]));
+  [['n1', 0.76], ['n2', 0.79], ['n3', 0.82]].forEach(([id, a]) => { const o = kf(p, [[a, 0], [a + 0.012, 1]]); const el = $('#' + id); el.style.opacity = o; el.style.transform = `translateY(${(1 - o) * -14}px)`; });
+  vis($('#cE'), kf(p, [[0.75, 0], [0.77, 1], [0.88, 1], [0.90, 0]]), 'translateY(-50%)');
+
+  /* F: every night */
+  vis($('#cF'), kf(p, [[0.91, 0], [0.94, 1]]), `translateY(${kf(p, [[0.91, 20], [0.94, 0]])}px)`);
+  $('#hint').style.opacity = p < 0.02 ? 1 : 0;
+}
+function tick(t) { render(t); requestAnimationFrame(tick); }
+addEventListener('scroll', () => render(), { passive: true });
+render(); requestAnimationFrame(tick);
+</script>
+</body>
+</html>

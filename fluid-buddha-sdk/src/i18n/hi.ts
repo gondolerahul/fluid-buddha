@@ -11,6 +11,7 @@ export const hi: Record<StringKey, string> = {
   talkTo: '{name} से बात करें',
   messageTo: '{name} को संदेश',
   close: 'बंद करें',
+  prefs: 'आपकी पसंद',
   send: 'भेजें',
   toggleVoice: 'आवाज़ चालू या बंद करें',
   voiceTitle: 'आवाज़ से बातचीत करें',

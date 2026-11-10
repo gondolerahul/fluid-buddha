@@ -1,0 +1,23 @@
+{
+  "name": "@fluidbuddha/next",
+  "version": "0.1.0",
+  "description": "Serve FluidBuddha composed pages (server-rendered, per visitor goal) from your Next.js site.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/types/packages/next/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/packages/next/src/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "keywords": ["fluidbuddha", "nextjs", "ssr", "generative-ui"],
+  "license": "MIT"
+}

@@ -63,6 +63,8 @@ _RULES: list[tuple[object, str, str]] = [
     # Deleting a website, or rotating its widget key (breaks live installs).
     ({"DELETE"}, r"^/tenant/websites/[^/]+$", "admin"),
     ({"POST"}, r"^/tenant/websites/[^/]+/rotate-key$", "admin"),
+    # Generative experience (P0-7): Editors draft manifests; Admins approve them.
+    ({"POST"}, r"^/tenant/websites/[^/]+/manifest/versions/[^/]+/approve$", "admin"),
 ]
 _COMPILED = [(m, re.compile(p), r) for m, p, r in _RULES]
 

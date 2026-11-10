@@ -57,6 +57,13 @@ class ConversationState:
     # the agent can react when the visitor plays with one. Capped (last N).
     components: dict[str, dict] = field(default_factory=dict)
     max_components: int = 8
+    # The composed page on screen (P2-4): the plan the agent rendered, or the
+    # served page the widget reported (``plan_id`` in STATE/sync). Patches edit it.
+    page_plan: Optional[dict] = None
+    page_plan_id: Optional[str] = None
+    # The visitor's taste (Phase 3): from the widget (hello / sync) and from what
+    # they say ("keep it short"). Raw dict form of ``app.experience.taste.Taste``.
+    taste: Optional[dict] = None
     # Placeholders for the visitor's PII in this conversation (WS8): the model
     # and the history only ever see the masked text.
     pii: PiiVault = field(default_factory=PiiVault)
@@ -101,6 +108,7 @@ class ConversationState:
             "turns_since_probe": self.turns_since_probe,
             "persona_locked": self.persona_locked,
             "components": self.components,
+            "page_plan": self.page_plan, "page_plan_id": self.page_plan_id, "taste": self.taste,
             "pii": self.pii.to_dict(),
             "live_seen": self.live_seen,
             "lang": self.lang, "lang_seen": self.lang_seen, "lang_pref": self.lang_pref,
@@ -122,6 +130,9 @@ class ConversationState:
         state.turns_since_probe = int(data.get("turns_since_probe") or 0)
         state.persona_locked = bool(data.get("persona_locked"))
         state.components = dict(data.get("components") or {})
+        state.page_plan = data.get("page_plan") if isinstance(data.get("page_plan"), dict) else None
+        state.page_plan_id = data.get("page_plan_id") or None
+        state.taste = data.get("taste") if isinstance(data.get("taste"), dict) else None
         state.pii = PiiVault.from_dict(data.get("pii") or {})
         state.live_seen = int(data.get("live_seen") or 0)
         state.lang = "hi" if data.get("lang") == "hi" else "en"

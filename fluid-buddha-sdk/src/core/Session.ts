@@ -3,6 +3,7 @@
 // and player; drives DOM commands through the HostBridge; surfaces UI updates
 // through callbacks.
 
+import { setTaste, TasteRaw } from './taste';
 import { AudioCapture } from '../audio/AudioCapture';
 import { AudioPlayer } from '../audio/AudioPlayer';
 import { JitterBuffer } from '../audio/JitterBuffer';
@@ -16,6 +17,12 @@ import { HostBridge } from './HostBridge';
 import { LiveLink } from './Live';
 import { TourController, TourStop } from './Tour';
 import { getLang, t } from '../i18n';
+
+/** Plan patches (P2-4) are relayed as a window event: the widget's page
+ *  surface and a server-rendered page each apply the ones for their plan. */
+function relayPlanPatch(detail: unknown): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('fluidbuddha:plan_patch', { detail }));
+}
 
 export interface SessionCallbacks {
   onStatus: (s: ConnectionStatus) => void;
@@ -208,6 +215,8 @@ export class Session {
     switch (env.channel) {
       case 'EVENTS':
         if (this.live.handle(env.type, env.payload)) break;
+        // What the visitor said changed their taste ("keep it short", Phase 3).
+        if (env.type === 'taste') { setTaste(env.payload.taste as TasteRaw, String(env.payload.compact ?? '')); break; }
         if (env.type === 'ready') {
           if (typeof env.payload.session_id === 'string') this.wsSessionId = env.payload.session_id;
           if (env.payload.privacy) this.privacy = env.payload.privacy as Privacy;
@@ -271,6 +280,7 @@ export class Session {
         if (env.type === 'render') this.cb.onComponent(env.payload as unknown as ComponentPayload);
         else if (env.type === 'render_page')
           this.cb.onPage?.(env.payload as unknown as PageSpec);
+        else if (env.type === 'plan_patch') relayPlanPatch(env.payload);
         else if (env.type === 'patch')
           this.cb.onPatch(
             String(env.payload.target_sync_id || ''),
@@ -569,6 +579,7 @@ export class Session {
       );
       (data.components || []).forEach((c: ComponentPayload) => this.cb.onComponent(c));
       (data.pages || []).forEach((p: PageSpec) => this.cb.onPage?.(p));
+      (data.plan_patches || []).forEach(relayPlanPatch);
     } catch {
       this.cb.onSystem(t('connError'));
     }

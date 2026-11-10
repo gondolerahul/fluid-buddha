@@ -1,0 +1,12 @@
+# Python tooling for the brand and film pipelines
+.venv/
+__pycache__/
+
+# Generated film outputs (re-create with film/pipeline.py; log in film/out/manifest.json is the record)
+film/out/
+
+# Draft film frames copied into the site (regenerated from film/out by the copy step)
+web/public/film/home/
+
+# Secrets
+.env

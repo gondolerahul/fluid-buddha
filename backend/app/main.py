@@ -24,6 +24,7 @@ from app.routes import (
     cache,
     chat,
     design,
+    experience,
     experiments,
     health,
     ingestion,
@@ -31,6 +32,7 @@ from app.routes import (
     leads,
     live,
     onboarding,
+    pages,
     privacy,
     sso,
     team,
@@ -38,6 +40,7 @@ from app.routes import (
     triggers,
     digest,
     recaps,
+    regions,
     actions,
     templates,
     websites,
@@ -147,3 +150,8 @@ app.include_router(campaigns.public)
 app.include_router(campaigns.admin)
 app.include_router(licence.router)
 app.include_router(status_page.router)
+app.include_router(experience.router)
+app.include_router(regions.public)
+app.include_router(regions.admin)
+app.include_router(pages.public)
+app.include_router(pages.admin)

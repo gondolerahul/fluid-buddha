@@ -83,6 +83,7 @@ class LeanResponder:
         lang: str = "en",
         seen: str = "en",
         search: str = "",
+        taste_brief: str = "",
     ) -> ThinkResult:
         t0 = time.monotonic()
         # 1. One grounding retrieval (no tool round-trip). A follow-up ("how
@@ -109,6 +110,9 @@ class LeanResponder:
             page=page, section=section, related=related, probe=probe,
             lang=lang, seen=seen,
         )
+        if taste_brief:  # the visitor's taste (Phase 3): shape, never facts
+            system += ("\nVISITOR TASTE: " + taste_brief + " Shape the answer's length and "
+                       "format to it; never change facts or prices for it.")
         messages = list(history) + [ChatMessage(role="user", text=user_text)]
         resp = await self._llm.generate(
             system=system,

@@ -75,13 +75,47 @@ async def verify(db: AsyncSession, site_key: str, token: Optional[str]) -> Optio
 
 
 async def log(db: AsyncSession, site_key: str, *, kind: str, tool: Optional[str], client: Optional[str],
-              token_id: Optional[uuid.UUID] = None, ok: bool = True, error: Optional[str] = None) -> None:
+              token_id: Optional[uuid.UUID] = None, ok: bool = True, error: Optional[str] = None,
+              plan_id: Optional[str] = None, action: Optional[str] = None) -> None:
     await db.execute(text(
-        "INSERT INTO agent_requests (site_key, kind, tool, client, token_id, ok, error) "
-        "VALUES (:s, :k, :t, :c, :tok, :ok, :e)"),
+        "INSERT INTO agent_requests (site_key, kind, tool, client, token_id, ok, error, plan_id, action) "
+        "VALUES (:s, :k, :t, :c, :tok, :ok, :e, :p, :a)"),
         {"s": site_key, "k": kind, "t": tool, "c": (client or "")[:120] or None, "tok": token_id,
-         "ok": ok, "e": (error or None) and error[:300]})
+         "ok": ok, "e": (error or None) and error[:300], "p": (plan_id or None) and plan_id[:20],
+         "a": (action or None) and action[:60]})
     await db.commit()
+
+
+READ_TOOLS = ("search_knowledge", "get_page", "list_offerings", "llms.txt", "ask", "offerings")
+VIEW_TOOLS = ("get_view", "list_views")
+
+
+async def funnel(db: AsyncSession, site_key: str, days: int = 30) -> dict[str, Any]:
+    """Task completion (Phase 5): how many agent clients read the site, opened a
+    view, started an action and completed one; where they failed; their leads."""
+    p = {"s": site_key, "d": days}
+    window = "site_key = :s AND at > now() - make_interval(days => :d)"
+    rows = (await db.execute(text(
+        f"SELECT coalesce(client, 'unknown') AS client, "
+        f"bool_or(tool = ANY(:read)) AS read, bool_or(tool = ANY(:view)) AS viewed, "
+        f"bool_or(tool LIKE 'view_action.%%') AS started, bool_or(tool = 'view_action.done') AS completed "
+        f"FROM agent_requests WHERE {window} GROUP BY 1"),
+        {**p, "read": list(READ_TOOLS), "view": list(VIEW_TOOLS)})).mappings().all()
+    steps = {k: sum(1 for r in rows if r[k]) for k in ("read", "viewed", "started", "completed")}
+    fails = (await db.execute(text(
+        f"SELECT coalesce(plan_id, '') AS plan_id, coalesce(action, '') AS action, coalesce(tool, kind) AS tool, "
+        f"count(*) AS n, max(error) AS error FROM agent_requests WHERE {window} AND NOT ok "
+        f"GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 10"), p)).mappings().all()
+    try:
+        leads = int((await db.execute(text(
+            "SELECT count(*) FROM leads WHERE site_key = :s AND source = 'agent' "
+            "AND created_at > now() - make_interval(days => :d)"), p)).scalar() or 0)
+    except Exception:
+        await db.rollback()
+        leads = 0
+    return {"clients": len(rows), **steps, "leads": leads,
+            "failures": [{"plan_id": r["plan_id"] or None, "action": r["action"] or None, "tool": r["tool"],
+                          "count": int(r["n"]), "error": r["error"]} for r in fails]}
 
 
 async def traffic(db: AsyncSession, site_key: str, days: int = 30) -> dict[str, Any]:

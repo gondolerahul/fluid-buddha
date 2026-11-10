@@ -15,6 +15,7 @@
 // ('a'..'d') or 'holdout', and comes with the variant's `overrides`. The answer
 // also carries the site's `defaults` (its greeting and design level).
 
+import { planFeedback } from './taste';
 import { DesignLevel, FluidBuddhaConfig } from './config';
 
 /** 'agent' | 'holdout' for a holdout run; 'a'..'d' | 'holdout' for a test. */
@@ -84,6 +85,42 @@ function randomId(): string {
 }
 
 /** True when `path` is the goal page (or below it). */
+/** This browser's anonymous visitor id (shared with generated regions,
+ *  Phase 1), created on first use; null without storage. */
+export function visitorId(): string | null {
+  const s = storage();
+  if (!s) return null;
+  let vid = s.getItem(VISITOR_KEY);
+  const cookie = readVisitorCookie();
+  if (!vid) {
+    // An edge worker (Phase 4) may have minted the id on the first request: adopt it,
+    // so the page it served and the widget agree on who this is.
+    vid = cookie || randomId();
+    s.setItem(VISITOR_KEY, vid);
+  }
+  if (cookie !== vid) mirrorVisitorCookie(vid);
+  return vid;
+}
+
+const VISITOR_COOKIE_RE = /(?:^|;\s*)fbvid=([A-Za-z0-9_-]{8,64})(?:;|$)/;
+
+function readVisitorCookie(): string {
+  try {
+    return VISITOR_COOKIE_RE.exec(document.cookie)?.[1] || '';
+  } catch {
+    return '';
+  }
+}
+
+/** A first-party copy of the id (Phase 4): server-side adapters (Next.js, edge)
+ *  read it so a visitor's free-form page is made for them and stays the same. */
+function mirrorVisitorCookie(vid: string): void {
+  try {
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `fbvid=${vid}; path=/; max-age=${180 * 86400}; SameSite=Lax${secure}`;
+  } catch { /* cookies blocked: pages are simply not per person */ }
+}
+
 export function matchesGoal(path: string, goal: string | null): boolean {
   if (!goal) return false;
   const p = path.replace(/\/+$/, '') || '/';
@@ -96,6 +133,8 @@ let active: Experiment | null = null;
 /** Record a site goal for the current visitor (no-op outside an experiment). */
 export function conversion(name = 'goal', value?: number): void {
   active?.convert(name, value);
+  // Rewards the generated regions and pages this visitor saw (Phase 3 bandits).
+  if (active) planFeedback(active.tasteConfig(), 'convert');
 }
 
 export class Experiment {
@@ -119,6 +158,10 @@ export class Experiment {
 
   get id(): string | null {
     return this.enrolment?.experiment_id ?? null;
+  }
+
+  tasteConfig(): { api: string; key: string; site: string } {
+    return { api: this.config.api, key: this.config.key, site: this.config.site };
   }
 
   get overrides(): Overrides {

@@ -8,7 +8,7 @@ const state = fakeServer(window);
 const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = React;
-const { FluidBuddha, conversion } = await import('../packages/react/dist/index.mjs');
+const { FluidBuddha, FbRegion, conversion } = await import('../packages/react/dist/index.mjs');
 
 const h = React.createElement;
 
@@ -77,4 +77,12 @@ test('a bad install code reports an error and adds nothing', async () => {
 test('conversion reports a goal through the widget', () => {
   conversion('demo_booked');
   assert.deepEqual(state.conversions, ['demo_booked']);
+});
+
+test("FbRegion renders an <fb-region> with the page's own content inside", async () => {
+  const root = await render(h(FbRegion, { name: 'hero' }, h('h1', null, 'Our own hero')));
+  const el = window.document.querySelector('fb-region');
+  assert.equal(el.getAttribute('name'), 'hero');
+  assert.equal(el.querySelector('h1').textContent, 'Our own hero');
+  await act(async () => root.unmount());
 });

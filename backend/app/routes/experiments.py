@@ -344,7 +344,8 @@ async def promote_variant(
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     """Make a variant the site's default: the greeting, starting persona and
-    tour switch go to the agent profile, the design level to the website, and
+    tour switch go to the agent profile, the design level to the website, the
+    generated-regions switch to the site's experience settings, and
     for a trigger test the winning variant's triggers are switched on and the
     other tested ones off. Then the test ends."""
     exp = await _test(db, site, test_id)
@@ -365,6 +366,14 @@ async def promote_variant(
         await save_profile(db, profile)
     elif exp.subject == "design":
         await store.update_website(db, site.id, site.tenant_id, design=o["design"])
+    elif exp.subject == "regions":
+        from app.experience import regions_store
+
+        await regions_store.set_regions_enabled(db, site.site_key, o["regions"])
+    elif exp.subject == "freeform":
+        from app.experience import freeform
+
+        await freeform.set_settings(db, site.site_key, {"freeform_enabled": o["freeform"]})
     elif exp.subject == "trigger":
         tested = sorted({i for x in exp.variants for i in x["overrides"]["triggers"]})
         if tested:

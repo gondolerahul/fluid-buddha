@@ -54,16 +54,29 @@ def normalize_page(title: Any, sections: Any) -> tuple[str, list[dict]]:
     return clean_title, out
 
 
-def sections_prompt() -> str:
-    items = "; ".join(f"{name}: {desc}" for name, desc in SECTION_TYPES.items())
+def bindable_prompt(site_key: str) -> str:
+    """The read operations a page may bind props to (Experience Plan, P0-5)."""
+    ops = get_site_apis(site_key).bindable_operations()
+    if not ops:
+        return ""
+    listed = "; ".join(
+        f"{o.operation_id} — {o.summary}" + (f" (returns {o.entity})" if o.entity else "")
+        for o in ops
+    )
     return (
-        "PAGE SECTIONS — when you call `generate_page`, each section is "
-        "{type, props}. Available types: " + items + "."
+        "BINDABLE DATA — never type live values (prices, plans, stock, records) "
+        "into a page. Bind the prop instead: {\"bind\": \"api:<operationId>\", "
+        "\"path\": \"$.field[*]\", \"params\": {...}, \"transform\": "
+        "[\"limit:3\"]}; params may use ctx.currency, ctx.lang, ctx.persona; "
+        "\"map\": {\"title\": \"name\"} renames record fields to a prop's shape. "
+        "Operations: " + listed + "."
     )
 
 
 def build_extreme_brief(site_key: str) -> str:
     """The system-prompt addendum that grounds runtime page generation."""
+    from app.experience.manifest import load_manifest  # avoids an import cycle
+
     ds = load_design_system(site_key)
     apis = get_site_apis(site_key)
     parts = [
@@ -71,8 +84,11 @@ def build_extreme_brief(site_key: str) -> str:
         "see something, BUILD it with `generate_page`, grounding ALL copy in "
         "`query_cortex` results (never invent facts, prices, or features).",
         ds.to_prompt(),
-        sections_prompt(),
+        load_manifest(site_key).to_prompt(),
     ]
+    bind = bindable_prompt(site_key)
+    if bind:
+        parts.append(bind)
     api_prompt = apis.to_prompt()
     if api_prompt:
         parts.append(api_prompt)

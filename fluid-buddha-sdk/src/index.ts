@@ -32,6 +32,9 @@ export { packAudio, unpackAudio } from './protocol';
 //   FluidBuddha.conversion('demo_booked')
 import { conversion } from './core/Experiment';
 export { conversion };
+// Generated regions on the host's page (Phase 1): <fb-region name="hero">.
+import { configureRegions, defineRegionElement, FbRegionElement } from './core/Regions';
+export { configureRegions, FbRegionElement };
 export type {
   FluidBuddhaConfig,
   FluidBuddhaOptions,
@@ -66,6 +69,7 @@ export function init(options: FluidBuddhaOptions = {}): FluidBuddhaElement {
 }
 
 defineElement();
+defineRegionElement();
 
 // Auto-init when injected as a <script data-backend=...> tag.
 function autoInit(): void {
@@ -84,4 +88,4 @@ function autoInit(): void {
 }
 autoInit();
 
-export default { init, conversion, VERSION };
+export default { init, conversion, configureRegions, VERSION };

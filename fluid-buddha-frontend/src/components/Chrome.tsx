@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Account, Api, LicenceState } from "@/lib/api";
@@ -118,6 +118,10 @@ const TABS = [
   { key: "tests", label: "A/B tests" },
   { key: "triggers", label: "Triggers" },
   { key: "campaigns", label: "Campaigns" },
+  { key: "design", label: "Design" },
+  { key: "components", label: "Components" },
+  { key: "regions", label: "Regions" },
+  { key: "pages", label: "Pages" },
   { key: "actions", label: "Actions" },
   { key: "agent", label: "Agent access" },
   { key: "settings", label: "Settings" },
@@ -126,13 +130,18 @@ const TABS = [
 export function WebsiteTabs({ id, name }: { id: string; name: string }) {
   const path = usePathname();
   const active = TABS.find((t) => path?.endsWith(`/${t.key}`))?.key;
+  const row = useRef<HTMLDivElement>(null);
+  // The row scrolls sideways when tabs don't fit: keep the open tab in view.
+  useEffect(() => {
+    row.current?.querySelector<HTMLElement>(".tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 40px 0" }}>
       <Link href="/dashboard" className="faint" style={{ fontSize: "0.84rem" }}>
         ← All websites
       </Link>
       <h1 className="h-page" style={{ marginTop: 10 }}>{name}</h1>
-      <div className="tabs" style={{ marginTop: 18 }}>
+      <div className="tabs" ref={row} style={{ marginTop: 18 }}>
         {TABS.map((t) => (
           <Link
             key={t.key}

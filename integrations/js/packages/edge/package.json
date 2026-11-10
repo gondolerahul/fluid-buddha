@@ -1,0 +1,20 @@
+{
+  "name": "@fluidbuddha/edge",
+  "version": "0.1.0",
+  "description": "Serve FluidBuddha composed and free-form pages from an edge worker in front of any site (Cloudflare Workers, Vercel/Netlify edge, Deno, Bun).",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/types/packages/edge/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/packages/edge/src/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "keywords": ["fluidbuddha", "edge", "cloudflare-workers", "ssr", "generative-ui"],
+  "license": "MIT"
+}

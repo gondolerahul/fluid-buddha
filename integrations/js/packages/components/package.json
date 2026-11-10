@@ -1,0 +1,27 @@
+{
+  "name": "@fluidbuddha/components",
+  "version": "0.1.0",
+  "description": "Author FluidBuddha page components in React: each becomes a Web Component with its manifest entry.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/types/packages/components/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/packages/components/src/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "bin": {
+    "fb-manifest": "./bin/fb-manifest.mjs"
+  },
+  "files": ["dist", "bin", "README.md"],
+  "sideEffects": false,
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "keywords": ["fluidbuddha", "web-components", "react", "generative-ui"],
+  "license": "MIT"
+}

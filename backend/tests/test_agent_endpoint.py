@@ -60,7 +60,8 @@ def test_mcp_handshake_tools_and_a_grounded_answer():
 
         listed = rpc(client, key, "tools/list", headers={"MCP-Protocol-Version": "2025-06-18"}).json()["result"]["tools"]
         names = [t["name"] for t in listed]
-        assert names == ["search_knowledge", "get_page", "list_offerings"], "no acting tools without a token"
+        assert names == ["search_knowledge", "get_page", "list_offerings", "list_views", "get_view"], \
+            "no acting tools without a token"
         assert all(t["inputSchema"]["type"] == "object" for t in listed)
         assert listed[0]["annotations"]["readOnlyHint"] is True
 

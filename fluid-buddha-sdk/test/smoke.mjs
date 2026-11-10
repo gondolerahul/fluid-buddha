@@ -229,6 +229,161 @@ await tick();
   ok(pg.querySelectorAll('.fbpage-qa').length === 2 && pg.querySelector('.fbpage-qa').open, 'faq: questions, the first open');
   ok(pg.querySelector('.fbpage-table tbody th')?.textContent === 'Doctors' && pg.querySelectorAll('.fbpage-table td').length === 2, 'comparison table');
   ok(!!pg.querySelector('.fbpage-roi_calculator .roi'), 'ROI calculator section');
+  ok(!pg.querySelector('[data-fb-plan]') && !pg.querySelector('[data-fb-region]'), 'v1.0 page: no plan addressing');
+}
+// Experience Plan addressing (P0-6): stable data-fb-* attributes; empty/error regions skipped.
+ext.session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_pl', payload: { sync_id: 'page_pl', title: 'Plan', plan_id: 'pl_0123456789',
+  actions: [{ id: 'trial', ref: 'action:trial', confirm: 'card' }], sections: [
+  { type: 'hero', id: 'hero', component: 'fb.hero', state: 'ready', props: { title: 'Hi', cta_label: 'Start', action: 'trial' } },
+  { type: 'pricing_table', id: 'plans', component: 'acme.PlanTable', state: 'ready', props: { tiers: [{ name: 'Scale', price: '₹9,999', features: [] }] } },
+  { type: 'faq', id: 'faq', component: 'fb.faq', state: 'empty', props: {} },
+  { type: 'faq', id: 'faq-2', component: 'fb.faq', state: 'error', props: {} }] } });
+await tick();
+{
+  const root = ext.shadowRoot.querySelector('[data-fb-plan]');
+  ok(root && root.getAttribute('data-fb-plan') === 'pl_0123456789', 'plan page: data-fb-plan on the page root');
+  const regions = [...root.querySelectorAll('[data-fb-region]')].map((e) => e.getAttribute('data-fb-region'));
+  ok(regions.join(',') === 'hero,plans', 'plan page: stable region ids; empty/error regions not drawn');
+  ok(root.querySelector('[data-fb-region="plans"]').getAttribute('data-fb-component') === 'acme.PlanTable'
+    && root.querySelector('[data-fb-region="plans"]').getAttribute('data-fb-state') === 'ready', 'plan page: component and state attributes');
+  ok(root.querySelector('[data-fb-region="hero"] .fbpage-btn')?.getAttribute('data-fb-action') === 'trial', 'plan page: CTA carries data-fb-action');
+}
+// Customer Web Components (P0-8): props set as properties once defined; bundle loaded with SRI.
+{
+  const SRI = 'sha384-' + 'A'.repeat(64);
+  ext.session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_wc', payload: { sync_id: 'page_wc', title: 'WC', plan_id: 'pl_aaaaaaaaaa',
+    bundle: { url: 'https://cdn.acme.example/fb.js', integrity: SRI }, sections: [
+    { type: 'wc:acme-plan-table', id: 'plans', component: 'acme.PlanTable', state: 'ready', props: { tiers: [{ name: 'Scale' }], __proto__x: 1 } },
+    { type: 'wc:fluid-buddha-evil', id: 'evil', component: 'acme.Evil', state: 'ready', props: {} },
+    { type: 'wc:notag', id: 'bad', component: 'acme.Bad', state: 'ready', props: {} }] } });
+  await tick();
+  const root = ext.shadowRoot.querySelector('[data-fb-plan]');
+  const el = root.querySelector('acme-plan-table');
+  ok(!!el && root.querySelectorAll('[data-fb-region]').length === 1, 'wc: the customer element is drawn; reserved/invalid tags are not');
+  ok(el.tiers === undefined, 'wc: props wait until the element is defined');
+  window.customElements.define('acme-plan-table', class extends window.HTMLElement {
+    set tiers(v) { this._tiers = v; this.textContent = v.map((t) => t.name).join(','); }
+    get tiers() { return this._tiers; }
+  });
+  await tick();
+  ok(el.textContent === 'Scale' && Array.isArray(el.tiers), 'wc: rich props arrive as properties after definition');
+  const script = document.head.querySelector('script[data-fb-bundle]');
+  ok(script && script.src === 'https://cdn.acme.example/fb.js' && script.integrity === SRI && script.crossOrigin === 'anonymous',
+    'wc: bundle loaded once as an integrity-checked script');
+  ext.session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_wc2', payload: { sync_id: 'page_wc2', title: 'WC', bundle: { url: 'http://insecure.example/fb.js', integrity: SRI },
+    sections: [{ type: 'wc:acme-plan-table', id: 'plans', component: 'acme.PlanTable', state: 'ready', props: {} }] } });
+  await tick();
+  const r2 = ext.shadowRoot.querySelector('.fbpage [data-fb-region="plans"]');
+  ok(r2 && r2.hidden && r2.getAttribute('data-fb-state') === 'error' && document.head.querySelectorAll('script[data-fb-bundle]').length === 1,
+    'wc: an unsafe bundle is never loaded and its regions are hidden');
+}
+
+// ---- Plan patches on the widget's page surface (P2-4) ----
+{
+  ext.session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_pp', payload: { sync_id: 'page_pp', title: 'PP', plan_id: 'pl_00000000aa', sections: [
+    { type: 'hero', id: 'hero', component: 'fb.hero', state: 'ready', props: { title: 'Hello' } },
+    { type: 'text', id: 'intro', component: 'fb.text', state: 'ready', props: { body: 'Intro text' } },
+    { type: 'faq', id: 'faq', component: 'fb.faq', state: 'ready', props: { items: [{ q: 'Q?', a: 'A.' }] } }] } });
+  await new Promise((r) => setTimeout(r, 80));
+  const root = ext.shadowRoot.querySelector('[data-fb-plan="pl_00000000aa"]');
+  ok(!!root && root.querySelectorAll('[data-fb-region]').length === 3, 'page renderer loads on demand and draws the page');
+  const intro = root.querySelector('[data-fb-region="intro"]');
+  ext.session.feed({ channel: 'DATA', type: 'plan_patch', sync_id: 'pl_00000000aa', payload: { plan_id: 'pl_00000000aa', ops: [
+    { op: 'replace', region: 'hero', animation: 'highlight', section: { type: 'hero', id: 'hero', component: 'fb.hero', state: 'ready', props: { title: 'Healthcare plans' } } },
+    { op: 'add', region: 'cta', before: 'faq', section: { type: 'cta', id: 'cta', component: 'fb.cta', state: 'ready', props: { title: 'Book', cta_label: 'Go' } } },
+    { op: 'remove', region: 'faq' },
+    { op: 'move', region: 'intro', before: 'hero' }] } });
+  ext.session.feed({ channel: 'DATA', type: 'plan_patch', sync_id: 'x', payload: { plan_id: 'pl_ffffffffff', ops: [{ op: 'remove', region: 'hero' }] } });
+  await new Promise((r) => setTimeout(r, 80));
+  const order = [...root.querySelectorAll('[data-fb-region]')].map((e) => e.getAttribute('data-fb-region')).join(',');
+  ok(order === 'intro,hero,cta', `patch: replace, add, remove and move applied in place (${order})`);
+  ok(root.querySelector('[data-fb-region="hero"] .fbpage-hero-title')?.textContent === 'Healthcare plans', 'patch: replaced region redrawn');
+  ok(root.querySelector('[data-fb-region="intro"]') === intro, 'patch: unchanged regions are not re-rendered');
+}
+
+// ---- Multi-step and half-width pages on the widget's page surface (Phase 4) ----
+{
+  ext.session.feed({ channel: 'DATA', type: 'render_page', sync_id: 'page_fl', payload: { sync_id: 'page_fl', title: 'FL', plan_id: 'pl_00000000fl', sections: [
+    { type: 'text', id: 'a', component: 'fb.text', state: 'ready', props: { body: 'Compare A' }, width: 'half' },
+    { type: 'text', id: 'b', component: 'fb.text', state: 'ready', props: { body: 'Compare B' }, width: 'half' },
+    { type: 'cta', id: 'go', component: 'fb.cta', state: 'ready', props: { title: 'Book', cta_label: 'Book' } }],
+    flow: [{ step: 'compare', title: 'Compare', regions: ['a', 'b'] }, { step: 'book', title: 'Book', regions: ['go'] }] } });
+  await new Promise((r) => setTimeout(r, 80));
+  const root = ext.shadowRoot.querySelector('[data-fb-plan="pl_00000000fl"]');
+  ok(root && root.querySelector('[data-fb-region="a"]').getAttribute('data-fb-width') === 'half', 'flow: half-width regions are marked');
+  ok(!root.querySelector('[data-fb-region="a"]').hidden && root.querySelector('[data-fb-region="go"]').hidden,
+    'flow: only the first step shows');
+  ok(root.querySelector('.fb-steps [aria-current="step"]').textContent === 'Compare', 'flow: the step list marks the current step');
+  [...root.querySelectorAll('.fb-step-nav button')].find((b) => !b.hidden).click();
+  ok(root.querySelector('[data-fb-region="a"]').hidden && !root.querySelector('[data-fb-region="go"]').hidden,
+    'flow: Next moves to the next step');
+}
+
+// ---- Server-rendered composed page: hydration + patches (P2-1, P2-4) ----
+{
+  const fs2 = await import('node:fs');
+  const code = fs2.readFileSync(new URL('../dist/fluid-buddha-composed.global.js', import.meta.url), 'utf8');
+  const html = '<!doctype html><html><body><main class="fbpage-root" data-fb-plan="pl_00000000bb"><div class="fbpage-inner">'
+    + '<section class="fbpage-section fbpage-hero" data-fb-region="hero" data-fb-component="fb.hero" data-fb-state="ready"><h1 class="fbpage-hero-title">Hi</h1></section>'
+    + '<section class="fbpage-section fbpage-chart" data-fb-region="growth" data-fb-component="fb.chart" data-fb-state="ready" data-fb-hydrate=""><table></table></section>'
+    + '<section class="fbpage-section fbpage-enquiry_form" data-fb-region="ask" data-fb-component="fb.enquiry_form" data-fb-state="ready" data-fb-hydrate="">'
+    + '<form class="fbpage-form" method="post" action="https://api.example/experience/lead"><input type="hidden" name="_operation" value="x"><input name="email"><button>Send</button></form></section>'
+    + '</div></main><script type="application/json" id="fb-page-data">' + JSON.stringify({ plan_id: 'pl_00000000bb', api: 'https://api.example', key: 'fbk_composed',
+      sections: [{ type: 'chart', id: 'growth', component: 'fb.chart', state: 'ready', props: { chart_type: 'bar', data: [{ label: 'A', value: 2 }, { label: 'B', value: 3 }] } },
+                 { type: 'enquiry_form', id: 'ask', component: 'fb.enquiry_form', state: 'ready', props: { fields: [{ name: 'email', label: 'Email' }] } }] })
+    + '</script></body></html>';
+  const cdom = new JSDOM(html, { url: 'https://orbit.example/pricing', runScripts: 'outside-only' });
+  const posted2 = [];
+  cdom.window.fetch = async (url, init) => { posted2.push({ url, body: JSON.parse(init.body) }); return { ok: true, json: async () => ({}) }; };
+  cdom.window.eval(code);
+  const cdoc = cdom.window.document;
+  await new Promise((r) => setTimeout(r, 30));
+  const growth = cdoc.querySelector('[data-fb-region="growth"]');
+  ok(growth && !growth.hasAttribute('data-fb-hydrate') && !!growth.querySelector('svg, canvas, .chart, [class*="chart"]'),
+    'composed: an interactive section is hydrated from the page data');
+  const form = cdoc.querySelector('[data-fb-region="ask"] form');
+  form.querySelector('input[name="email"]').value = 'v@example.com';
+  form.dispatchEvent(new cdom.window.Event('submit', { cancelable: true, bubbles: true }));
+  await new Promise((r) => setTimeout(r, 30));
+  const leadsPosts = posted2.filter((p) => p.url === 'https://api.example/leads');
+  ok(leadsPosts.length === 1 && leadsPosts[0].body.key === 'fbk_composed'
+    && leadsPosts[0].body.values.email === 'v@example.com' && !('_operation' in leadsPosts[0].body.values),
+    'composed: the enquiry form is sent with fetch (hidden fields left out)');
+  const fb = posted2.filter((p) => p.url === 'https://api.example/experience/feedback');
+  ok(fb.length === 1 && fb[0].body.event === 'engage' && fb[0].body.plan_ids[0] === 'pl_00000000bb',
+    'composed: a form submit rewards the plan that served the page (once)');
+  ok(!!cdoc.querySelector('[data-fb-region="ask"] p.fbpage-body'), 'composed: the form is replaced by a thank-you note');
+  cdom.window.dispatchEvent(new cdom.window.CustomEvent('fluidbuddha:plan_patch', { detail: { plan_id: 'pl_00000000bb', ops: [
+    { op: 'add', region: 'next', section: { type: 'cta', id: 'next', component: 'fb.cta', state: 'ready', props: { title: 'Talk to us', cta_label: 'Book' } } },
+    { op: 'remove', region: 'growth' }] } }));
+  await new Promise((r) => setTimeout(r, 10));
+  const ids = [...cdoc.querySelectorAll('.fbpage-inner > [data-fb-region]')].map((e) => e.getAttribute('data-fb-region')).join(',');
+  ok(ids === 'hero,ask,next', `composed: patches from the conversation apply to the served page (${ids})`);
+}
+
+// ---- Server-rendered multi-step page (Phase 4) ----
+{
+  const fs2 = await import('node:fs');
+  const code = fs2.readFileSync(new URL('../dist/fluid-buddha-composed.global.js', import.meta.url), 'utf8');
+  const html = '<!doctype html><html><body><main class="fbpage-root" data-fb-plan="pl_00000000ff"><div class="fbpage-inner">'
+    + '<ol class="fb-steps"><li data-fb-step-nav="compare">Compare</li><li data-fb-step-nav="choose">Choose</li><li data-fb-step-nav="book">Book</li></ol>'
+    + '<section data-fb-region="a" data-fb-step="compare" data-fb-width="half">A</section>'
+    + '<section data-fb-region="b" data-fb-step="choose">B</section>'
+    + '<section data-fb-region="c" data-fb-step="book">C</section>'
+    + '</div></main><script type="application/json" id="fb-page-data">{"plan_id":"pl_00000000ff"}</script></body></html>';
+  const sdom = new JSDOM(html, { url: 'https://orbit.example/plans#step-choose', runScripts: 'outside-only' });
+  sdom.window.eval(code);
+  await new Promise((r) => setTimeout(r, 30));
+  const d = sdom.window.document;
+  const visible = () => [...d.querySelectorAll('[data-fb-step]')].filter((e) => !e.hidden).map((e) => e.getAttribute('data-fb-region')).join(',');
+  ok(visible() === 'b', `served flow: the step in the URL opens (${visible()})`);
+  const [back, next] = d.querySelectorAll('.fb-step-nav button');
+  ok(!back.hidden && next.textContent === 'Next: Book', 'served flow: Back and Next name where they go');
+  next.click();
+  ok(visible() === 'c' && next.hidden && sdom.window.location.hash === '#step-book', 'served flow: Next moves on and keeps the step in the URL');
+  d.querySelector('[data-fb-step-nav="compare"]').click();
+  ok(visible() === 'a' && back.hidden && d.querySelector('[aria-current="step"]').textContent === 'Compare',
+    'served flow: the step list works as tabs');
 }
 
 // ---- 7. Persona cross-fade (Req 3.6.3) ----
@@ -994,6 +1149,155 @@ offline.remove();
   const last = globalThis.__wsAll[globalThis.__wsAll.length - 1];
   ok(new URL(last.url || globalThis.__lastWsUrl).searchParams.get('key') === 'fbk_drain', 'to the same site');
   moved.destroy?.();
+}
+
+// ---- Generated regions on the host page (Phase 1): <fb-region> ----
+{
+  const calls = [];
+  let round = 0;
+  const base = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (!String(url).endsWith('/experience/regions')) return base(url, init);
+    calls.push(JSON.parse(init.body));
+    round++;
+    const hero = { type: 'hero', id: 'hero', component: 'fb.hero', state: 'ready', props: { title: 'Plans for clinics' } };
+    const text = (id) => ({ type: 'text', id, component: 'fb.text', state: 'ready', props: { body: `Body of ${id}` } });
+    const body = round === 1
+      ? { regions: { hero }, plan_id: 'pl_1111111111', tokens: { '--ds-color-primary': '#123456' }, pending: true, retry_after_ms: 500 }
+      : { regions: { proof: text('proof'), aside: text('aside') }, plan_id: 'pl_2222222222', pending: false };
+    return { ok: true, json: async () => body };
+  };
+  window.history.replaceState({}, '', '/pricing?utm_campaign=switch&q=orbit+vs+x');
+  mod.configureRegions({ api: 'http://localhost:8080', key: 'fbk_regions' });
+  const host = document.createElement('div');
+  host.innerHTML = '<fb-region name="hero"><h1 id="own-hero">Our own hero</h1></fb-region>'
+    + '<fb-region name="proof"><p>own proof</p></fb-region><fb-region name="aside"><p>own aside</p></fb-region>'
+    + '<fb-region name="Bad Name"><p>kept</p></fb-region>';
+  document.body.appendChild(host);
+  await new Promise((r) => setTimeout(r, 150));
+  const [hero, proof, aside, bad] = host.querySelectorAll('fb-region');
+  ok(calls.length === 1 && calls[0].regions.join(',') === 'hero,proof,aside' && calls[0].key === 'fbk_regions',
+    'regions: one request for every valid region on the page');
+  ok(calls[0].page === '/pricing' && calls[0].signals.utm_campaign === 'switch' && calls[0].signals.q === 'orbit vs x'
+    && typeof calls[0].visitor === 'string', 'regions: page, UTM tags, search query and visitor are sent');
+  ok(hero.shadowRoot.querySelector('.fbpage-hero-title')?.textContent === 'Plans for clinics'
+    && hero.getAttribute('data-fb-state') === 'ready' && hero.getAttribute('data-fb-plan') === 'pl_1111111111',
+    'regions: a filled region renders the section and its addressing');
+  ok(hero.shadowRoot.querySelector('.fbpage-region').style.getPropertyValue('--ds-color-primary') === '#123456',
+    'regions: themed with the site tokens');
+  ok(!proof.filled && proof.shadowRoot.querySelector('slot') && proof.getAttribute('data-fb-state') === 'fallback',
+    "regions: an unfilled region keeps the host's own content");
+  ok(!bad.filled && bad.shadowRoot.querySelector('slot'), 'regions: invalid names are never requested');
+  // Morph rule on the retry: the visitor has interacted; only below-the-fold regions change.
+  window.dispatchEvent(new window.Event('scroll'));
+  proof.getBoundingClientRect = () => ({ top: 5000, bottom: 5100, left: 0, right: 0, width: 0, height: 100 });
+  aside.getBoundingClientRect = () => ({ top: 10, bottom: 110, left: 0, right: 0, width: 0, height: 100 });
+  await new Promise((r) => setTimeout(r, 700));
+  ok(calls.length === 2 && calls[1].regions.join(',') === 'proof,aside', 'regions: one retry for the regions still pending');
+  ok(proof.filled && proof.shadowRoot.querySelector('.fbpage-body')?.textContent === 'Body of proof',
+    'regions: the retry fills a region below the fold');
+  ok(!aside.filled && aside.shadowRoot.querySelector('slot'), 'regions: visible content never jumps after the visitor interacts');
+  globalThis.fetch = base;
+  host.remove();
+  window.history.replaceState({}, '', '/');
+}
+
+// ---- Personal experience (Phase 3): taste, why, preferences, rewards ----
+{
+  // What the visitor said changed their taste: the widget keeps it and sets the cookie.
+  ext.session.feed({ channel: 'EVENTS', type: 'taste', payload: {
+    taste: { dims: { detail: { value: 'summary', confidence: 1, source: 'explicit', at: Date.now() / 1000 } }, interests: {} },
+    compact: 'detail:summary' } });
+  const kept = JSON.parse(window.sessionStorage.getItem('fluidbuddha:taste') || '{}');
+  ok(kept.dims?.detail?.value === 'summary', 'taste: a server taste update is kept for the session');
+  ok(document.cookie.includes('fbtaste=detail%3Asummary'), 'taste: the compact form goes in the fbtaste cookie');
+
+  const calls3 = [];
+  const base3 = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    calls3.push({ url: u, body: init && init.body ? JSON.parse(init.body) : null });
+    if (u.endsWith('/experience/regions')) {
+      return { ok: true, json: async () => ({ plan_id: 'pl_00000000cc', why: ['You arrived from the "spring" campaign'],
+        regions: { hero3: { type: 'hero', id: 'hero3', component: 'fb.hero', state: 'ready', props: { title: 'Hi', cta_label: 'Go' } } } }) };
+    }
+    if (u.endsWith('/experience/taste')) {
+      return { ok: true, json: async () => ({ raw: { dims: { format: { value: 'tables', confidence: 1, source: 'explicit', at: 1 } }, interests: {} },
+        compact: 'format:tables' }) };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+  const host3 = document.createElement('div');
+  host3.innerHTML = '<fb-region name="hero3"><p>own</p></fb-region>';
+  document.body.appendChild(host3);
+  await new Promise((r) => setTimeout(r, 150));
+  const reg = host3.querySelector('fb-region');
+  const regCall = calls3.find((c) => c.url.endsWith('/experience/regions'));
+  ok(regCall && regCall.body.taste?.dims?.detail?.value === 'summary', 'taste: region requests carry the session taste');
+  const whyBtn = reg.shadowRoot.querySelector('.fb-why button');
+  ok(!!whyBtn && reg.shadowRoot.querySelector('.fb-why span').hidden, 'why: a filled region offers "Why this?" (collapsed)');
+  whyBtn.click();
+  ok(!reg.shadowRoot.querySelector('.fb-why span').hidden
+    && reg.shadowRoot.querySelector('.fb-why span').textContent.includes('spring'), 'why: it reveals the reasons');
+  reg.shadowRoot.querySelector('.fbpage-btn').click();
+  await new Promise((r) => setTimeout(r, 10));
+  const fbCall = calls3.find((c) => c.url.endsWith('/experience/feedback'));
+  ok(fbCall && fbCall.body.event === 'engage' && fbCall.body.plan_ids[0] === 'pl_00000000cc', 'rewards: a CTA click rewards the plan');
+  // "Change your preferences" opens the panel (loaded on demand) and choices are sent.
+  reg.shadowRoot.querySelectorAll('.fb-why button')[1].click();
+  await new Promise((r) => setTimeout(r, 150));
+  const panel = document.querySelector('fb-preferences');
+  ok(!!panel && panel.shadowRoot.querySelector('#p-h')?.textContent === 'Your preferences', 'preferences: the panel opens');
+  const detailSel = panel.shadowRoot.querySelector('select[data-dim="detail"]');
+  ok(detailSel.value === 'summary', 'preferences: it shows the current taste');
+  const fmt = panel.shadowRoot.querySelector('select[data-dim="format"]');
+  fmt.value = 'tables';
+  fmt.dispatchEvent(new window.Event('change'));
+  await new Promise((r) => setTimeout(r, 30));
+  const setCall = calls3.filter((c) => c.url.endsWith('/experience/taste')).pop();
+  ok(setCall && setCall.body.events[0].type === 'set' && setCall.body.events[0].value === 'tables',
+    'preferences: a change is sent as an explicit choice');
+  ok(document.cookie.includes('fbtaste=format%3Atables'), 'preferences: the cookie follows the merged taste');
+  document.querySelector('fb-preferences').shadowRoot.querySelector('[data-act="close"]').click();
+  ok(!document.querySelector('fb-preferences'), 'preferences: Done closes it');
+  globalThis.fetch = base3;
+  host3.remove();
+}
+
+// ---- Agent-ready served pages: page-declared tools and agent mode (Phase 5) ----
+{
+  const fs2 = await import('node:fs');
+  const code = fs2.readFileSync(new URL('../dist/fluid-buddha-composed.global.js', import.meta.url), 'utf8');
+  const page = (mode) => '<!doctype html><html><head><title>Plans</title></head><body>'
+    + `<main class="fbpage-root" data-fb-plan="pl_00000000ag"${mode}><div class="fbpage-inner">`
+    + '<ol class="fb-steps"><li data-fb-step-nav="learn">Learn</li><li data-fb-step-nav="book">Book</li></ol>'
+    + '<section data-fb-region="hero" data-fb-step="learn"><h1>Plans</h1><p>Fill every slot.</p></section>'
+    + '<section data-fb-region="go" data-fb-step="book"><a class="fbpage-btn" href="#enquiry" data-fb-action="get_quote">Get a quote</a></section>'
+    + '</div></main><script type="application/json" id="fb-page-data">{"plan_id":"pl_00000000ag"}</script></body></html>';
+  const adom = new JSDOM(page(''), { url: 'https://orbit.example/plans', runScripts: 'outside-only' });
+  const registered = [];
+  Object.defineProperty(adom.window.navigator, 'modelContext', { value: { registerTool: (t) => registered.push(t) } });
+  adom.window.eval(code);
+  await new Promise((r) => setTimeout(r, 30));
+  ok(registered.map((t) => t.name).join(',') === 'read_view,get_quote', 'agent tools: the page declares read_view and its actions');
+  const read = await registered[0].execute({});
+  ok(read.content[0].text.includes('Steps: [Learn] → Book') && read.content[0].text.includes('Fill every slot.')
+    && read.content[0].text.includes('- get_quote: Get a quote'), 'agent tools: read_view gives the page as text');
+  const ad = adom.window.document;
+  const quote = await registered[1].execute({});
+  ok(!ad.querySelector('[data-fb-region="go"]').hidden && ad.activeElement === ad.querySelector('[data-fb-action="get_quote"]')
+    && quote.content[0].text.includes('Ask the person to press it'), 'agent tools: an action tool opens its step and focuses it, never presses it');
+  const pdom = new JSDOM(page(' data-fb-mode="agent"'), { url: 'https://orbit.example/plans', runScripts: 'outside-only' });
+  pdom.window.eval(code);
+  await new Promise((r) => setTimeout(r, 30));
+  ok(![...pdom.window.document.querySelectorAll('[data-fb-step]')].some((e) => e.hidden)
+    && !pdom.window.document.querySelector('.fb-step-nav'), 'agent mode: every step stays visible');
+}
+
+// ---- First-party visitor id for server-side adapters (Phase 4) ----
+{
+  const vid = window.localStorage.getItem('fluidbuddha:vid');
+  ok(!!vid && document.cookie.includes(`fbvid=${vid}`), 'visitor id: mirrored into the fbvid cookie');
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

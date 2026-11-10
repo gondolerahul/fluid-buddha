@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.agents import tools
@@ -38,6 +38,8 @@ class Context:
     token: Optional[dict[str, Any]]
     client: Optional[str]
     pages: list[dict[str, Any]]
+    # Filled by view tools (Phase 5) so the traffic log records the view and action.
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 class RpcError(Exception):
@@ -57,12 +59,42 @@ def _can(ctx: Context, scope: str) -> bool:
     return bool(ctx.token and scope in ctx.token["scopes"])
 
 
+VIEW_TOOLS = [
+    {"name": "list_views",
+     "description": "The website's pages that have a view: what each is for and its path.",
+     "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+     "annotations": {"readOnlyHint": True, "openWorldHint": False}},
+    {"name": "get_view",
+     "description": "A page of the website as people see it — its sections, data and the actions it offers "
+                    "(with whether an agent may do each). Give a path, or a plan_id from an earlier view.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": {"type": "string", "description": "A path on the site, like /pricing."},
+         "plan_id": {"type": "string", "description": "A view id (pl_…)."}},
+         "additionalProperties": False},
+     "annotations": {"readOnlyHint": True, "openWorldHint": False}},
+]
+
+RUN_VIEW_ACTION = {
+    "name": "run_view_action",
+    "description": "Do one of a view's actions. Actions whose policy is 'confirm' answer a summary and a "
+                   "confirm_code first: ask the person you act for to approve, then call again with the same "
+                   "inputs and the confirm_code. Actions whose policy is 'never' must be done by a person on "
+                   "the page.",
+    "inputSchema": {"type": "object", "properties": {
+        "plan_id": {"type": "string"}, "action": {"type": "string"},
+        "inputs": {"type": "object"}, "confirm_code": {"type": "string"}},
+        "required": ["plan_id", "action"], "additionalProperties": False},
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
+}
+
+
 def tool_list(ctx: Context) -> list[dict[str, Any]]:
-    out = tools.read_tool_specs()
+    out = tools.read_tool_specs() + VIEW_TOOLS
     if _can(ctx, "leads"):
         out.append(tools.LEAD_TOOL)
     if _can(ctx, "actions"):
         out += tools.action_tool_specs(ctx.site["site_key"])
+        out.append(RUN_VIEW_ACTION)
     return out
 
 
@@ -94,6 +126,8 @@ async def call_tool(ctx: Context, name: str, args: dict[str, Any]) -> tuple[dict
         if name == "list_offerings":
             out = await tools.list_offerings(ctx.rt, ctx.site)
             return _text_result(out, _answer_text(out)), True
+        if name in ("list_views", "get_view", "run_view_action"):
+            return await _view_tool(ctx, name, args)
         if name == "capture_lead":
             if not _can(ctx, "leads"):
                 raise tools.ToolError("This needs a token from the site's owner with the 'leads' scope.")
@@ -111,6 +145,41 @@ async def call_tool(ctx: Context, name: str, args: dict[str, Any]) -> tuple[dict
     except tools.ToolError as exc:
         return _text_result({"error": str(exc)}, str(exc), is_error=True), False
     raise RpcError(INVALID_PARAMS, f"Unknown tool: {name}")
+
+
+async def _view_tool(ctx: Context, name: str, args: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    from app.agents import views
+
+    if name == "list_views":
+        out = await views.list_views(ctx.site)
+        text = "\n".join(f"- {v['path']} — {v['title']}" + (f": {v['purpose']}" if v.get("purpose") else "")
+                         for v in out["views"]) or "No pages have views yet."
+        return _text_result(out, text), True
+    if name == "get_view":
+        view = await views.load_view(ctx.rt, ctx.site, path=args.get("path"), plan_id=args.get("plan_id"),
+                                     html=True)
+        if view is None:
+            raise tools.ToolError("No view for that path or id.")
+        ctx.meta["plan_id"] = view["plan_id"]
+        html = view.pop("_html", "")
+        result = _text_result(view, views.markdown(view))
+        if html:  # for assistants that render UI in the chat (export seam, D3)
+            result["content"].append({"type": "resource", "resource": {
+                "uri": f"ui://fluidbuddha/view/{view['plan_id']}", "mimeType": "text/html", "text": html}})
+        return result, True
+    # run_view_action
+    pid, action = str(args.get("plan_id") or ""), str(args.get("action") or "")
+    ctx.meta.update(plan_id=pid, action=action)
+    if not _can(ctx, "actions"):
+        raise tools.ToolError("This needs a token from the site's owner with the 'actions' scope.")
+    out = await views.run(ctx.rt, ctx.site, pid, action, args.get("inputs") or {}, ctx.token,
+                          str(args.get("confirm_code") or ""))
+    ctx.meta["status"] = out["status"]
+    text = {"needs_confirmation": f"Needs approval: {out.get('summary')}. {out.get('message')} "
+                                  f"confirm_code: {out.get('confirm_code')}",
+            "done": "Done."}.get(out["status"], out.get("message") or f"It didn't work ({out['status']}).")
+    return _text_result(out, text, is_error=out["status"] in ("refused", "failed")), \
+        out["status"] in ("done", "needs_confirmation")
 
 
 def resource_list(ctx: Context) -> list[dict[str, Any]]:
@@ -139,7 +208,8 @@ async def handle(ctx: Context, msg: Any) -> tuple[Optional[dict[str, Any]], Opti
                                  "prompts": {"listChanged": False}},
                 "serverInfo": {"name": f"{ctx.site['name']} (FluidBuddha)", "version": "1.0.0"},
                 "instructions": (f"Answers about {ctx.site['name']} from its own content, with sources. "
-                                 "Use search_knowledge for questions, list_offerings for plans and prices."),
+                                 "Use search_knowledge for questions, list_offerings for plans and prices, "
+                                 "list_views / get_view to see a page as people see it and what it offers."),
             }
             return {"jsonrpc": "2.0", "id": id_, "result": result}, method, True
         if method == "ping":

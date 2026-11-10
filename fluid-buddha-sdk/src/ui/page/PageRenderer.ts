@@ -9,6 +9,8 @@ import { buildChart } from '../components/chart';
 import { buildFlowchart } from '../components/flowchart';
 import { buildRoiCalculator } from '../components/roiCalculator';
 import { revealSequence } from '../components/reveal';
+import { buildCustomElement, loadBundle, validBundle, wcTag } from './customComponents';
+import { stepNav, setupSteps } from './steps';
 import { t } from '../../i18n';
 
 export interface EnquiryPayload {
@@ -25,15 +27,54 @@ export class PageRenderer {
 
   render(page: PageSpec): void {
     this.container.replaceChildren();
+    // Stable addressing (Experience Plan, P0-6): agents, tests and analytics
+    // find regions by these attributes whatever the layout.
+    if (page.plan_id) this.container.setAttribute('data-fb-plan', page.plan_id);
+    else this.container.removeAttribute('data-fb-plan');
     const built: HTMLElement[] = [];
+    const custom: HTMLElement[] = [];
     for (const section of page.sections || []) {
-      const el = this.buildSection(section);
+      // A region whose bound data came back empty or failed draws nothing:
+      // never a half-filled card or invented data.
+      const el = this.renderSection(section);
       if (el) {
+        if (wcTag(section.type)) custom.push(el);
         this.container.appendChild(el);
         built.push(el);
       }
     }
+    // Customer Web Components (P0-8): load their bundle once; if it can't be
+    // loaded, hide those regions rather than show empty boxes.
+    if (custom.length) {
+      const fail = () => custom.forEach((el) => { el.setAttribute('data-fb-state', 'error'); el.hidden = true; });
+      if (validBundle(page.bundle)) loadBundle(page.bundle).catch(fail);
+      else fail();
+    }
+    // A multi-step page (Phase 4): label each region with its step, then show one step at a time.
+    if (page.flow && page.flow.length > 1) {
+      const stepOf = new Map<string, string>();
+      for (const st of page.flow) for (const rid of st.regions || []) stepOf.set(rid, st.step);
+      for (const el of built) {
+        const st = stepOf.get(el.getAttribute('data-fb-region') || '');
+        if (st) el.setAttribute('data-fb-step', st);
+      }
+      this.container.prepend(stepNav(document, page.flow));
+      setupSteps(this.container, { history: false });
+    }
     revealSequence(built, { stepMs: 320 });
+  }
+
+  /** One section with its addressing (also used by plan patches and the
+   *  hydration of served pages). Null when it has nothing to draw. */
+  renderSection(section: PageSection): HTMLElement | null {
+    if (section.state === 'empty' || section.state === 'error') return null;
+    const el = this.buildSection(section);
+    if (!el) return null;
+    if (section.id) el.setAttribute('data-fb-region', section.id);
+    if (section.component) el.setAttribute('data-fb-component', section.component);
+    el.setAttribute('data-fb-state', section.state || 'ready');
+    if (section.width === 'half') el.setAttribute('data-fb-width', 'half');
+    return el;
   }
 
   private buildSection(section: PageSection): HTMLElement | null {
@@ -59,7 +100,13 @@ export class PageRenderer {
         append(wrap, this.heading('h2', p.title, 'fbpage-h2'));
         wrap.appendChild(buildRoiCalculator(p));
         return wrap;
-      default: return null;
+      default: {
+        const tag = wcTag(section.type);
+        if (!tag) return null;
+        wrap.className = 'fbpage-section fbpage-wc';
+        wrap.appendChild(buildCustomElement(tag, p));
+        return wrap;
+      }
     }
   }
 
@@ -82,7 +129,7 @@ export class PageRenderer {
       wrap.appendChild(s);
     }
     const cta = str(p.cta_label);
-    if (cta) wrap.appendChild(this.ctaButton(cta));
+    if (cta) wrap.appendChild(this.ctaButton(cta, str(p.action)));
     return wrap;
   }
 
@@ -179,7 +226,7 @@ export class PageRenderer {
     const body = str(p.body);
     if (body) { const b = document.createElement('p'); b.className = 'fbpage-body'; b.textContent = body; wrap.appendChild(b); }
     const cta = str(p.cta_label);
-    if (cta) wrap.appendChild(this.ctaButton(cta));
+    if (cta) wrap.appendChild(this.ctaButton(cta, str(p.action)));
     return wrap;
   }
 
@@ -260,10 +307,11 @@ export class PageRenderer {
     return wrap;
   }
 
-  private ctaButton(label: string): HTMLButtonElement {
+  private ctaButton(label: string, action = ''): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.className = 'fbpage-btn';
     btn.textContent = label;
+    if (action) btn.setAttribute('data-fb-action', action);
     // A CTA scrolls to an enquiry form if present, else is a no-op affordance.
     btn.addEventListener('click', () => {
       this.container.querySelector('.fbpage-form')?.scrollIntoView({ behavior: 'smooth' });

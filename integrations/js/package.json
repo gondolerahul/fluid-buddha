@@ -1,7 +1,7 @@
 {
   "name": "fluidbuddha-integrations-js",
   "private": true,
-  "description": "Framework wrappers for the FluidBuddha widget (M2-10): @fluidbuddha/react and @fluidbuddha/vue.",
+  "description": "Framework wrappers for the FluidBuddha widget (M2-10): @fluidbuddha/react and @fluidbuddha/vue; @fluidbuddha/components for authoring page components (P0-8).",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -9,7 +9,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.framer.json",
-    "test": "node --test test/shared.test.mjs test/react.test.mjs test/vue.test.mjs",
+    "test": "node --test test/shared.test.mjs test/react.test.mjs test/vue.test.mjs test/components.test.mjs test/next.test.mjs test/edge.test.mjs",
     "audit": "npm audit"
   },
   "engines": {
