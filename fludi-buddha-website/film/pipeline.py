@@ -30,7 +30,20 @@ OUT = ROOT / "out"
 load_dotenv(SITE / ".env")
 
 sys.path.insert(0, str(ROOT))
-from shots import IMAGE_MODEL, KEYFRAMES, LAYOUTS, SHOTS, STYLE, VIDEO_MODELS  # noqa: E402
+# --world <name> selects film/shots_<name>.py and writes to film/out/<name>/ (one film per world).
+import importlib  # noqa: E402
+WORLD = sys.argv[sys.argv.index("--world") + 1] if "--world" in sys.argv else None
+_shots = importlib.import_module(f"shots_{WORLD}" if WORLD else "shots")
+IMAGE_MODEL, KEYFRAMES, LAYOUTS, SHOTS, STYLE, VIDEO_MODELS = (
+    _shots.IMAGE_MODEL, _shots.KEYFRAMES, _shots.LAYOUTS, _shots.SHOTS, _shots.STYLE, _shots.VIDEO_MODELS)
+SEED = getattr(_shots, "SEED", {})
+# The last line of every clip prompt. A world with people in it sets its own.
+CLIP_RULES = getattr(_shots, "CLIP_RULES",
+                     "No text, no letters, no logos, no people, no hands. Silent: no music, no voices, no sound effects.")
+XFADE = 6  # frames blended on each side of a scene cut (a shot with "cut": True starts a new scene)
+STYLEFRAMES = SITE / "film" / "out" / "styleframes"
+if WORLD:
+    OUT = OUT / WORLD
 
 
 def client():
@@ -158,7 +171,7 @@ def make_clip(c, sid, aspect, res, force=False):
               "must be identical to the second image (same camera framing, same objects, same sizes and positions). "
               "Do not add, remove or rearrange any element in the final frame.\n\n"
               + spec["prompt"].strip() + "\n\n" + spec.get("camera", "Camera: locked off, perfectly still.")
-              + "\nNo text, no letters, no logos, no people, no hands. Silent: no music, no voices, no sound effects.")
+              + "\n" + CLIP_RULES)
     inp = [{"type": "image", "data": b64png(first), "mime_type": "image/jpeg"},
            {"type": "image", "data": b64png(last), "mime_type": "image/jpeg"},
            {"type": "text", "text": prompt}]
@@ -183,7 +196,7 @@ def make_clip(c, sid, aspect, res, force=False):
 
 
 # ------------------------------------------------------------------ 4. stitch
-def stitch(aspect, res):
+def stitch(aspect, res, fps=24):
     import imageio_ffmpeg
     ff = imageio_ffmpeg.get_ffmpeg_exe()
     sub = aspect.replace(":", "x")
@@ -200,12 +213,58 @@ def stitch(aspect, res):
     frames.mkdir(exist_ok=True)
     for f in frames.glob("*.jpg"):
         f.unlink()
-    subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(film), "-vf", "fps=24",
+    subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(film), "-vf", f"fps={fps}",
                     "-q:v", "3", str(frames / "f%05d.jpg")], check=True)
     n = len(list(frames.glob("*.jpg")))
+    get = lambda i: Image.open(frames / f"f{min(max(i, 0), n - 1) + 1:05d}.jpg").convert("RGB")
+    small = lambda i: list(get(i).convert("L").resize((64, 36)).tobytes())
+    jump = lambda i: sum(abs(x - y) for x, y in zip(small(i - 1), small(i)))
+    # A shot with "hold": seconds stays on its last frame for that long, so the visitor can read it.
+    order, at, added = list(range(n)), 0.0, 0
+    for k_, p_ in enumerate(clips):
+        at += float(SHOTS[p_.stem]["seconds"])
+        hold = round(float(SHOTS[p_.stem].get("hold", 0)) * fps)
+        if not hold:
+            continue
+        e = min(n, round(at * fps))  # first frame after this shot, in the extracted frames
+        if k_ + 1 < len(clips) and SHOTS[clips[k_ + 1].stem].get("cut"):
+            e = max(range(max(1, e - 8), min(n, e + 9)), key=jump)
+        order[e + added:e + added] = [e - 1] * hold
+        added += hold
+        print(f"  hold after {p_.stem}: {hold} frames")
+    if added:
+        data = {i: (frames / f"f{i + 1:05d}.jpg").read_bytes() for i in set(order)}
+        for f in frames.glob("*.jpg"):
+            f.unlink()
+        for j, i in enumerate(order):
+            (frames / f"f{j + 1:05d}.jpg").write_bytes(data[i])
+        n = len(order)
+    # Scene cuts become short cross-fades: scrolling through a hard cut looks like a fault.
+    at = 0.0
+    for p_ in clips[:-1]:
+        at += float(SHOTS[p_.stem]["seconds"]) + float(SHOTS[p_.stem].get("hold", 0))
+        nxt = clips[clips.index(p_) + 1].stem
+        if not SHOTS[nxt].get("cut"):
+            continue
+        # Clips run a few hundredths of a second long, so find the cut itself: the biggest jump
+        # between neighbouring frames near where the shot list says it is.
+        c0 = round(at * fps)
+        c = max(range(max(1, c0 - 8), min(n, c0 + 9)), key=jump)  # index of the first frame of the next scene
+        blended = []
+        for j in range(2 * XFADE):
+            i = c - XFADE + j
+            a_ = get(min(i, c - 1))   # the old scene, held on its last frame after the cut
+            b_ = get(max(i, c))       # the new scene, held on its first frame before the cut
+            blended.append((i, Image.blend(a_, b_, (j + 0.5) / (2 * XFADE))))
+        for i, im in blended:
+            if 0 <= i < n:
+                im.save(frames / f"f{i + 1:05d}.jpg", quality=92)
+        print(f"  cut before {nxt}: cross-faded frames {c - XFADE + 1}..{c + XFADE}")
     # Seam check: how far does each clip's last frame drift from the next clip's first frame?
     seams = []
     for a_, b_ in zip(clips, clips[1:]):
+        if SHOTS[b_.stem].get("cut"):
+            continue
         fa, fb = d / f"_{a_.stem}_last.png", d / f"_{b_.stem}_first.png"
         subprocess.run([ff, "-y", "-loglevel", "error", "-sseof", "-0.3", "-i", str(a_), "-update", "1", str(fa)], check=True)
         subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(b_), "-frames:v", "1", str(fb)], check=True)
@@ -217,14 +276,16 @@ def stitch(aspect, res):
         fa.unlink(); fb.unlink()
     for s_ in seams:
         print(f"  seam {s_['between']}: {s_['mean_abs_diff']} {'ok' if s_['ok'] else 'JUMP: regenerate or crossfade'}")
-    (d / "film.json").write_text(json.dumps({"clips": [p.name for p in clips], "fps": 24, "frames": n,
+    (d / "film.json").write_text(json.dumps({"clips": [p.name for p in clips], "fps": fps, "frames": n,
                                              "seams": seams}, indent=2), encoding="utf-8")
     print("stitched", film.relative_to(SITE), "frames:", n)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["masks", "keyframes", "clips", "stitch"])
+    ap.add_argument("cmd", choices=["masks", "seed", "keyframes", "clips", "stitch"])
+    ap.add_argument("--world", default=None)
+    ap.add_argument("--fps", type=int, default=24, help="frames per second extracted by stitch")
     ap.add_argument("ids", nargs="*")
     ap.add_argument("--aspect", default="16:9")
     ap.add_argument("--res", default="360p")
@@ -232,6 +293,14 @@ def main():
     a = ap.parse_args()
     if a.cmd == "masks":
         make_masks(a.aspect)
+    elif a.cmd == "seed":
+        # approved style frames that already are keyframes
+        d = OUT / a.aspect.replace(":", "x") / "keyframes"
+        d.mkdir(parents=True, exist_ok=True)
+        for kid, name in SEED.items():
+            src = STYLEFRAMES / (WORLD or "default") / f"{name}.png"
+            Image.open(src).convert("RGB").save(d / f"{kid}.png")
+            print("seed", kid, "<-", src.name)
     elif a.cmd == "keyframes":
         c = client()
         for kid in (a.ids or list(KEYFRAMES)):
@@ -241,7 +310,7 @@ def main():
         for sid in (a.ids or list(SHOTS)):
             make_clip(c, sid, a.aspect, a.res, a.force)
     else:
-        stitch(a.aspect, a.res)
+        stitch(a.aspect, a.res, a.fps)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,187 @@
+/* Additions the real site needs on top of worlds.css (which is generated from the look pages). */
+.world { min-height: 100vh; font-weight: 400; }
+.world h1, .world h2, .world h3 { letter-spacing: -0.02em; }
+.world h4 { font-family: var(--font-display); }
+.world .deva, .world .quote { font-family: var(--font-deva); }
+.world .nav a { text-decoration: none; }
+.world .nav ul a:hover { color: var(--fg); }
+.world .btn { font-weight: 600; }
+
+/* the "Showing the … version · Change" chip */
+.world .whichbox { position: relative; }
+.world button.which { background: transparent; cursor: pointer; }
+.world button.which:hover { border-color: var(--border-gold); }
+.world .whichmenu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; min-width: 190px; padding: 6px; display: grid;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--w-radius-sm); box-shadow: var(--shadow-lg); }
+.world .whichmenu button { text-align: left; background: transparent; border: 0; cursor: pointer; padding: 10px 12px; border-radius: 6px;
+  font: 500 var(--text-sm)/1.2 var(--font-body); color: var(--fg-muted); }
+.world .whichmenu button:hover, .world .whichmenu button:focus-visible { background: var(--accent-quiet); color: var(--fg); outline: none; }
+
+/* footer */
+.world .wfoot { border-top: 1px solid var(--border-strong); padding: var(--s-7) 0; font-size: var(--text-sm); color: var(--fg-subtle); }
+.world .wfoot .wrap { display: flex; gap: var(--s-5); justify-content: space-between; flex-wrap: wrap; }
+.world .wfoot nav { display: flex; gap: var(--s-5); flex-wrap: wrap; }
+.world .wfoot a { text-decoration: none; color: var(--fg-muted); }
+.world .wfoot a:hover { color: var(--fg); }
+
+.world .phone span.btn { cursor: default; }
+@media (max-width: 900px) { .world .whichbox { display: none; } }
+
+/* ------------------------------------------------------------ scroll-driven film */
+.world .filmtrack { position: relative; }
+.world .filmstage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: var(--ink-950) center / cover no-repeat; }
+.world .filmstage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.world .filmveil { position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(10,9,8,.86) 0%, rgba(10,9,8,.5) 34%, rgba(10,9,8,0) 62%),
+              linear-gradient(0deg, rgba(10,9,8,.6), rgba(10,9,8,0) 24%, rgba(10,9,8,0) 80%, rgba(10,9,8,.45)); }
+.world .filmslide { position: absolute; inset: 0; display: grid; align-items: center; opacity: 0; pointer-events: none; will-change: opacity, transform; }
+.world .filmslide.first { opacity: 1; pointer-events: auto; }
+.world .filmslide > .wrap { width: 100%; display: grid; grid-template-columns: minmax(0, 600px); }
+.world .filmslide .copy { display: grid; gap: var(--s-5); justify-items: start; }
+.world .filmslide h2 { font-size: clamp(32px, 3.8vw, 56px); line-height: 1.08; }
+.world .filmslide .count { font: 500 var(--text-xs)/1 var(--font-mono); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--fg-subtle); }
+.world .filmindex { position: absolute; right: 22px; top: 50%; transform: translateY(-50%); display: grid; gap: 10px; justify-items: end; }
+.world .filmindex button { background: none; border: 0; padding: 0; cursor: pointer; font: 500 10px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-faint); }
+.world .filmindex button:hover { color: var(--fg-muted); }
+.world .filmindex button.on { color: var(--accent); }
+.world .filmloading { position: absolute; right: 22px; bottom: 20px; font: 500 10px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--fg-subtle); }
+@media (max-width: 1100px) { .world .filmindex { display: none; } }
+@media (max-width: 900px) {
+  .world .filmveil { background: linear-gradient(0deg, rgba(10,9,8,.92) 34%, rgba(10,9,8,.3)); }
+  .world .filmslide { align-items: end; padding-bottom: var(--s-8); }
+}
+
+/* ------------------------------------------------------------ sections added in phase 4 */
+.world .after { margin-top: var(--s-6); }
+.world .asks { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.world .ask { text-decoration: none; padding: 14px 20px; border-radius: var(--r-pill); border: 1px solid var(--glass-border); background: var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); font-size: var(--text-base); color: var(--fg); }
+.world .ask:hover { border-color: var(--border-gold); }
+.world .also { margin-top: var(--s-6); font-size: var(--text-sm); color: var(--fg-subtle); display: flex; gap: var(--s-4); flex-wrap: wrap; }
+.world .also a { color: var(--fg-muted); text-decoration: none; border-bottom: 1px solid var(--border-strong); }
+.world .also a:hover { color: var(--fg); border-color: var(--border-gold); }
+.world ul.plain { list-style: none; margin: 0; padding: 0; display: grid; max-width: 46em; }
+.world ul.plain li { padding: var(--s-5) 0; border-bottom: 1px solid var(--border-strong); color: var(--fg-muted); font-size: var(--text-md); }
+.world .faq { max-width: 52em; border-top: 1px solid var(--border-strong); }
+.world .faq details { border-bottom: 1px solid var(--border-strong); }
+.world .faq summary { cursor: pointer; list-style: none; padding: var(--s-5) 0; font: 500 var(--text-md)/1.4 var(--font-display); display: flex; justify-content: space-between; gap: var(--s-4); }
+.world .faq summary::-webkit-details-marker { display: none; }
+.world .faq summary::after { content: "+"; color: var(--accent); font-weight: 400; }
+.world .faq details[open] summary::after { content: "\2212"; }
+.world .faq p { padding: 0 0 var(--s-5); color: var(--fg-muted); max-width: 40em; }
+.world section.close { text-align: center; }
+.world section.close .wrap { display: grid; gap: var(--s-5); justify-items: center; }
+.world section.close h2 { font-size: clamp(36px, 4.6vw, 68px); }
+.world section.close .ctas { justify-content: center; }
+.world .card .step-n { font: 500 var(--text-3xl)/1 var(--font-display); color: var(--accent); }
+
+/* ------------------------------------------------------------ the SaaS character film */
+.world .filmstage canvas { font-family: var(--font-mono); }
+.world .filmstage.drawn { background: var(--ink-950); }
+.world .filmstage.drawn .filmveil { background: linear-gradient(90deg, rgba(10,9,8,.97) 0%, rgba(10,9,8,.97) 34%, rgba(10,9,8,0) 45%); }
+.world[data-world="saas"] .filmslide > .wrap { grid-template-columns: minmax(0, 470px); }
+.world[data-world="saas"] .filmslide h1 { font-size: clamp(32px, 3.3vw, 50px); }
+.world[data-world="saas"] .filmslide h2 { font-size: clamp(26px, 2.6vw, 40px); line-height: 1.12; }
+.world[data-world="saas"] .filmslide .lead { font-size: var(--text-base); }
+.world[data-world="saas"] .filmindex { right: auto; left: 22px; justify-items: start; }
+.world[data-world="saas"] .ask { border-radius: var(--r-xs); font-family: var(--font-mono); font-size: 13px; background: var(--ink-900); border-color: var(--border-strong); }
+.world[data-world="saas"] .faq summary { font-size: var(--text-base); }
+.world[data-world="saas"] .callout { background: var(--ink-900); border: 1px solid var(--border-strong); border-radius: var(--w-radius); padding: var(--s-7); display: grid; gap: var(--s-3); }
+.world[data-world="saas"] .callout .big { font-family: var(--font-mono); font-size: clamp(40px, 5vw, 72px); }
+.world[data-world="saas"] section.close { border-bottom: 0; }
+@media (max-width: 900px) {
+  .world .filmstage.drawn .filmveil { background: linear-gradient(0deg, rgba(10,9,8,.95) 40%, rgba(10,9,8,0) 62%); }
+}
+
+/* ------------------------------------------------------------ the Education film (photographs, with people) */
+.world[data-world="education"] .filmstage { background-color: #1a1611; }
+/* no dark wash over the photographs: each slide carries its own plate */
+.world[data-world="education"] .filmveil { background: none; }
+.world[data-world="education"] .filmslide.first { background: linear-gradient(90deg, rgba(14,11,8,.78) 0%, rgba(14,11,8,.5) 36%, rgba(14,11,8,0) 62%); }
+.world[data-world="education"] .filmslide > .wrap { grid-template-columns: minmax(0, 520px); }
+.world[data-world="education"] .filmslide h2 { font-size: clamp(28px, 3vw, 44px); line-height: 1.12; }
+.world[data-world="education"] .filmslide .plate { padding: var(--s-6) var(--s-7); }
+.world[data-world="education"] .filmslide .quote { margin: 0; }
+.world[data-world="education"] .filmindex button { color: rgba(255,248,236,.6); text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+.world[data-world="education"] .filmindex button.on { color: #f6c46e; }
+.world[data-world="education"] .filmloading { color: rgba(255,248,236,.7); }
+@media (max-width: 900px) {
+  .world[data-world="education"] .filmslide.first { background: linear-gradient(0deg, rgba(14,11,8,.9) 30%, rgba(14,11,8,.35) 70%, rgba(14,11,8,.2)); }
+  .world[data-world="education"] .filmslide .plate { padding: var(--s-5); }
+}
+/* upright phones: the picture fills the top of the screen, the copy sits below it on the dark ground */
+@media (max-width: 900px) and (max-aspect-ratio: 4/5) {
+  .world .filmstage[data-upright] { background-image: none !important; }
+  .world[data-world="education"] .filmstage[data-upright] .filmveil { background: linear-gradient(180deg, rgba(26,22,17,0) 46%, #1a1611 60%); }
+  .world[data-world="education"] .filmstage[data-upright] .filmslide:not(.first) .plate {
+    background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0;
+    --fg: #f6f1e9; --fg-muted: #d6cdc0; --fg-subtle: #a89e92; --accent: #edab48; color: var(--fg); }
+  .world[data-world="education"] .filmstage[data-upright] .filmslide:not(.first) { align-items: start; padding: 63vh 0 0; padding-top: 63svh; }
+  .world[data-world="education"] .filmstage[data-upright] .filmslide h2 { font-size: 26px; }
+  .world[data-world="education"] .filmstage[data-upright] .filmslide .lead { font-size: var(--text-base); }
+}
+
+/* ------------------------------------------------------------ the Enterprise line film */
+.world .filmstage.drawn-enterprise { background: var(--white); border-bottom: 1px solid var(--border-strong); }
+.world .filmstage.drawn-enterprise canvas { color: var(--fg); }
+.world .filmstage.drawn-enterprise .filmveil { background: none; }
+.world[data-world="enterprise"] .filmslide > .wrap { grid-template-columns: minmax(0, 480px); }
+.world[data-world="enterprise"] .filmslide h1 { font-size: clamp(32px, 3.4vw, 50px); }
+.world[data-world="enterprise"] .filmslide h2 { font-size: clamp(26px, 2.6vw, 38px); line-height: 1.14; }
+.world[data-world="enterprise"] .filmslide .count { color: var(--fg-muted); }
+.world[data-world="enterprise"] .filmindex { right: auto; left: 22px; justify-items: start; }
+.world[data-world="enterprise"] .filmindex button.on { color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
+.world[data-world="enterprise"] section.close { text-align: left; border-bottom: 0; }
+.world[data-world="enterprise"] section.close .wrap { justify-items: start; }
+.world[data-world="enterprise"] section.close .ctas { justify-content: flex-start; }
+.world[data-world="enterprise"] section.close h2 { font-size: clamp(28px, 3.2vw, 44px); }
+.world[data-world="enterprise"] .card .n { font: 500 var(--text-xs)/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-muted); }
+@media (max-width: 900px) {
+  .world .filmstage.drawn-enterprise .filmveil { background: linear-gradient(0deg, var(--white) 46%, rgba(255,255,255,0) 54%); }
+  .world[data-world="enterprise"] .filmslide h1 { font-size: 30px; }
+}
+
+/* ------------------------------------------------------------ English / Hindi switch */
+.world .langbtn { background: none; border: 1px solid var(--border-strong); border-radius: var(--r-pill); padding: 6px 14px; cursor: pointer;
+  font: 500 var(--text-xs)/1.4 var(--font-body); color: var(--fg-muted); white-space: nowrap; }
+.world .langbtn:hover { color: var(--fg); border-color: var(--border-gold); }
+.world .langbtn .deva { font-size: var(--text-sm); line-height: 1.2; }
+.world[data-world="enterprise"] .langbtn, .world[data-world="saas"] .langbtn { border-radius: var(--r-xs); }
+.world .lang button { padding: 7px 16px; border-radius: var(--r-pill); border: 0; background: none; cursor: pointer; font: inherit; color: var(--fg-muted); }
+.world .lang button.on { background: var(--fg); color: var(--bg); }
+.world .on-dark .lang button.on { background: #f6f1e9; color: #1a1611; }
+/* headlines keep their weight and size in Hindi; only the typeface and line height change */
+/* Hindi lines run longer and Devanagari sits taller, so headlines are set a step smaller */
+.world h1.deva { line-height: 1.34; font-size: clamp(26px, 2.7vw, 40px) !important; }
+.world h2.deva { line-height: 1.38; font-size: clamp(22px, 2.2vw, 32px) !important; }
+.world .btn.deva { line-height: 1.3; }
+.world .langfade { animation: fb-langfade 420ms ease both; }
+@keyframes fb-langfade { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 900px) { .world .nav .langbtn { padding: 5px 10px; } }
+@media (prefers-reduced-motion: reduce) { .world .langfade { animation: none; } }
+
+/* ------------------------------------------------------------ the default film on upright phones */
+@media (max-width: 900px) and (max-aspect-ratio: 4/5) {
+  .world[data-world="default"] .filmstage[data-upright] .filmveil { background: linear-gradient(180deg, rgba(10,9,8,0) 44%, var(--ink-950) 58%); }
+  .world[data-world="default"] .filmstage[data-upright] .filmslide:not(.first) { align-items: start; padding: 61vh 0 0; padding-top: 61svh; }
+  .world[data-world="default"] .filmstage[data-upright] .filmslide:not(.first) .plate { background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0; }
+  .world[data-world="default"] .filmstage[data-upright] .filmslide h2 { font-size: 28px; }
+}
+.world .nav .btn { white-space: nowrap; }
+
+/* ------------------------------------------------------------ accessibility fixes (phase 9 review) */
+/* Small grey text: dark enough (or light enough) to reach 4.5 : 1 on every background it sits on. */
+.world { --fg-subtle: #968d83; }
+.world[data-theme="light"] { --fg-subtle: #6b6258; }
+.world .on-dark { --fg-subtle: #a89e92; }
+/* Gold as text on a light ground: a deeper gold for large text (3 : 1) and a deeper one still for small text (4.5 : 1).
+   Gold fills, lines and the film stay the brand gold. */
+.world[data-theme="light"] section .gold, .world[data-theme="light"] section .step-n, .world[data-theme="light"] section .callout .big { color: #a26c14; }
+.world[data-world="enterprise"] section .gold { color: var(--fg); }
+.world[data-theme="light"] section .eyebrow, .world[data-theme="light"] .which u { color: #855608; }
+.world[data-world="enterprise"] section .eyebrow { color: var(--fg-muted); }
+/* Click targets at least 24 px tall. */
+.world .nav ul a { display: inline-block; padding: 4px 0; }
+.world .filmindex { gap: 0; }
+.world .filmindex button { padding: 7px 0; }
+.world .wfoot a { display: inline-block; padding: 2px 0; }
