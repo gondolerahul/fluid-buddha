@@ -10,3 +10,10 @@ web/public/film/home/
 
 # Secrets
 .env
+
+# Old film outputs set aside on 10 Nov 2026 (safe to delete)
+film/discarded-*/
+
+# Draft film frames for the worlds, copied into the site (regenerated from film/out by pipeline.py stitch)
+web/public/film/default/
+web/public/film/education/

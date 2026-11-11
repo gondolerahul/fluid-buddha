@@ -2,9 +2,6 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Space_Grotesk, Hanken_Grotesk, JetBrains_Mono, Noto_Sans_Devanagari } from "next/font/google";
 import "./globals.css";
-import Nav from "@/components/Nav";
-import Footer from "@/components/Footer";
-import AskBar from "@/components/AskBar";
 import RevealObserver from "@/components/RevealObserver";
 import AgentLoader from "@/components/AgentLoader";
 
@@ -18,10 +15,10 @@ const roblox = localFont({
     { path: "./fonts/roblox-black.woff2", weight: "900" },
   ],
 });
-const space = Space_Grotesk({ subsets: ["latin"], weight: ["300", "400", "500"], variable: "--font-space", display: "swap" });
+const space = Space_Grotesk({ subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--font-space", display: "swap" });
 const hanken = Hanken_Grotesk({ subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--font-hanken", display: "swap" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-jetbrains", display: "swap" });
-const deva = Noto_Sans_Devanagari({ subsets: ["devanagari"], weight: ["300", "400", "500"], variable: "--font-noto-deva", display: "swap" });
+const deva = Noto_Sans_Devanagari({ subsets: ["devanagari"], weight: ["300", "400", "500", "600"], variable: "--font-noto-deva", display: "swap" });
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://fluidbuddha.com"),
@@ -37,10 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" data-theme="paper" className={`${roblox.variable} ${space.variable} ${hanken.variable} ${jetbrains.variable} ${deva.variable}`}>
       <body>
         <a href="#main" className="sr-only">Skip to content</a>
-        <Nav />
-        <main id="main">{children}</main>
-        <Footer />
-        <AskBar />
+        {children}
         <RevealObserver />
         <AgentLoader />
       </body>

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluidBuddha — four looks, side by side</title>
+<link rel="icon" href="../brand/logo/favicon.svg">
+<link rel="stylesheet" href="look.css">
+<style>
+  body { background: #000; }
+  .top { padding: var(--s-7) var(--s-6) var(--s-5); max-width: 1500px; margin: 0 auto; display: grid; gap: var(--s-2); }
+  .top p { color: var(--fg-muted); max-width: 60em; }
+  .four { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-5); padding: 0 var(--s-6) var(--s-9); max-width: 1500px; margin: 0 auto; }
+  .tile { display: grid; gap: var(--s-3); text-decoration: none; }
+  .tile .label { display: flex; justify-content: space-between; font: 500 12px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-muted); }
+  .tile .label b { color: var(--gold-300); font-weight: 500; }
+  .port { position: relative; aspect-ratio: 16 / 10; overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--r-md); container-type: inline-size; background: var(--ink-900); }
+  .port iframe { position: absolute; top: 0; left: 0; width: 1440px; height: 900px; border: 0; transform-origin: 0 0; transform: scale(calc(100cqw / 1440px)); pointer-events: none; }
+  @media (max-width: 900px) { .four { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="review"><b>LOOK REVIEW</b><a href="index.html" aria-current="page">All four</a><a href="default.html">Default</a><a href="saas.html">SaaS</a><a href="education.html">Education</a><a href="enterprise.html">Enterprise</a></div>
+<div class="top">
+  <span class="eyebrow">Phase 2 · look</span>
+  <h2>One design system, four settings.</h2>
+  <p>Each tile is the top of a real page with final-draft copy and no film yet. Click a tile to open the full page with its three film style frames.</p>
+</div>
+<div class="four">
+  <a class="tile" href="default.html"><div class="label"><b>0 · Default</b><span>Warm black, smoked glass, gold light</span></div><div class="port"><iframe src="default.html" title="Default look" loading="lazy" tabindex="-1"></iframe></div></a>
+  <a class="tile" href="saas.html"><div class="label"><b>1 · B2B SaaS</b><span>Terminal: grid, mono, characters</span></div><div class="port"><iframe src="saas.html" title="SaaS look" loading="lazy" tabindex="-1"></iframe></div></a>
+  <a class="tile" href="education.html"><div class="label"><b>2 · Education</b><span>Warm paper, large type, people</span></div><div class="port"><iframe src="education.html" title="Education look" loading="lazy" tabindex="-1"></iframe></div></a>
+  <a class="tile" href="enterprise.html"><div class="label"><b>3 · Regulated enterprise</b><span>Near-white document, flat lines</span></div><div class="port"><iframe src="enterprise.html" title="Enterprise look" loading="lazy" tabindex="-1"></iframe></div></a>
+</div>
+</body>
+</html>
