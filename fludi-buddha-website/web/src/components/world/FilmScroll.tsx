@@ -9,8 +9,13 @@
  *  - `frames`: a rendered film, as an image sequence drawn to the canvas. Frames load in passes
  *    (every 32nd frame, then 8th, 2nd, all) so scrubbing works at once. With reduced motion only
  *    one frame per slide is loaded.
- *  - `code`: a film drawn live from the scroll position (the SaaS world's character film). There is
- *    nothing to download. It only ever moves when the visitor scrolls.
+ *  - `code`: a film drawn live from the scroll position (SaaS in characters, Enterprise as line
+ *    drawings). Nothing to download. Over the SaaS hero a small light follows the pointer: the
+ *    film's own sign for "a visitor".
+ *
+ * The film is drawn from the scroll event, not from animation frames: browsers pause
+ * requestAnimationFrame in background tabs, and one draw per scroll event is cheap. It is the one
+ * scroll-linked part of a world page, and it never touches React state while scrolling.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { renderAsciiFilm } from "./asciiFilm";
@@ -36,6 +41,7 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
   const count = frames?.count ?? 0;
   const track = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const bar = useRef<HTMLSpanElement>(null);
   const imgs = useRef<(HTMLImageElement | undefined)[]>(new Array(count));
   const slides = useRef<(HTMLDivElement | null)[]>([]);
   const raf = useRef(0);
@@ -43,8 +49,9 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
   const navH = useRef(0);
   const reduced = useRef(false);
   const seen = useRef(new Set<number>());
+  const light = useRef<{ x: number; y: number } | null>(null);
   const colors = useRef({ fg: "#14110f", accent: "#b9791a" });
-  const [loaded, setLoaded] = useState(frames ? 0 : 100);
+  const [loading, setLoading] = useState(!!frames);
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
   const dir = useRef(frames?.dir ?? "");
@@ -73,7 +80,7 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
         pd = k === 0 ? 0 : ranges[k][0] + (ranges[k][1] - ranges[k][0]) * 0.75;
       }
       if (code?.id === "enterprise") renderLineFilm(g, cv.width, cv.height, pd, { font: font.current, top: navH.current, ...colors.current });
-      else if (code) renderAsciiFilm(g, cv.width, cv.height, pd, font.current, navH.current);
+      else if (code) renderAsciiFilm(g, cv.width, cv.height, pd, { font: font.current, top: navH.current, light: p < ranges[0][1] + 0.01 ? light.current : null });
       else {
         const f = Math.round(p * (count - 1));
         let im: HTMLImageElement | undefined;
@@ -106,7 +113,8 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
       if (!el) return;
       const o = i === 0 && p <= from ? 1 : Math.min(clamp((p - from) / FADE), clamp((to - p) / FADE));
       el.style.opacity = String(o);
-      el.style.transform = `translateY(${(1 - o) * 14}px)`;
+      el.style.transform = `translateY(${(1 - o) * 16}px)`;
+      el.style.filter = o < 1 ? `blur(${(1 - o) * 6}px)` : "";
       el.style.pointerEvents = o > 0.6 ? "auto" : "none";
       el.setAttribute("aria-hidden", o > 0.5 ? "false" : "true");
       // a slide that is not showing must not take keyboard focus either
@@ -133,7 +141,7 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
       font.current = cs.fontFamily || "monospace";
       // the line film is drawn in the page's own colours
       colors.current = { fg: cs.color || "#14110f", accent: cs.getPropertyValue("--accent").trim() || "#b9791a" };
-      navH.current = (document.querySelector<HTMLElement>(".world .nav")?.offsetHeight ?? 0) * d;
+      navH.current = (document.querySelector<HTMLElement>(".hdr")?.offsetHeight ?? 0) * d;
       draw();
     };
     size();
@@ -143,19 +151,33 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
     // also when the stage itself changes size without a window resize event (mobile address bar, device emulation)
     const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(size);
     if (ro && canvas.current) ro.observe(canvas.current);
-    // Drawn straight from the scroll event: browsers pause requestAnimationFrame in background tabs,
-    // and one frame per scroll event is cheap.
     window.addEventListener("scroll", draw, { passive: true });
-    return () => { ro?.disconnect(); window.removeEventListener("resize", size); window.removeEventListener("scroll", draw); cancelAnimationFrame(raf.current); };
+    // the colours change when the visitor switches version in place
+    const mo = new MutationObserver(size);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-world"] });
+    return () => { ro?.disconnect(); mo.disconnect(); window.removeEventListener("resize", size); window.removeEventListener("scroll", draw); cancelAnimationFrame(raf.current); };
   }, [draw]);
+
+  // the SaaS hero: a small light follows a fine pointer across the characters
+  useEffect(() => {
+    if (code?.id !== "saas" || reduced.current || !window.matchMedia("(pointer: fine)").matches) return;
+    const stage = canvas.current?.parentElement;
+    if (!stage) return;
+    const d = Math.min(window.devicePixelRatio || 1, 2);
+    const move = (e: PointerEvent) => { light.current = { x: e.clientX * d, y: e.clientY * d }; schedule(); };
+    const leave = () => { light.current = null; schedule(); };
+    stage.addEventListener("pointermove", move);
+    stage.addEventListener("pointerleave", leave);
+    return () => { stage.removeEventListener("pointermove", move); stage.removeEventListener("pointerleave", leave); };
+  }, [code, schedule]);
 
   useEffect(() => {
     if (!frames) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     dir.current = frames.mobileDir && window.innerWidth < 768 ? frames.mobileDir : frames.dir;
     const order: number[] = [];
-    const seen = new Set<number>();
-    const add = (i: number) => { const k = Math.round(clamp(i, 0, frames.count - 1)); if (!seen.has(k)) { seen.add(k); order.push(k); } };
+    const added = new Set<number>();
+    const add = (i: number) => { const k = Math.round(clamp(i, 0, frames.count - 1)); if (!added.has(k)) { added.add(k); order.push(k); } };
     if (reduced) ranges.forEach(([a, b]) => add(((a + b) / 2) * (frames.count - 1)));
     else {
       // on a slow or data-saving connection, a quarter of the frames is enough to scrub with
@@ -171,7 +193,8 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
       im.decoding = "async";
       im.onload = () => {
         imgs.current[i] = im; n++;
-        if (n % 30 === 0 || n === order.length) setLoaded(Math.round((n / order.length) * 100));
+        if (bar.current) bar.current.style.transform = `scaleX(${n / order.length})`;
+        if (n === order.length) setLoading(false);
         schedule();
         next();
       };
@@ -194,23 +217,33 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
   useEffect(() => {
     const go = () => { const i = ids.indexOf(window.location.hash.slice(1)); if (i > 0) { jump(i, "auto"); draw(); } };
     go();
+    const click = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.("a[href^='#']");
+      const i = a ? ids.indexOf(a.getAttribute("href")!.slice(1)) : -1;
+      if (i > 0) { e.preventDefault(); jump(i); history.replaceState(history.state, "", `#${ids[i]}`); }
+    };
     window.addEventListener("hashchange", go);
-    return () => window.removeEventListener("hashchange", go);
+    document.addEventListener("click", click);
+    return () => { window.removeEventListener("hashchange", go); document.removeEventListener("click", click); };
   }, [ids, jump, draw]);
 
   const length = frames ? frames.count * frames.pxPerFrame : code?.length ?? 0;
   return (
-    <div ref={track} className="filmtrack" style={{ height: `calc(${length}px + 100vh)` }}>
-      <div className={`filmstage${code ? ` drawn drawn-${code.id}` : ""}`} style={frames ? { backgroundImage: `url('${frames.poster}')` } : undefined} data-upright={frames?.portraitTop ? "" : undefined}>
+    <div ref={track} className="film-track" style={{ height: `calc(${length}px + 100vh)` }}>
+      <div className={`film-stage${code ? ` drawn drawn-${code.id}` : ""}`} style={frames ? { backgroundImage: `url('${frames.poster}')` } : undefined} data-upright={frames?.portraitTop ? "" : undefined}>
         <canvas ref={canvas} aria-hidden />
-        <div className="filmveil" aria-hidden />
+        <div className="film-veil" aria-hidden />
         {children.map((c, i) => (
-          <div key={i} ref={(el) => { slides.current[i] = el; }} className={`filmslide${i === 0 ? " first" : ""}`}>{c}</div>
+          <div key={i} ref={(el) => { slides.current[i] = el; }} className={`film-slide${i === 0 ? " first" : ""}`}>{c}</div>
         ))}
-        <nav className="filmindex" aria-label="Film chapters">
-          {labels.map((l, i) => <button key={l} type="button" className={i === active ? "on" : undefined} onClick={() => jump(i)}>{l}</button>)}
+        <nav className="film-rail" aria-label="Film chapters">
+          {labels.map((l, i) => (
+            <button key={ids[i]} type="button" aria-current={i === active ? "step" : undefined} onClick={() => jump(i)}>
+              <i aria-hidden /><span>{l}</span>
+            </button>
+          ))}
         </nav>
-        {loaded < 100 && <span className="filmloading" aria-hidden>Film {loaded}%</span>}
+        {loading && <span className="film-load" aria-hidden><span ref={bar} /></span>}
       </div>
     </div>
   );

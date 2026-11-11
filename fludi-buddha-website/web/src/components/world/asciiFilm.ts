@@ -20,7 +20,17 @@ type Cam = { yaw: number; pitch: number; dist: number; t: V3 };
 type Rect = [number, number, number, number]; // x (left), y (top), width, height, in world units
 
 const DIM = 0, MID = 1, LIT = 2;
-const COLORS = ["#5b534a", "#b3aaa0", "#fdc871"];
+// The night-console palette: cool slate characters, gold for what is lit (the visitor, the answer).
+const COLORS = ["#3a4250", "#9ba6b6", "#f6c064"];
+const GLOW = "rgba(246, 192, 100, .55)";
+
+export type AsciiOpt = {
+  font: string;
+  /** Height in canvas pixels covered by the site header: labels stay below it. */
+  top?: number;
+  /** A point of light (canvas pixels) that brightens the characters near it: the visitor's pointer. */
+  light?: { x: number; y: number } | null;
+};
 
 // The page: 10 wide, about 6.3 tall, centred on the origin, in the plane z = 0.
 const P: Record<string, Rect> = {
@@ -72,10 +82,10 @@ function scene(p: number, i: number) {
 }
 
 // ------------------------------------------------------------------ the renderer
-/** `top` is the height in canvas pixels covered by the site's nav bar: labels stay below it. */
-export function renderAsciiFilm(ctx: CanvasRenderingContext2D, w: number, h: number, p: number, font: string, top = 0) {
+export function renderAsciiFilm(ctx: CanvasRenderingContext2D, w: number, h: number, p: number, opt: AsciiOpt) {
+  const { font, top = 0, light = null } = opt;
   const narrow = w < h * 1.1;
-  const cols = narrow ? 64 : 150;
+  const cols = narrow ? 64 : 140;
   const cw = w / cols, fs = cw / 0.6, ch = fs * 1.22;
   const rows = Math.ceil(h / ch);
   const hud = Math.ceil(top / ch) + 1; // first row for labels at the top of the screen
@@ -209,7 +219,7 @@ export function renderAsciiFilm(ctx: CanvasRenderingContext2D, w: number, h: num
       text(q[0], Math.round(q[1]), (on ? "=" : "~").repeat(len), on ? LIT : DIM);
       if (on) { set(q[0] - 2, q[1], ">", LIT); set(q[0] + len + 1, q[1], "<", LIT); }
     }
-    if (s.t > 0.35) text(cols - 22, hud, "data stored in India", MID);
+    if (s.t > 0.35) text(cols - 22, hud, "your own words", MID);
   }
   // ---- S6: the lead, with a score and what was asked
   s = scene(p, 5);
@@ -276,16 +286,35 @@ export function renderAsciiFilm(ctx: CanvasRenderingContext2D, w: number, h: num
   }
   gate = 1;
 
-  // ---- paint: one fillText per row for each brightness layer
+  // ---- the visitor's light: characters near the pointer brighten, and empty cells catch a little of it
+  if (light) {
+    const lx = light.x / cw, ly = light.y / ch, rad = narrow ? 7 : 11;
+    const x0 = Math.max(0, Math.floor(lx - rad * 1.6)), x1 = Math.min(cols - 1, Math.ceil(lx + rad * 1.6));
+    const y0 = Math.max(hud, Math.floor(ly - rad)), y1 = Math.min(rows - 1, Math.ceil(ly + rad));
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const d = Math.hypot((x - lx) / 1.6, y - ly) / rad;
+      if (d > 1) continue;
+      const i = y * cols + x;
+      if (chars[i] === " ") { if (d < 0.72 && (x + y * 2) % 3 === 0) { chars[i] = d < 0.3 ? "+" : "."; layer[i] = d < 0.45 ? MID : DIM; } }
+      else if (layer[i] < LIT && d < 0.55) layer[i] = layer[i] + 1;
+    }
+    const cx0 = Math.round(lx), cy0 = Math.round(ly);
+    if (cx0 >= 0 && cx0 < cols && cy0 >= hud && cy0 < rows) { chars[cy0 * cols + cx0] = "@"; layer[cy0 * cols + cx0] = LIT; }
+  }
+
+  // ---- paint: one fillText per row for each brightness layer; the lit layer glows
   ctx.clearRect(0, 0, w, h);
   ctx.font = `${fs}px ${font}`;
   ctx.textBaseline = "top";
   for (let l = 0; l < 3; l++) {
     ctx.fillStyle = COLORS[l];
+    ctx.shadowColor = l === LIT ? GLOW : "transparent";
+    ctx.shadowBlur = l === LIT ? fs * 0.7 : 0;
     for (let y = 0; y < rows; y++) {
       let row = "", any = false;
       for (let x = 0; x < cols; x++) { const i = y * cols + x; if (layer[i] === l && chars[i] !== " ") { row += chars[i]; any = true; } else row += " "; }
       if (any) ctx.fillText(row, 0, y * ch);
     }
   }
+  ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
 }

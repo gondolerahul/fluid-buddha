@@ -26,7 +26,7 @@ function fill(el: HTMLElement, text: string, stagger: boolean) {
   const words: HTMLElement[] = [];
   parts.forEach((part, i) => {
     if (!part) return;
-    const host = i === 1 && parts.length > 1 ? Object.assign(document.createElement("span"), { className: "gold" }) : root;
+    const host = i === 1 && parts.length > 1 ? Object.assign(document.createElement("span"), { className: "em" }) : root;
     part.trim().split(/\s+/).forEach((w, k) => {
       if (k > 0) host.append(" ");
       const s = document.createElement("span");
@@ -73,7 +73,7 @@ const onScreen = (el: Element) => {
   const r = el.getBoundingClientRect();
   if (r.bottom < 0 || r.top > window.innerHeight || r.width === 0) return false;
   // a film slide that is not showing counts as off screen
-  const slide = el.closest<HTMLElement>(".filmslide");
+  const slide = el.closest<HTMLElement>(".film-slide");
   return !slide || Number(slide.style.opacity || (slide.classList.contains("first") ? 1 : 0)) > 0.5;
 };
 
@@ -83,7 +83,7 @@ export function setLang(to: Lang, instant = false) {
   current = to;
   const mine = ++run;
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const blocks = [...document.querySelectorAll<HTMLElement>(".world [data-hi]")];
+  const blocks = [...document.querySelectorAll<HTMLElement>("main [data-hi]")];
   const url = new URL(window.location.href);
   if (to === "hi") url.searchParams.set("lang", "hi"); else url.searchParams.delete("lang");
   window.history.replaceState(window.history.state, "", url);
@@ -91,7 +91,7 @@ export function setLang(to: Lang, instant = false) {
 
   if (instant || reduced) {
     // reduced motion: one short cross-fade of the whole page
-    const world = document.querySelector<HTMLElement>(".world");
+    const world = document.querySelector<HTMLElement>("main");
     if (reduced && !instant && world) { world.style.transition = "opacity 150ms ease"; world.style.opacity = "0"; }
     window.setTimeout(() => {
       blocks.forEach((el) => swap(el, to, false));
@@ -105,8 +105,21 @@ export function setLang(to: Lang, instant = false) {
   seen.forEach((el, i) => window.setTimeout(() => { if (mine === run) swap(el, to, true); else swap(el, current, false); }, i * (BLOCK_MS * 0.5 + GAP_MS)));
 }
 
-/** Called when a world page mounts: every page starts in English unless its link says ?lang=hi. */
+/** On every route change: back to English, without touching the page (the new page may still be hydrating). */
+export function resetLang() {
+  current = "en";
+  run++;
+  window.dispatchEvent(new CustomEvent(LANG_EVENT, { detail: { lang: "en" } }));
+}
+
+/** Called by a page with Hindi once it has hydrated (<LangInit />): English unless its link says ?lang=hi. */
 export function initLang() {
   current = "en";
+  run++;
+  window.dispatchEvent(new CustomEvent(LANG_EVENT, { detail: { lang: "en" } }));
   if (new URLSearchParams(window.location.search).get("lang") === "hi") setLang("hi", true);
 }
+
+/** The pages that carry reviewed Hindi (WebsitePlan.md §3.5): each world's page and the pricing page. */
+export const HINDI_PAGES = ["/", "/for/saas", "/for/education", "/for/enterprise", "/pricing"];
+export const hasHindi = (pathname: string) => HINDI_PAGES.includes(pathname.replace(/\/$/, "") || "/");

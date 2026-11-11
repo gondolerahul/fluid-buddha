@@ -137,5 +137,5 @@ not installed on this machine, so nothing below about them is a test result.
 | 6 | FAQ order does not change with the role | Not built |
 | 7 | Connect the measurement events to a destination | Not done |
 | 8 | Screen reader pass | Not done |
-| 9 | Old pages under `(site)` still exist beside the new worlds (missing film posters, old `/hi`) | Decide: update, redirect or remove |
+| 9 | Old pages under `(site)` still exist beside the new worlds (missing film posters, old `/hi`) | Done on 11 November 2026: rebuilt on the worlds' system, duplicates redirected ([audit](audit-2026-11-11.md) §6) |
 | 10 | Nothing is committed to git | Your decision |

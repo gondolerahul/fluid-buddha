@@ -48,10 +48,24 @@ export function renderLineFilm(g: CanvasRenderingContext2D, w: number, h: number
   const pen = (color: string, width: number, alpha = 1, dash?: number[]) => {
     g.strokeStyle = color; g.fillStyle = color; g.lineWidth = width; g.globalAlpha = alpha * fade; g.setLineDash(dash ?? []);
   };
-  const ink = (alpha = 1) => pen(opt.fg, 1.2, alpha);
-  const soft = () => pen(opt.fg, 1, 0.32);
-  const gold = (alpha = 1) => pen(opt.accent, 2, alpha);
-  const dashed = (alpha = 1) => pen(opt.fg, 1.2, alpha, [5, 5]);
+  const ink = (alpha = 1) => pen(opt.fg, 1.45, alpha);
+  const soft = () => pen(opt.fg, 1.1, 0.36);
+  const gold = (alpha = 1) => pen(opt.accent, 2.4, alpha);
+  const dashed = (alpha = 1) => pen(opt.fg, 1.4, alpha, [5, 5]);
+
+  // drafting paper under the drawing: the one place on the page where a grid belongs
+  g.save();
+  g.globalAlpha = 0.07; g.strokeStyle = opt.fg; g.lineWidth = 0.6; g.setLineDash([]);
+  g.beginPath();
+  for (let x = 0; x <= 480; x += 20) { g.moveTo(x, 0); g.lineTo(x, 280); }
+  for (let y = 0; y <= 280; y += 20) { g.moveTo(0, y); g.lineTo(480, y); }
+  g.stroke();
+  g.globalAlpha = 0.12; g.lineWidth = 0.8;
+  g.beginPath();
+  for (let x = 0; x <= 480; x += 100) { g.moveTo(x, 0); g.lineTo(x, 280); }
+  for (let y = 0; y <= 280; y += 100) { g.moveTo(0, y); g.lineTo(480, y); }
+  g.stroke();
+  g.restore();
 
   /** Strokes the first part `t` (0 to 1) of a line through the points. */
   const path = (pts: Pt[], t = 1, close = false) => {
@@ -76,7 +90,7 @@ export function renderLineFilm(g: CanvasRenderingContext2D, w: number, h: number
     if (alpha <= 0) return;
     g.setLineDash([]); g.globalAlpha = alpha * fade; g.fillStyle = color;
     // upright screens scale the drawing down, so the labels are set larger there to stay readable
-    g.font = `500 ${upright ? 10.5 : 9}px ${opt.font}`;
+    g.font = `500 ${upright ? 11.5 : 10}px ${opt.font}`;
     (g as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = upright ? "0.4px" : "1.1px";
     g.fillText(s.toUpperCase(), x, y);
   };
