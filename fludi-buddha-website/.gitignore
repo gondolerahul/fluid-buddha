@@ -14,6 +14,5 @@ web/public/film/home/
 # Old film outputs set aside on 10 Nov 2026 (safe to delete)
 film/discarded-*/
 
-# Draft film frames for the worlds, copied into the site (regenerated from film/out by pipeline.py stitch)
-web/public/film/default/
-web/public/film/education/
+# The film frames the site plays (web/public/film/default, web/public/film/education) are committed,
+# so that a deploy from the repository has them. They are exported from film/out after a render.
