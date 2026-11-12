@@ -17,7 +17,7 @@ function Options({ onPick, current }: { onPick: (id: WorldId) => void; current: 
   return (
     <>
       {WORLD_IDS.map((id) => (
-        <button key={id} type="button" role="menuitemradio" aria-checked={id === current} className="vs-opt" onClick={() => onPick(id)}>
+        <button key={id} type="button" role="menuitemradio" aria-checked={id === current} className="vs-opt" data-id={id} onClick={() => onPick(id)}>
           <i aria-hidden />
           <b>{VERSIONS[id].label}</b>
           <small>{VERSIONS[id].line}</small>
@@ -61,13 +61,12 @@ export default function VersionSwitch({ placement = "down", variant = "menu", on
     <div className="vs" ref={box}>
       <button type="button" className="vs-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}
               aria-label={`Version of this site: ${VERSIONS[current].label}. Change`}>
-        <span className="dot" aria-hidden />
         {WORLD_IDS.map((id) => <span key={id} className="vs-name" data-for={id}>{VERSIONS[id].label}</span>)}
         <Chev />
       </button>
       {open && (
         <div className={`vs-menu${placement === "up" ? " up" : ""}`} role="menu" aria-label="Choose a version of this site">
-          <p>This site changes its look and words for you.</p>
+          <p>This site changes its colours, film and words for you.</p>
           <Options onPick={pick} current={current} />
         </div>
       )}

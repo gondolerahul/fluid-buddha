@@ -27,8 +27,10 @@ import styles from "./WorldSwitch.module.css";
 
 const MORPH_MS = 1600;
 const SWAP_AT = 0.45; // fraction of the morph at which the route (or the theme) changes
-const BG: Record<WorldId, string> = { default: "#0a0908", saas: "#0b0c0f", education: "#fdfbf7", enterprise: "#fafaf8" };
-const DOT: Record<WorldId, string> = { default: "237,171,72", saas: "240,177,79", education: "201,143,47", enterprise: "20,20,19" };
+// each world's main colour and its ink (app/globals.css); the dots are always the brand's gold
+const BG: Record<WorldId, string> = { default: "#0a0908", saas: "#0a0908", education: "#f6f2ea", enterprise: "#fffdf9" };
+const INK: Record<WorldId, string> = { default: "#f6f1e9", saas: "#f6f1e9", education: "#1a1611", enterprise: "#1a1611" };
+const DOT = "237,171,72";
 
 type Morph = { to: WorldId; reduced: boolean };
 
@@ -125,7 +127,7 @@ export default function WorldSwitch() {
     const d = Math.min(window.devicePixelRatio || 1, 2);
     const w = (cv.width = window.innerWidth * d), h = (cv.height = window.innerHeight * d);
     const step = 24 * d;
-    const rgb = DOT[morph.to];
+    const rgb = DOT;
     const dots: { x: number; y: number; a: number; s: number; p: number }[] = [];
     for (let y = step / 2; y < h; y += step) for (let x = step / 2; x < w; x += step)
       dots.push({ x, y, a: Math.random() * Math.PI * 2, s: 20 + Math.random() * 60, p: Math.random() * 0.25 });
@@ -152,14 +154,13 @@ export default function WorldSwitch() {
     return () => cancelAnimationFrame(raf);
   }, [morph]);
 
-  const light = morph && (morph.to === "education" || morph.to === "enterprise");
   return (
     <>
       {morph && (
-        <div className={`${styles.morph} ${morph.reduced ? styles.reduced : ""}`} style={{ ["--to" as string]: BG[morph.to] }} role="status" aria-live="polite">
+        <div className={`${styles.morph} ${morph.reduced ? styles.reduced : ""}`} style={{ ["--to" as string]: BG[morph.to], ["--to-ink" as string]: INK[morph.to] }} role="status" aria-live="polite">
           <div className={styles.veil} />
           <canvas ref={canvas} className={styles.dots} aria-hidden />
-          <p className={`${styles.line} ${light ? styles.onLight : ""}`}>
+          <p className={styles.line}>
             {morph.to === "default" ? "Changing back to the general site." : `Changing this site for ${WORLDS[morph.to].audience}.`}
           </p>
         </div>

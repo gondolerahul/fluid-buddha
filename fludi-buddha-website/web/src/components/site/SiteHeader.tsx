@@ -116,7 +116,7 @@ export default function SiteHeader() {
 
   return (
     <>
-    <header className="hdr">
+    <header className="hdr tone-ink">
       <div className="hdr-in wrap">
         <Logo />
         <VersionSwitch />
@@ -147,7 +147,7 @@ export default function SiteHeader() {
 
       {/* outside the header: its backdrop-filter would make it the containing block of a fixed menu */}
       {mobile && (
-        <div className="mm" id="phone-menu">
+        <div className="mm tone-ink" id="phone-menu">
           <nav aria-label="Main">
             {NAV.filter((n) => n.label !== "Solutions").map((n) => <Link key={n.label} href={n.href}>{n.label}<span aria-hidden>&rarr;</span></Link>)}
             {SOLUTIONS.teams.map((t) => <Link key={t.href} href={t.href}>{t.label}<span aria-hidden>&rarr;</span></Link>)}

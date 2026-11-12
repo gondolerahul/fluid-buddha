@@ -602,6 +602,12 @@ signature moment per world. §4's "no new colours" is relaxed: each world now ha
 with the brand gold as the common thread. Findings, decisions and what is still open:
 [website/audit-2026-11-11.md](website/audit-2026-11-11.md).
 
+**Design-system rebuild (12 November 2026).** The site now uses only the Buddha Cognitive Lab
+design system (ink, paper and gold; Roblox, Space Grotesk, Hanken Grotesk, JetBrains Mono), as §4
+first intended. Each world is a measured 60 / 30 / 10 of those colours, the chrome is one ink bar in
+every world, and the default film is a watercolour painted in code. Findings, measurements and what is
+still open: [website/design-audit-2026-11-12.md](website/design-audit-2026-11-12.md).
+
 Phases 5, 6 and 7 do not depend on each other and can run in parallel once phase 3 is done.
 Phase 2 is the cheapest place to change direction, so it is where your review matters most.
 

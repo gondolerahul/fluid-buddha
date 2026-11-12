@@ -3,6 +3,7 @@
  *
  * It is rendered live from the scroll position: `renderAsciiFilm(ctx, w, h, p)` draws the frame for
  * progress p (0 to 1). Nothing is pre-rendered, so it is sharp at any size and weighs a few kB.
+ * It fills its canvas, which the page shows as a terminal window on the world's secondary colour.
  *
  * How it works:
  *  1. The seven panels are rectangles in 3D space (x right, y up, z towards the viewer).
@@ -20,14 +21,15 @@ type Cam = { yaw: number; pitch: number; dist: number; t: V3 };
 type Rect = [number, number, number, number]; // x (left), y (top), width, height, in world units
 
 const DIM = 0, MID = 1, LIT = 2;
-// The night-console palette: cool slate characters, gold for what is lit (the visitor, the answer).
-const COLORS = ["#3a4250", "#9ba6b6", "#f6c064"];
-const GLOW = "rgba(246, 192, 100, .55)";
+// The design system's console, on a raised ink window: warm grey for structure, the muted text
+// colour for what is read, gold for what is lit (the visitor, the answer).
+const COLORS = ["#4a443e", "#b3aaa0", "#fdc871"];
+const GLOW = "rgba(253, 200, 113, .5)";
 
 export type AsciiOpt = {
   font: string;
-  /** Height in canvas pixels covered by the site header: labels stay below it. */
-  top?: number;
+  /** Canvas pixels per CSS pixel: the characters keep a readable size at any density. */
+  dpr?: number;
   /** A point of light (canvas pixels) that brightens the characters near it: the visitor's pointer. */
   light?: { x: number; y: number } | null;
 };
@@ -77,23 +79,25 @@ function camAt(p: number): Cam {
 function scene(p: number, i: number) {
   const [a, b] = SCENES[i].at;
   const t = clamp((p - a) / (b - a));
-  const v = Math.min(ramp(p, a - 0.012, a + 0.012), 1 - ramp(p, b - 0.012, b + 0.012));
+  // the first scene is already there when the page opens; the others dissolve in and out
+  const v = Math.min(a <= 0 ? 1 : ramp(p, a - 0.012, a + 0.012), 1 - ramp(p, b - 0.012, b + 0.012));
   return { t, v };
 }
 
 // ------------------------------------------------------------------ the renderer
 export function renderAsciiFilm(ctx: CanvasRenderingContext2D, w: number, h: number, p: number, opt: AsciiOpt) {
-  const { font, top = 0, light = null } = opt;
-  const narrow = w < h * 1.1;
-  const cols = narrow ? 64 : 140;
+  const { font, dpr = 1, light = null } = opt;
+  // a character about 8.4 CSS pixels wide: about 80 columns in the window on a laptop, 46 on a phone
+  const cols = Math.round(clamp(w / dpr / 8.4, 44, 104));
+  const narrow = cols < 60;
   const cw = w / cols, fs = cw / 0.6, ch = fs * 1.22;
   const rows = Math.ceil(h / ch);
-  const hud = Math.ceil(top / ch) + 1; // first row for labels at the top of the screen
+  const hud = 1; // first row for labels at the top of the window
   const chars = new Array<string>(cols * rows).fill(" ");
   const layer = new Uint8Array(cols * rows);
-  // where the page sits on screen: right of the copy on wide screens, upper half on phones
-  const cx = cols * (narrow ? 0.5 : 0.72), cy = rows * (narrow ? 0.25 : 0.5);
-  const scale = cols * (narrow ? 0.82 : 0.6), cellAspect = cw / ch;
+  // the page sits in the middle of the window
+  const cx = cols * 0.5, cy = rows * 0.52;
+  const scale = cols * 0.84, cellAspect = cw / ch;
 
   let gate = 1; // cells with hash > gate are skipped: a dissolve
   const set = (x: number, y: number, c: string, l: number) => {
@@ -268,7 +272,7 @@ export function renderAsciiFilm(ctx: CanvasRenderingContext2D, w: number, h: num
   s = scene(p, 8);
   if (s.v > 0) {
     gate = s.v;
-    const x0 = Math.round(cols * (narrow ? 0.08 : 0.46)), x1 = cols - 6, y0 = Math.round(rows * 0.2), y1 = Math.round(rows * (narrow ? 0.5 : 0.78));
+    const x0 = Math.round(cols * 0.08), x1 = cols - 6, y0 = Math.round(rows * 0.22), y1 = Math.round(rows * 0.78);
     for (let y = y0; y <= y1; y++) set(x0, y, "|", MID);
     text(x0, y1 + 1, "+" + "-".repeat(x1 - x0), MID);
     text(x0 + 2, y0 - 2, "@ @ @ @ @ @ @ @ @ o", LIT); set(x0 + 20, y0 - 2, "o", DIM);

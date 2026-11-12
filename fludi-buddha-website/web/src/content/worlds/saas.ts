@@ -2,13 +2,13 @@ import type { World } from "./types";
 
 // Copy: docs/marketing-docs/website/copy-saas.md, tightened in the redesign
 // (docs/marketing-docs/website/audit-2026-11-11.md §4).
-// World 1, "Night console": cool graphite, hairline cells, mono data, a character film.
+// World 1, "Night console": ink (60), raised ink (30), gold (10). A film drawn in characters in a
+// console window; mono data, hairline cells.
 export const SAAS_WORLD: World = {
   id: "saas",
   path: "/for/saas",
   name: "SaaS",
   audience: "SaaS teams",
-  theme: "dark",
   meta: {
     title: "FluidBuddha for B2B SaaS: your pricing page, answering buyers",
     description:
@@ -54,7 +54,7 @@ export const SAAS_WORLD: World = {
   sections: [
     {
       // the signature moment: the visitor plays the buyer and watches the lead build
-      kind: "lead-desk", id: "lead",
+      kind: "lead-desk", id: "lead", tone: "second",
       title: ["Be the buyer.", "Watch the lead build."],
       lead: "Ask the three questions a buyer asks at 11 pm. On the right is what your sales team receives, as it would arrive. Nothing leaves your browser.",
     },
@@ -96,7 +96,7 @@ export const SAAS_WORLD: World = {
       ],
     },
     {
-      kind: "facts", id: "data", title: ["Five facts", "for your security questionnaire."],
+      kind: "facts", id: "data", tone: "second", title: ["Five facts", "for your security questionnaire."],
       items: [
         { text: "Emails, phone numbers and card numbers are hidden before the AI sees them.", ok: true },
         { text: "The microphone is off until the visitor agrees.", ok: true },
@@ -114,7 +114,7 @@ export const SAAS_WORLD: World = {
       ],
     },
     {
-      kind: "try-site", id: "try", title: ["Enter your website.", "Talk to it in a few minutes."],
+      kind: "try-site", id: "try", tone: "second", title: ["Enter your website.", "Talk to it in a few minutes."],
       lead: "We read your public pages and set up a private preview. Nothing changes on your live site.",
     },
     {
@@ -131,7 +131,7 @@ export const SAAS_WORLD: World = {
       ],
     },
     {
-      kind: "close", id: "close", title: ["Put it on your pricing page", "first."], lead: "One script tag. The Free plan covers 100 conversations a month.",
+      kind: "close", id: "close", tone: "gold", title: ["Put it on your pricing page", "first."], lead: "One script tag. The Free plan covers 100 conversations a month.",
       primary: { label: "Try it on your site", href: "/demo#your-site" }, secondary: { label: "Book a demo", href: "/book-demo" },
     },
   ],

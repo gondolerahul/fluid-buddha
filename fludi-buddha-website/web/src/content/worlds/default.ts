@@ -2,13 +2,13 @@ import type { World } from "./types";
 
 // Copy: docs/marketing-docs/website/copy-default.md, tightened in the redesign
 // (docs/marketing-docs/website/audit-2026-11-11.md §4).
-// World 0, "Amber glass": warm black, liquid-glass plates over the amber film, gold light.
+// World 0, "The painted page": ink (60), paper (30), gold (10). The film is a watercolour painted
+// live in the browser on a sheet of paper hung on the ink page (components/world/washFilm.ts).
 export const DEFAULT_WORLD: World = {
   id: "default",
   path: "/",
   name: "General",
   audience: "everyone",
-  theme: "dark",
   meta: {
     title: "FluidBuddha: your website, answering every visitor",
     description:
@@ -19,21 +19,20 @@ export const DEFAULT_WORLD: World = {
     sub: "It answers by voice or text from your own pages, shows prices and charts, and books the meeting.",
     primary: { label: "Start free", href: "/demo#start" },
     secondary: { label: "Watch how it works", href: "#question" },
-    tone: "dark",
   },
   film: {
-    // 8 shots, 58 s, rendered at 1080p and delivered at 12 frames a second as 720p and 480p WebP (film/shots_default.py).
-    kind: "frames",
-    frames: { dir: "/film/default/720", mobileDir: "/film/default/480", ext: "webp", count: 700, pxPerFrame: 16, poster: "/film/stills/D0.jpg", heroAt: [0, 0.05], heroFocus: 0.6, portraitTop: 0.58 },
+    // Painted live from the scroll position: one sheet of paper, five passages (components/world/washFilm.ts).
+    kind: "code",
+    code: { id: "default", length: 11200, heroAt: [0, 0.05] },
     chapters: [
-      { id: "question", label: "A question", at: [0.07, 0.115], title: ["Someone has", "a question."], body: "They want to know what it costs for their team.", tone: "dark" },
-      { id: "talks", label: "It talks", at: [0.15, 0.245], title: ["It answers out loud,", "from your own pages."], body: "Every answer shows where it came from. If the answer is not on your site, it says so.", tone: "dark" },
-      { id: "shows", label: "It shows", at: [0.285, 0.38], title: ["It draws", "charts, tables and calculators", "while it talks."], body: "The visitor can move a slider and see the price change.", tone: "dark" },
-      { id: "there", label: "The right page", at: [0.42, 0.52], title: ["It opens", "the right page."], body: "It scrolls to the part that answers the question and highlights it.", tone: "dark" },
-      { id: "books", label: "It books", at: [0.555, 0.622], title: ["It books the meeting", "after the visitor says yes."], body: "Nothing happens without their confirmation. Your team gets the lead, with what was asked.", tone: "dark" },
-      { id: "fits", label: "It fits", at: [0.66, 0.76], title: ["The page", "changes to fit the kind of visitor."], body: "It is built only from parts you approved. Prices come from your own systems.", tone: "dark" },
-      { id: "you", label: "For you", at: [0.795, 0.865], title: ["Tell us what you do.", "This site will change for you."], selector: true, tone: "dark" },
-      { id: "measure", label: "Measure it", at: [0.905, 1], title: ["One visitor in ten never sees it.", "The difference is your extra sales."], body: "The product runs this test for you.", note: "Example chart.", tone: "dark" },
+      { id: "question", label: "A question", at: [0.07, 0.115], title: ["Someone has", "a question."], body: "They want to know what it costs for their team." },
+      { id: "talks", label: "It talks", at: [0.15, 0.245], title: ["It answers out loud,", "from your own pages."], body: "Every answer shows where it came from. If the answer is not on your site, it says so." },
+      { id: "shows", label: "It shows", at: [0.285, 0.38], title: ["It draws", "charts, tables and calculators", "while it talks."], body: "The visitor can move a slider and see the price change." },
+      { id: "there", label: "The right page", at: [0.42, 0.52], title: ["It opens", "the right page."], body: "It scrolls to the part that answers the question and highlights it." },
+      { id: "books", label: "It books", at: [0.555, 0.622], title: ["It books the meeting", "after the visitor says yes."], body: "Nothing happens without their confirmation. Your team gets the lead, with what was asked." },
+      { id: "fits", label: "It fits", at: [0.66, 0.76], title: ["The page", "changes to fit the kind of visitor."], body: "It is built only from parts you approved. Prices come from your own systems." },
+      { id: "you", label: "For you", at: [0.795, 0.865], title: ["Tell us what you do.", "This site will change for you."], selector: true },
+      { id: "measure", label: "Measure it", at: [0.905, 1], title: ["One visitor in ten never sees it.", "The difference is your extra sales."], body: "The product runs this test for you.", note: "Example chart." },
     ],
   },
   hi: {
@@ -55,7 +54,7 @@ export const DEFAULT_WORLD: World = {
   sections: [
     {
       // the signature moment: the page answers back, shows, points and changes
-      kind: "ask", id: "talk", title: ["Don’t read about it.", "Talk to it."],
+      kind: "ask", id: "talk", tone: "second", title: ["Don’t read about it.", "Talk to it."],
       lead: "This site runs on FluidBuddha. Pick a question and watch the page answer, show its source and point to it.",
       questions: [
         { label: "What would 3,000 conversations cost?" },
@@ -77,7 +76,7 @@ export const DEFAULT_WORLD: World = {
       ],
     },
     {
-      kind: "fit", id: "fits-each", title: ["Your pages change", "for the kind of visitor."],
+      kind: "fit", id: "fits-each", tone: "second", title: ["Your pages change", "for the kind of visitor."],
       lead: "FluidBuddha arranges these versions from components you have approved. It never writes its own HTML, and prices come from your systems.",
       states: [
         { id: "pricing", label: "Came for pricing", line: "A visitor from a pricing ad sees pricing first.", order: ["pricing", "hero", "proof", "cta"] },
@@ -89,9 +88,9 @@ export const DEFAULT_WORLD: World = {
     {
       kind: "doors", id: "who", title: ["Pick the one", "closest to you."], lead: "This site changes its look, its film and its words for you.",
       doors: [
-        { to: "saas", label: "B2B SaaS", title: "Buyers on your pricing page at 11 pm, answered.", media: "shows" },
-        { to: "education", label: "Universities and edtech", title: "Students answered at night, in Hindi or English.", media: "family" },
-        { to: "enterprise", label: "Banks, insurers and fintechs", title: "AI on your website, inside your rules.", media: "there" },
+        { to: "saas", label: "B2B SaaS", title: "Buyers on your pricing page at 11 pm, answered." },
+        { to: "education", label: "Universities and edtech", title: "Students answered at night, in Hindi or English." },
+        { to: "enterprise", label: "Banks, insurers and fintechs", title: "AI on your website, inside your rules." },
       ],
       also: [
         { label: "Retail and services", href: "/industries/retail-services" }, { label: "Healthcare", href: "/industries/healthcare" },
@@ -100,7 +99,7 @@ export const DEFAULT_WORLD: World = {
       ],
     },
     {
-      kind: "start", id: "start", title: ["It can be answering", "the same day."],
+      kind: "start", id: "start", tone: "second", title: ["It can be answering", "the same day."],
       steps: [
         { title: "Add one line of code", body: "One script tag on your website. Plugins exist for WordPress, Shopify and Google Tag Manager." },
         { title: "It reads your site", body: "It learns your pages, your prices and your brand colours." },
@@ -118,7 +117,7 @@ export const DEFAULT_WORLD: World = {
       aside: { title: "Launching on our own sites first.", body: "We are putting FluidBuddha on our own websites before we ask you to put it on yours. This page will list each one, with a link, as it goes live." },
     },
     {
-      kind: "faq", id: "faq", title: ["What people", "ask first."], ask: "Will it make things up?",
+      kind: "faq", id: "faq", tone: "second", title: ["What people", "ask first."], ask: "Will it make things up?",
       items: [
         { q: "Will it make things up?", a: "It answers from your website and shows its sources. When it cannot find an answer, it says so and offers to connect the visitor with your team." },
         { q: "How long does setup take?", a: "You add one line of code and it reads your site. It can be answering the same day." },
@@ -129,7 +128,7 @@ export const DEFAULT_WORLD: World = {
       ],
     },
     {
-      kind: "close", id: "close", title: ["Put it on one page", "and see."], lead: "Start free with 100 conversations a month.", media: "three",
+      kind: "close", id: "close", tone: "gold", title: ["Put it on one page", "and see."], lead: "Start free with 100 conversations a month.",
       primary: { label: "Start free", href: "/demo#start" }, secondary: { label: "Book a demo", href: "/book-demo" },
     },
   ],

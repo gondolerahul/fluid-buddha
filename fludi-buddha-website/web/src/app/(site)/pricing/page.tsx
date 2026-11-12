@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import CostCalculator from "@/components/CostCalculator";
 import AskButton from "@/components/site/AskButton";
 import { LangInit } from "@/components/world/WorldClient";
 import { PLANS } from "@/content/site";
-import { MEDIA } from "@/content/media";
+import WorldArt from "@/components/world/WorldArt";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -27,12 +26,10 @@ const FAQ = [
  * header's Hindi switch changes it in place (WebsitePlan.md §3.5: pricing is the second Hindi page).
  */
 export default function PricingPage() {
-  const m = MEDIA.shows;
   return (
     <>
       <LangInit />
       <section className="cp-hero">
-        <div className="cp-hero-media"><Image unoptimized src={m.src} alt="" fill priority sizes="100vw" style={{ objectPosition: `${m.focus}% 50%` }} /></div>
         <div className="wrap">
           <div className="cp-hero-copy" data-enter>
             <h1 className="t-display" data-hi="मुफ़्त शुरू करें।|भुगतान बातचीत के हिसाब से, सीटों के हिसाब से नहीं।">Start free. <span className="em">Pay for conversations, not seats.</span></h1>
@@ -44,6 +41,7 @@ export default function PricingPage() {
               <AskButton question="What would 3,000 conversations cost?" />
             </div>
           </div>
+          <WorldArt k="shows" className="cp-hero-art" />
         </div>
       </section>
 
@@ -66,7 +64,7 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <section className="section band" id="calculator">
+      <section className="section tone-second" id="calculator">
         <div className="wrap pr-calc">
           <div className="sh" style={{ marginBottom: 0 }}>
             <h2 className="t-h2" data-hi="आपका खर्च|कितना होगा?">What would it <span className="em">cost you?</span></h2>
@@ -89,7 +87,7 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <section className="section cp-close">
+      <section className="section cp-close tone-gold">
         <div className="wrap">
           <h2 className="t-h2">Start with 100 conversations, <span className="em">free every month.</span></h2>
           <div className="ctas">

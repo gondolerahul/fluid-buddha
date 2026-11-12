@@ -5,11 +5,12 @@
  * drawing behind the hero and then nine scenes. Each scene moves once, during the first part of its
  * stretch of the film, and then holds still until the next scene replaces it.
  *
- * Everything is drawn in a 480 x 280 design space that is scaled to fit beside the copy (wide
- * screens) or above it (upright screens). Colours come from the page, so the drawing follows the theme.
+ * Everything is drawn in a 480 x 280 design space that is scaled to fill its canvas, which the page
+ * shows as a drafting sheet on the world's secondary colour. The ink is the colour of the text on
+ * that ground, and approval marks are gold.
  */
 
-export type LineFilmOpt = { font: string; top: number; fg: string; accent: string };
+export type LineFilmOpt = { font: string; fg: string; accent: string };
 
 const HERO_END = 0.07;
 const N = 9;
@@ -31,10 +32,9 @@ const PAN: [number, number, number, number][] = [
 const BOUND: [number, number, number, number] = [120, 46, 250, 186]; // "your network"
 
 export function renderLineFilm(g: CanvasRenderingContext2D, w: number, h: number, p: number, opt: LineFilmOpt) {
-  const upright = w < h * 0.8;
-  // where the drawing sits: right of the copy on wide screens, above it on upright ones
-  const ax = upright ? w * 0.03 : w * 0.42, aw = upright ? w * 0.94 : w * 0.56;
-  const ay = opt.top + h * 0.03, ah = (upright ? h * 0.5 : h * 0.94) - ay;
+  // a small sheet (a phone) scales the drawing down, so its labels are set larger there
+  const upright = w / (typeof devicePixelRatio === "number" ? Math.min(devicePixelRatio, 2) : 1) < 520;
+  const ax = w * 0.045, aw = w * 0.91, ay = h * 0.05, ah = h * 0.9;
   const k = Math.min(aw / 480, ah / 280);
   const ox = ax + (aw - 480 * k) / 2, oy = ay + (ah - 280 * k) / 2;
 

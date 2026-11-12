@@ -2,14 +2,13 @@ import type { World } from "./types";
 
 // Copy: docs/marketing-docs/website/copy-education.md, tightened in the redesign
 // (docs/marketing-docs/website/audit-2026-11-11.md §4).
-// World 2, "Lamp to morning": the photographed film runs from 11 pm to 9 am; the page follows it
-// from lamp light into warm daylight paper.
+// World 2, "Lamp to morning": paper (60), ink (30), gold (10). The photographed film runs from 11 pm
+// to 9 am; the page is the morning, and what belongs to the night sits on ink.
 export const EDUCATION_WORLD: World = {
   id: "education",
   path: "/for/education",
   name: "Education",
   audience: "universities and edtech",
-  theme: "light",
   meta: {
     title: "FluidBuddha for universities and edtech: admissions answers at night, in Hindi or English",
     description:
@@ -17,7 +16,6 @@ export const EDUCATION_WORLD: World = {
   },
   hero: {
     title: ["Your counsellors go home at six.", "Your website can keep answering."],
-    tone: "dark",
     roles: [
       { id: "admissions", label: "Admissions", sub: "Every enquiry gets a reply at once, in Hindi or English, from your own fee and programme pages.", primary: "Try it in Hindi", primaryHref: "#hindi", secondary: "See what a counsellor receives", secondaryHref: "#counsellor" },
       { id: "leadership", label: "Leadership", sub: "More of the students who already found you finish the application. Student details are hidden before the AI sees them.", primary: "Read about privacy", primaryHref: "#privacy", secondary: "See an example return", secondaryHref: "#return" },
@@ -28,16 +26,16 @@ export const EDUCATION_WORLD: World = {
   film: {
     // Rendered film with people (film/shots_education.py), from the 1080p render.
     kind: "frames",
-    frames: { dir: "/film/education/720", mobileDir: "/film/education/480", ext: "webp", count: 561, pxPerFrame: 18, poster: "/film/stills/E1.jpg", heroAt: [0, 0.035], heroFocus: 0.77, portraitTop: 0.6 },
+    frames: { dir: "/film/education/720", mobileDir: "/film/education/480", ext: "webp", count: 561, pxPerFrame: 18, poster: "/film/stills/E1.jpg", heroAt: [0, 0.035], heroFocus: 0.77 },
     chapters: [
-      { id: "night", label: "11 pm", at: [0.046, 0.118], focus: 0.8, tone: "dark", title: ["A student is on your website.", "Your counsellors are at home."], body: "Students research after class, in the evening and at night." },
-      { id: "in-hindi", label: "In Hindi", at: [0.135, 0.2], focus: 0.82, tone: "dark", quote: "“फ़ीस कितनी है?”", title: ["It answers", "in Hindi."], body: "Your pages can stay in English. No translation project is needed." },
-      { id: "compares", label: "It compares", at: [0.232, 0.342], focus: 0.62, tone: "dark", title: ["It puts programmes and fees", "side by side."], body: "The student moves a slider to see what a scholarship changes.", note: "Example figures." },
-      { id: "guides", label: "It guides", at: [0.357, 0.492], focus: 0.62, tone: "dark", title: ["It walks them through", "your programmes."], body: "A short spoken tour of the pages that matter." },
-      { id: "fee", label: "The fee", at: [0.506, 0.602], focus: 0.62, tone: "dark", title: ["They say “haan”.", "It sends the application-fee link."], body: "The amount comes from your fee list, never from the AI. Nothing is sent until the student confirms." },
-      { id: "family", label: "The family", at: [0.627, 0.731], focus: 0.68, tone: "light", title: ["The student sends", "a summary to their parents."], body: "One page with the answers, the fee table and the sources." },
-      { id: "morning", label: "9 am", at: [0.757, 0.859], focus: 0.58, tone: "light", title: ["Your counsellor has the lead", "and knows what was asked."], body: "The first call starts where the website stopped." },
-      { id: "timing", label: "Timing", at: [0.886, 1], focus: 0.84, tone: "light", title: ["Start", "before admission season."], body: "A trial that begins before applications open has time to show a result." },
+      { id: "night", label: "11 pm", at: [0.046, 0.118], focus: 0.8, title: ["A student is on your website.", "Your counsellors are at home."], body: "Students research after class, in the evening and at night." },
+      { id: "in-hindi", label: "In Hindi", at: [0.135, 0.2], focus: 0.82, quote: "“फ़ीस कितनी है?”", title: ["It answers", "in Hindi."], body: "Your pages can stay in English. No translation project is needed." },
+      { id: "compares", label: "It compares", at: [0.232, 0.342], focus: 0.62, title: ["It puts programmes and fees", "side by side."], body: "The student moves a slider to see what a scholarship changes.", note: "Example figures." },
+      { id: "guides", label: "It guides", at: [0.357, 0.492], focus: 0.62, title: ["It walks them through", "your programmes."], body: "A short spoken tour of the pages that matter." },
+      { id: "fee", label: "The fee", at: [0.506, 0.602], focus: 0.62, title: ["They say “haan”.", "It sends the application-fee link."], body: "The amount comes from your fee list, never from the AI. Nothing is sent until the student confirms." },
+      { id: "family", label: "The family", at: [0.627, 0.731], focus: 0.68, title: ["The student sends", "a summary to their parents."], body: "One page with the answers, the fee table and the sources." },
+      { id: "morning", label: "9 am", at: [0.757, 0.859], focus: 0.58, title: ["Your counsellor has the lead", "and knows what was asked."], body: "The first call starts where the website stopped." },
+      { id: "timing", label: "Timing", at: [0.886, 1], focus: 0.84, title: ["Start", "before admission season."], body: "A trial that begins before applications open has time to show a result." },
     ],
   },
   hi: {
@@ -61,7 +59,7 @@ export const EDUCATION_WORLD: World = {
   sections: [
     {
       // the signature moment: an English fee page, answered in Hindi, with the source sentence lit
-      kind: "hindi-answer", id: "hindi",
+      kind: "hindi-answer", id: "hindi", tone: "second",
       title: ["Your English page,", "answered in Hindi."],
       lead: "Ask the way a student would. The answer comes in their language, and the line it came from lights up on your English page.",
     },
@@ -86,7 +84,7 @@ export const EDUCATION_WORLD: World = {
       note: "Hot leads can alert your team in Slack.",
     },
     {
-      kind: "pair", id: "fees",
+      kind: "pair", id: "fees", tone: "second",
       left: { title: "Fee answers come from your pages.", items: [
         "Fee answers quote your website and show the source.",
         "You can fix an approved fee answer so the same words are used every time.",
@@ -126,7 +124,7 @@ export const EDUCATION_WORLD: World = {
       ],
     },
     {
-      kind: "close", id: "close", title: ["Let your website answer", "tonight’s enquiries."], media: "calendar",
+      kind: "close", id: "close", tone: "gold", title: ["Let your website answer", "tonight’s enquiries."],
       lead: "Start before admission season. A trial that begins before applications open has time to show a result.",
       primary: { label: "Start free", href: "/demo#start" }, secondary: { label: "Book a demo", href: "/book-demo" },
     },

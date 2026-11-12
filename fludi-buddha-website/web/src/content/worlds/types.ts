@@ -22,8 +22,6 @@ export type Chapter = {
   note?: string;
   /** A Hindi line shown large above the title. */
   quote?: string;
-  /** Whether the picture behind the copy is dark or light. */
-  tone?: "dark" | "light";
   /** The stretch of the film this chapter is shown for, as fractions from 0 to 1. */
   at: [number, number];
   /** Where the subject of the picture is, from 0 (left) to 1 (right), kept in view when the picture is cropped. */
@@ -34,31 +32,30 @@ export type Chapter = {
 
 /**
  * The film behind a world's hero and chapters.
- *  - "frames": a rendered film scrubbed by scroll (default, education).
- *  - "code": drawn live in the browser (saas in characters, enterprise as line drawings).
+ *  - "frames": a rendered film scrubbed by scroll (education).
+ *  - "code": drawn live in the browser (default in watercolour, saas in characters, enterprise as line drawings).
  */
 export type Film = {
   kind: "frames" | "code";
-  code?: { id: "saas" | "enterprise"; length: number; heroAt: [number, number] };
-  frames?: { dir: string; mobileDir?: string; ext?: "jpg" | "webp"; count: number; pxPerFrame: number; poster: string; heroAt: [number, number]; heroFocus?: number;
-    /** On upright screens, the share of the screen height the picture fills, from the top. The copy sits below it. */
-    portraitTop?: number };
+  code?: { id: "default" | "saas" | "enterprise"; length: number; heroAt: [number, number] };
+  frames?: { dir: string; mobileDir?: string; ext?: "jpg" | "webp"; count: number; pxPerFrame: number; poster: string; heroAt: [number, number]; heroFocus?: number };
   chapters: Chapter[];
 };
 
 export type Item = { n?: string; title: string; body: string };
-type Base = { id: string };
+/** `tone` puts the section on the world's secondary colour or on gold; without it, the main colour. */
+type Base = { id: string; tone?: "second" | "gold" };
 
 export type Section =
   // shared
   | (Base & { kind: "faq"; title: Title; lead?: string; ask?: string; items: { q: string; a: string }[] })
-  | (Base & { kind: "close"; title: Title; lead: string; primary: Link; secondary: Link; media?: MediaKey })
+  | (Base & { kind: "close"; title: Title; lead: string; primary: Link; secondary: Link })
   | (Base & { kind: "limits"; title: Title; items: string[]; aside?: { title: string; body: string } })
   // default: amber glass
   | (Base & { kind: "ask"; title: Title; lead: string; questions: { label: string; hi?: boolean }[] })
   | (Base & { kind: "bento"; title: Title; items: { key: "talks" | "shows" | "there" | "sources" | "books" | "proves"; title: string; body: string }[] })
   | (Base & { kind: "fit"; title: Title; lead: string; states: { id: string; label: string; line: string; order: ("hero" | "pricing" | "security" | "proof" | "resume" | "cta")[] }[]; note: string })
-  | (Base & { kind: "doors"; title: Title; lead?: string; doors: { to: WorldId; label: string; title: string; media: MediaKey }[]; also: Link[] })
+  | (Base & { kind: "doors"; title: Title; lead?: string; doors: { to: WorldId; label: string; title: string }[]; also: Link[] })
   | (Base & { kind: "start"; title: Title; steps: Item[] })
   | (Base & { kind: "plans"; title: Title; link: Link })
   // saas: night console
@@ -92,7 +89,6 @@ export type World = {
   name: string;
   /** "Changing this site for …" */
   audience: string;
-  theme: "dark" | "light";
   meta: { title: string; description: string };
   hero: {
     title: Title;
@@ -101,7 +97,6 @@ export type World = {
     primary?: Link;
     secondary?: Link;
     roles?: Role[];
-    tone?: "dark" | "light";
   };
   film: Film;
   sections: Section[];

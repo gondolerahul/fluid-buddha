@@ -1,6 +1,7 @@
 # FluidBuddha website
 
-The marketing site described in `docs/marketing-docs/WebsitePlan.md`, redesigned on 11 November 2026
+The marketing site described in `docs/marketing-docs/WebsitePlan.md`, rebuilt on the Buddha Cognitive Lab
+design system on 12 November 2026 (`docs/marketing-docs/website/design-audit-2026-11-12.md`), after the redesign of 11 November 2026
 (`docs/marketing-docs/website/audit-2026-11-11.md`). It runs on Next.js 16 with Cache Components.
 
 ## Run
@@ -21,7 +22,11 @@ and main button of the whole site, not only of its own page:
 - An inline script in `src/app/layout.tsx` (`WORLD_BOOT` in `src/lib/world.ts`) sets
   `<html data-world>` before the first paint: a world's page takes its own world, any other page the
   visitor's remembered choice (`localStorage` key `fb:world`).
-- `src/app/globals.css` holds one token block per world. Everything else (the shared header and
+- `src/app/globals.css` holds the design system's tokens (ink, paper, gold; Roblox, Space Grotesk,
+  Hanken Grotesk, JetBrains Mono) and one block per world that sets its 60 / 30 / 10: which of ink and
+  paper is the main colour and which the secondary. Sections pick a ground with `tone-main`,
+  `tone-second`, `tone-gold` or `tone-ink`. Use no colour or typeface outside the design system.
+  Everything else (the shared header and
   footer, the content pages, the forms) is drawn from those tokens.
 - The version switch (`src/components/site/VersionSwitch.tsx`) changes world. On a world's page it
   morphs to the other world's route; on any other page it re-themes the page in place
@@ -33,20 +38,27 @@ and main button of the whole site, not only of its own page:
 - `src/app/(worlds)/`: the four world pages and their styles (`film.css`, `world-*.css`).
 - `src/app/(site)/`: pricing, demo, legal, and `[...slug]` for every template page in `content/pages.ts`.
 - `src/content/`: all copy. `worlds/*.ts` (each world's hero, film chapters, sections and reviewed
-  Hindi), `pages.ts` (template and legal pages), `site.ts` (nav, footer, plans), `media.ts` (the film
-  frames used as pictures), `demo.ts`.
-- `src/components/world/`: `WorldPage` (renders a world), `FilmScroll` with `asciiFilm` and
-  `lineFilm` (the scroll films), and `signature/` (the four signature moments).
+  Hindi), `pages.ts` (template and legal pages), `site.ts` (nav, footer, plans), `media.ts` (each
+  picture in four materials, and the Education photographs), `demo.ts`.
+- `src/components/world/`: `WorldPage` (renders a world), `FilmScroll` with `washFilm`, `asciiFilm` and
+  `lineFilm` (the scroll films), `FilmStill` and `WorldArt` (pictures drawn from the films), and
+  `signature/` (the four signature moments).
 - `src/components/site/`: header, footer, version switch, Ask Pragya, small shared parts.
 - `src/lib/`: `world.ts` (which world, the morph events, measurement), `lang.ts` (the runtime Hindi
   switch), `answers.ts` (the scripted preview answers).
 
-## Film frames
+## Films and pictures
 
-The default and Education films are WebP frame sequences in `public/film/<world>/720` (desktop) and
-`480` (phones), committed so a deploy has them. They are exported from `../film` after a render (see
-`../film/README.md`). The frame count, pace and chapters are set in each world's content file.
-Single frames from the same films are the pictures of the other pages (`src/content/media.ts`).
+- **General (`/`)**: a watercolour painted live from the scroll position (`src/components/world/washFilm.ts`)
+  on a sheet of paper (`public/film/paper/`, made by `../film/paper.mjs` and `../film/edges.mjs`).
+- **SaaS** and **Enterprise**: drawn live in characters (`asciiFilm.ts`) and in lines (`lineFilm.ts`).
+- **Education**: WebP frame sequences in `public/film/education/720` (desktop) and `480` (phones),
+  exported from `../film` after a render (see `../film/README.md`).
+- The pictures of the content pages are drawn in the material of the world on screen
+  (`src/components/world/WorldArt.tsx`, `src/content/media.ts`): painted, in characters, in lines, or a
+  photograph from the Education film.
+- `public/film/default/` and `public/film/stills/D*.jpg` (the earlier rendered default film) are no
+  longer used.
 
 ## Environment
 

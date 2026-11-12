@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ContentPage from "@/components/ContentPage";
 import { PAGES, getPage } from "@/content/pages";
-import { MEDIA } from "@/content/media";
 
 // Every page is listed in generateStaticParams and prerendered. The route reads its URL before
 // rendering so that an unknown path gets a real 404 status (inside <Suspense> it would stream as a
@@ -17,7 +16,7 @@ export async function generateMetadata({ params }: PageProps<"/[...slug]">): Pro
   const { slug } = await params;
   const page = getPage(slug.join("/"));
   if (!page) return {};
-  return { title: page.title, description: page.description, alternates: { canonical: `/${page.path}` }, openGraph: { images: [MEDIA[page.media].src] } };
+  return { title: page.title, description: page.description, alternates: { canonical: `/${page.path}` }, openGraph: { images: ["/film/stills/painted-page.jpg"] } };
 }
 
 export default async function Page({ params }: PageProps<"/[...slug]">) {

@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import DemoStage from "@/components/DemoStage";
 import SandboxForm from "@/components/SandboxForm";
-import { MEDIA } from "@/content/media";
 
 export const metadata: Metadata = {
   title: "Live demo",
@@ -14,11 +12,9 @@ export const metadata: Metadata = {
 const CONSOLE = process.env.NEXT_PUBLIC_CONSOLE_URL ?? "http://localhost:3001";
 
 export default function DemoPage() {
-  const m = MEDIA.talks;
   return (
     <>
       <section className="cp-hero">
-        <div className="cp-hero-media"><Image unoptimized src={m.src} alt="" fill priority sizes="100vw" style={{ objectPosition: `${m.focus}% 50%` }} /></div>
         <div className="wrap dm-stage">
           <div className="cp-hero-copy" data-enter>
             <h1 className="t-display">This website runs on FluidBuddha. <span className="em">Talk to it.</span></h1>
@@ -28,7 +24,7 @@ export default function DemoPage() {
         </div>
       </section>
 
-      <section id="your-site" className="section band">
+      <section id="your-site" className="section tone-second">
         <div className="wrap dm-stage">
           <div className="sh" style={{ marginBottom: 0 }}>
             <h2 className="t-h2">Now hear <span className="em">your own website</span> talk.</h2>
@@ -38,7 +34,7 @@ export default function DemoPage() {
         </div>
       </section>
 
-      <section id="start" className="section cp-close">
+      <section id="start" className="section cp-close tone-gold">
         <div className="wrap">
           <h2 className="t-h2">One line of code, <span className="em">on your site.</span></h2>
           <p className="t-lead">Create your account, paste the line, and your website starts answering this afternoon. The Free plan covers 100 conversations a month.</p>

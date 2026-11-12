@@ -1,10 +1,11 @@
 // The template for the content pages (product, solutions, industries, developers, trust, company).
-// It is drawn entirely from the world tokens, so it takes the look of the visitor's version.
-import Image from "next/image";
+// It is drawn entirely from the world tokens, so it takes the look of the visitor's version: the
+// same structure in every world (hero, sections, one band on the secondary colour, a gold close),
+// and pictures drawn in the world's own material (WorldArt).
 import Link from "next/link";
 import type { Page, Section } from "@/content/pages";
-import { MEDIA } from "@/content/media";
 import AskButton from "@/components/site/AskButton";
+import WorldArt from "@/components/world/WorldArt";
 
 function Title({ t }: { t: [string, string] }) {
   return <>{t[0]} <span className="em">{t[1]}</span></>;
@@ -12,8 +13,7 @@ function Title({ t }: { t: [string, string] }) {
 
 function Block({ s, i }: { s: Section; i: number }) {
   switch (s.kind) {
-    case "story": {
-      const m = s.media ? MEDIA[s.media] : undefined;
+    case "story":
       return (
         <section className="section">
           <div className={`wrap cp-story${i % 2 ? " flip" : ""}`}>
@@ -24,18 +24,13 @@ function Block({ s, i }: { s: Section; i: number }) {
               {s.ask && <AskButton question={s.ask} />}
               {s.note && <p className="note">{s.note}</p>}
             </div>
-            {m && (
-              <div className="cp-media">
-                <Image unoptimized src={m.src} alt={m.alt} fill sizes="(max-width: 960px) 100vw, 55vw" style={{ objectPosition: `${m.focus ?? 50}% 50%` }} />
-              </div>
-            )}
+            {s.media && <WorldArt k={s.media} className="cp-art" />}
           </div>
         </section>
       );
-    }
     case "grid":
       return (
-        <section className="section band">
+        <section className="section tone-second">
           <div className="wrap">
             <div className="sh">
               <h2 className="t-h2">{s.title}</h2>
@@ -88,13 +83,9 @@ function Block({ s, i }: { s: Section; i: number }) {
 }
 
 export default function ContentPage({ page }: { page: Page }) {
-  const m = MEDIA[page.media];
   return (
     <>
       <section className="cp-hero">
-        <div className="cp-hero-media">
-          <Image unoptimized src={m.src} alt="" fill priority sizes="100vw" style={{ objectPosition: `${m.focus ?? 70}% 50%` }} />
-        </div>
         <div className="wrap">
           <div className="cp-hero-copy" data-enter>
             <h1 className="t-display"><Title t={page.headline} /></h1>
@@ -105,12 +96,13 @@ export default function ContentPage({ page }: { page: Page }) {
             </div>
             {page.ask && <AskButton question={page.ask} />}
           </div>
+          <WorldArt k={page.media} className="cp-hero-art" />
         </div>
       </section>
 
       {page.sections.map((s, i) => <Block key={i} s={s} i={i} />)}
 
-      <section className="section cp-close">
+      <section className="section cp-close tone-gold">
         <div className="wrap">
           <h2 className="t-h2"><Title t={page.closing.title} /></h2>
           {page.closing.body && <p className="t-lead">{page.closing.body}</p>}

@@ -20,17 +20,20 @@ const roblox = localFont({
     { path: "./fonts/roblox-black.woff2", weight: "900" },
   ],
 });
-const space = Space_Grotesk({ subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--font-space", display: "swap" });
-const hanken = Hanken_Grotesk({ subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--font-hanken", display: "swap" });
-const jetbrains = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-jetbrains", display: "swap" });
-const deva = Noto_Sans_Devanagari({ subsets: ["devanagari"], weight: ["300", "400", "500", "600"], variable: "--font-noto-deva", display: "swap" });
+// The design system's faces (buddha-cognitive-lab-design-system/project/colors_and_type.css):
+// Roblox for the logotype and hero words, Space Grotesk for headings, Hanken Grotesk for reading,
+// JetBrains Mono for data. Noto Sans Devanagari is added for the Hindi showcase.
+const space = Space_Grotesk({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-space", display: "swap" });
+const hanken = Hanken_Grotesk({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-hanken", display: "swap" });
+const jetbrains = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-jetbrains", display: "swap", preload: false });
+const deva = Noto_Sans_Devanagari({ subsets: ["devanagari"], weight: ["400", "500", "600"], variable: "--font-noto-deva", display: "swap", preload: false });
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://fluidbuddha.com"),
   title: { default: "FluidBuddha: your website, answering every visitor", template: "%s · FluidBuddha" },
   description:
     "FluidBuddha lets your website answer visitors by voice or text, using only your own content. It shows prices and charts, takes people to the right page and books the meeting.",
-  openGraph: { siteName: "FluidBuddha", type: "website", images: ["/film/stills/D0.jpg"] },
+  openGraph: { siteName: "FluidBuddha", type: "website", images: ["/film/stills/painted-page.jpg"] },
 };
 
 export const viewport: Viewport = { themeColor: "#0a0908", colorScheme: "dark light" };

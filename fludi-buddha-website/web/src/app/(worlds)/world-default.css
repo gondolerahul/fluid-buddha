@@ -1,34 +1,24 @@
 /* ============================================================================
-   World 0, "Amber glass": the brand's own warm black and gold. Thick amber glass over black water
-   in the film; liquid-glass plates over it; light, large type; gold used as light.
+   World 0, "The painted page": ink (60), paper (30), gold (10), all from the design system.
+   The film is a watercolour painted live on a sheet of paper hung on the ink page; the paper blocks
+   of the page are painted too (their edges are a brush, see "painted blocks" in app/globals.css).
+   Roblox for the hero line, Space Grotesk for headings, the system's metallic gold on the key action.
    ============================================================================ */
 
-[data-w="default"] .film-stage { background-color: #0a0908; }
-/* dark enough over the copy column that no edge of the film reads as an underline */
-[data-w="default"] .film-veil {
-  background: linear-gradient(90deg, rgba(10,9,8,.92) 0%, rgba(10,9,8,.8) 34%, rgba(10,9,8,.32) 50%, rgba(10,9,8,0) 62%),
-              linear-gradient(0deg, rgba(10,9,8,.7), rgba(10,9,8,0) 24%, rgba(10,9,8,0) 82%, rgba(10,9,8,.5));
-}
-[data-w="default"] .hero-copy .t-lead { max-width: 29em; }
-/* six words on two lines: "Your website can / answer every visitor." */
-[data-w="default"] .hero-copy .t-display { font-size: clamp(40px, 4.6vw, 74px); font-weight: 300; max-width: none; }
-[data-w="default"] .hero-copy .t-display .em { display: inline-block; }
-[data-w="default"] .hero-copy .em { color: var(--gold-300); }
-[data-w="default"] .plate .em { color: var(--gold-300); }
+[data-w="default"] .hero-copy .t-display { font-size: clamp(46px, 5.2vw, 80px); max-width: 10.5em; }
+[data-w="default"] .hero-copy .t-lead { max-width: 27em; }
+[data-w="default"] .slide-copy .t-h2 { font-size: clamp(32px, 3.4vw, 52px); }
 
-/* the sections after the film keep a little of its light */
-[data-w="default"] .ws-bento,
-[data-w="default"] .ws-doors { background: linear-gradient(180deg, var(--bg) 0%, var(--bg-raise) 100%); }
-[data-w="default"] .ws-fit { background: var(--bg-raise); }
-[data-w="default"] .ws-start { background: linear-gradient(180deg, var(--bg-raise), var(--bg)); }
-[data-w="default"] .ws-plans { border-top: 1px solid var(--line); }
-[data-w="default"] .ws-faq { border-top: 1px solid var(--line); }
-[data-w="default"] .ws-close .close-h .em { color: var(--gold-300); }
+/* the sections: the paper blocks carry the page's paper texture */
+[data-w="default"] .section.tone-second { background-image: url("/film/paper/paper.webp"); background-size: 512px 512px; }
+[data-w="default"] .sh { max-width: 52rem; }
+[data-w="default"] .ws-bento .sh, [data-w="default"] .ws-plans .sh { margin-bottom: clamp(36px, 4vw, 56px); }
+[data-w="default"] .close-h { font-size: clamp(46px, 5.6vw, 88px); line-height: 1; font-family: var(--font-logo); font-weight: 400; letter-spacing: .005em; }
+[data-w="default"] .close-h .em { color: var(--fg); }
+/* the doors: three sheets of paper, each showing its version as the film painted it */
+[data-w="default"] .door { box-shadow: 0 30px 60px -30px rgba(0,0,0,.8); }
+[data-w="default"] .door-pic { background: url("/film/paper/paper.webp") 0 0 / 512px 512px; }
 
 @media (max-width: 900px) {
-  [data-w="default"] .film-veil { background: linear-gradient(0deg, rgba(10,9,8,.94) 36%, rgba(10,9,8,.35) 72%, rgba(10,9,8,.15)); }
-}
-@media (max-width: 900px) and (max-aspect-ratio: 4/5) {
-  [data-w="default"] .film-stage[data-upright] .film-veil { background: linear-gradient(180deg, rgba(10,9,8,0) 44%, #0a0908 58%); }
-  [data-w="default"] .film-stage[data-upright] .film-slide:not(.first) { align-items: start; padding-top: 60svh; }
+  [data-w="default"] .film-slide.first > .wrap { grid-template-columns: 1fr; }
 }

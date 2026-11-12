@@ -2,6 +2,7 @@
 // The header, footer and morph come from the root layout. Server component; the interactive parts
 // are client islands. Redesign: docs/marketing-docs/website/audit-2026-11-11.md §5.
 
+import { cloneElement, type ReactElement } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { Section, Title, World } from "@/content/worlds/types";
@@ -9,6 +10,7 @@ import { PLANS } from "@/content/site";
 import { MEDIA } from "@/content/media";
 import AskButton from "@/components/site/AskButton";
 import FilmScroll from "./FilmScroll";
+import FilmStill from "./FilmStill";
 import { GoWorld, LangInit, RoleBlock } from "./WorldClient";
 import { CopyButton, CostCompare, InstallTabs, SpecIndex, TrySite } from "./parts";
 import AskStage from "./signature/AskStage";
@@ -54,7 +56,7 @@ function HeroCopy({ world }: { world: World }) {
         : <>
             <p className="t-lead" data-hi={world.hi?.sub}>{h.sub}</p>
             <div className="ctas">
-              {h.primary && <Link className="btn btn-primary btn-lg" href={h.primary.href} data-hi={world.hi?.cta}>{h.primary.label}</Link>}
+              {h.primary && <Link className="btn btn-primary btn-metal btn-lg" href={h.primary.href} data-hi={world.hi?.cta}>{h.primary.label}</Link>}
               {h.secondary && <a className="btn btn-quiet btn-lg" href={h.secondary.href} data-hi={world.hi?.secondary}>{h.secondary.label}</a>}
             </div>
           </>}
@@ -62,13 +64,10 @@ function HeroCopy({ world }: { world: World }) {
   );
 }
 
-/** The hero and every chapter as slides over one scroll-driven film. */
+/** The hero and every chapter as slides beside one scroll-driven film. */
 function Film({ world }: { world: World }) {
   const f = world.film;
   const heroAt = (f.frames ?? f.code)!.heroAt;
-  // the photographed films carry their copy on plates; the drawn films leave room beside the drawing
-  const plate = f.kind === "frames";
-  const dark = (tone?: "dark" | "light") => (tone ?? (world.theme === "dark" ? "dark" : "light")) === "dark";
   const focus = f.frames ? [f.frames.heroFocus ?? 0.5, ...f.chapters.map((c) => c.focus ?? f.frames!.heroFocus ?? 0.5)] : undefined;
   return (
     <FilmScroll frames={f.frames} code={f.code} focus={focus}
@@ -76,10 +75,10 @@ function Film({ world }: { world: World }) {
                 labels={["Start", ...f.chapters.map((c) => c.label)]}
                 ids={["start-film", ...f.chapters.map((c) => c.id)]}>
       {[
-        <div className={`wrap${world.theme === "light" && world.hero.tone === "dark" ? " on-dark" : ""}`} key="hero"><HeroCopy world={world} /></div>,
+        <div className="wrap" key="hero"><HeroCopy world={world} /></div>,
         ...f.chapters.map((c) => (
           <div className="wrap" key={c.id}>
-            <div className={`${plate ? "plate" : "slide-copy"}${dark(c.tone) ? " on-dark" : " on-light"}`}>
+            <div className="slide-copy">
               {c.quote && <p className="quote" lang="hi">{c.quote}</p>}
               <h2 className="t-h2" data-hi={world.hi?.chapters?.[c.id]}><T t={c.title} /></h2>
               {c.body && <p className="t-lead">{c.body}</p>}
@@ -100,10 +99,7 @@ function BentoVisual({ k }: { k: string }) {
   switch (k) {
     case "talks":
       return (
-        <div className="bv bv-talks" aria-hidden>
-          <Image unoptimized src={MEDIA.talks.src} alt="" fill sizes="(max-width: 900px) 100vw, 60vw" style={{ objectPosition: "62% 50%" }} />
-          <span className="bv-wave">{Array.from({ length: 24 }, (_, i) => <i key={i} style={{ ["--i" as string]: i }} />)}</span>
-        </div>
+        <div className="bv bv-talks" aria-hidden><FilmStill kind="wash" at={0.243} cam={TALK_CAM} /></div>
       );
     case "shows":
       return (
@@ -187,7 +183,18 @@ function FlowDiagram() {
 
 // ------------------------------------------------------------------------------ sections
 
+/** Where each of the three versions sits on the painted sheet (the film's chapter "you"): [x, y, zoom]. */
+const DOOR_CAM: [number, number, number][] = [[2430, 12, 2.3], [2700, 12, 2.3], [2970, 12, 2.3]];
+/** The painted page with its two sources gilded, a little closer than the film shows it. */
+const TALK_CAM: [number, number, number] = [0, -17, 1.3];
+
+/** A section on its ground: the main colour, or the secondary, or gold (content: `tone`). */
 function SectionView({ world, s }: { world: World; s: Section }) {
+  const el = sect(world, s) as ReactElement<{ className?: string }>;
+  return s.tone ? cloneElement(el, { className: `${el.props.className ?? ""} tone-${s.tone}` }) : el;
+}
+
+function sect(world: World, s: Section) {
   const hiTitle = world.hi?.sections?.[s.id]?.title;
   switch (s.kind) {
     // ---------------------------------------------------------------- shared
@@ -204,11 +211,9 @@ function SectionView({ world, s }: { world: World; s: Section }) {
           </div>
         </section>
       );
-    case "close": {
-      const m = s.media ? MEDIA[s.media] : undefined;
+    case "close":
       return (
-        <section id={s.id} className={`section ws-close${m ? " has-media" : ""}`}>
-          {m && <div className="close-media" aria-hidden><Image unoptimized src={m.src} alt="" fill sizes="100vw" style={{ objectPosition: `${m.focus ?? 50}% 50%` }} /></div>}
+        <section id={s.id} className="section ws-close">
           <div className="wrap">
             <h2 className="t-display close-h"><T t={s.title} /></h2>
             <p className="t-lead">{s.lead}</p>
@@ -219,7 +224,6 @@ function SectionView({ world, s }: { world: World; s: Section }) {
           </div>
         </section>
       );
-    }
     case "limits":
       return (
         <section id={s.id} className="section ws-limits">
@@ -229,7 +233,7 @@ function SectionView({ world, s }: { world: World; s: Section }) {
               <ol className="limits-list">{s.items.map((it) => <li key={it}>{it}</li>)}</ol>
             </div>
             {s.aside && (
-              <aside className="limits-aside">
+              <aside className="limits-aside tone-second">
                 <h3>{s.aside.title}</h3>
                 <p>{s.aside.body}</p>
               </aside>
@@ -255,7 +259,7 @@ function SectionView({ world, s }: { world: World; s: Section }) {
             <Head title={s.title} />
             <div className="bento">
               {s.items.map((it) => (
-                <div key={it.key} className={`bento-cell b-${it.key}`}>
+                <div key={it.key} className={`bento-cell b-${it.key}${it.key === "books" ? " tone-gold" : it.key === "proves" ? " tone-second" : ""}`}>
                   <BentoVisual k={it.key} />
                   <div className="bento-copy"><h3 className="t-h3">{it.title}</h3><p>{it.body}</p></div>
                 </div>
@@ -280,19 +284,16 @@ function SectionView({ world, s }: { world: World; s: Section }) {
           <div className="wrap">
             <Head title={s.title} lead={s.lead} />
             <div className="doors">
-              {s.doors.map((d) => {
-                const m = MEDIA[d.media];
-                return (
-                  <GoWorld key={d.to} to={d.to} className="door" label={`Show the version of this site for ${d.label}`}>
-                    <Image unoptimized src={m.src} alt="" fill sizes="(max-width: 900px) 100vw, 34vw" style={{ objectPosition: `${m.focus ?? 50}% 50%` }} />
-                    <span className="door-copy">
-                      <span className="door-label">{d.label}</span>
-                      <b>{d.title}</b>
-                      <span className="door-go">Show this version <span className="arrow" aria-hidden>&rarr;</span></span>
-                    </span>
-                  </GoWorld>
-                );
-              })}
+              {s.doors.map((d, i) => (
+                <GoWorld key={d.to} to={d.to} className="door tone-second" label={`Show the version of this site for ${d.label}`}>
+                  <span className="door-pic"><FilmStill kind="wash" at={0.866} cam={DOOR_CAM[i]} /></span>
+                  <span className="door-copy">
+                    <span className="door-label">{d.label}</span>
+                    <b>{d.title}</b>
+                    <span className="door-go">Show this version <span className="arrow" aria-hidden>&rarr;</span></span>
+                  </span>
+                </GoWorld>
+              ))}
             </div>
             <p className="also"><span>Also for</span>{s.also.map((a) => <Link key={a.href} href={a.href} className="link">{a.label}</Link>)}</p>
           </div>
@@ -321,7 +322,7 @@ function SectionView({ world, s }: { world: World; s: Section }) {
             <Head title={s.title} />
             <div className="plans-row">
               {PLANS.map((p) => (
-                <Link key={p.name} href="/pricing" className={`plan-mini${p.lead ? " lead" : ""}`}>
+                <Link key={p.name} href="/pricing" className={`plan-mini${p.lead ? " lead tone-gold" : ""}`}>
                   <span>{p.name}</span>
                   <b className="num">{p.price}</b>
                   <small>{p.name === "Enterprise" ? "By arrangement" : `${p.included} a month`}</small>
@@ -420,7 +421,7 @@ function SectionView({ world, s }: { world: World; s: Section }) {
     // ---------------------------------------------------------------- education
     case "hindi-answer":
       return (
-        <section id={s.id} className="section ws-hindi on-dark">
+        <section id={s.id} className="section ws-hindi">
           <div className="wrap">
             <Head title={s.title} lead={s.lead} />
             <HindiAnswer />
@@ -450,7 +451,7 @@ function SectionView({ world, s }: { world: World; s: Section }) {
       );
     case "phone":
       return (
-        <section id={s.id} className="section ws-phone band">
+        <section id={s.id} className="section ws-phone">
           <div className="wrap phone-split">
             <div>
               <Head title={s.title} lead={s.lead} />
@@ -479,7 +480,7 @@ function SectionView({ world, s }: { world: World; s: Section }) {
             <div className="counsellor-img"><Image unoptimized src={m.src} alt={m.alt} fill sizes="(max-width: 900px) 100vw, 50vw" style={{ objectPosition: `${m.focus ?? 50}% 50%` }} /></div>
             <div className="counsellor-copy">
               <Head title={s.title} lead={s.lead} />
-              <div className="ui-frame lead-am">
+              <div className="ui-frame lead-am tone-second">
                 <div className="ui-bar"><span className="ui-orb" aria-hidden /><b>New lead</b><span className="hdr-sp" /><span className="t-mono">09:02</span></div>
                 <dl className="ui-kv lead-am-kv">
                   {s.items.map((it, i) => (
@@ -496,7 +497,7 @@ function SectionView({ world, s }: { world: World; s: Section }) {
     case "pair": {
       const hi = world.hi?.sections?.[s.right.id];
       return (
-        <section id={s.id} className="section ws-pair band">
+        <section id={s.id} className="section ws-pair">
           <div className="wrap pair">
             <div className="pair-col">
               <h2 className="t-h2">{s.left.title}</h2>
@@ -543,7 +544,7 @@ function SectionView({ world, s }: { world: World; s: Section }) {
       return (
         <section id={s.id} className="spec-sec">
           <SpecHead num={s.num} title={s.title} />
-          <div className="flow-fig"><FlowDiagram /></div>
+          <div className="flow-fig tone-second"><FlowDiagram /></div>
           <div className="flow-zones">{s.zones.map((z) => <div key={z.n}><span className="label">{z.n}</span><b>{z.title}</b><p>{z.body}</p></div>)}</div>
           <p className="note">{s.note}</p>
         </section>

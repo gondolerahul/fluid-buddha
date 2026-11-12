@@ -4,12 +4,12 @@
 // Pages folded into a world redirect there (next.config.ts): /industries/saas, /industries/education,
 // /enterprise and /customers. Audit: docs/marketing-docs/website/audit-2026-11-11.md §2.3 and §4.
 
-import type { MediaKey } from "./media";
+import type { ArtKey } from "./media";
 
 export type Cta = { label: string; href: string };
 export type Item = { title: string; body: string; tag?: string };
 export type Section =
-  | { kind: "story"; title: string; body: string; bullets?: string[]; ask?: string; media?: MediaKey; note?: string }
+  | { kind: "story"; title: string; body: string; bullets?: string[]; ask?: string; media?: ArtKey; note?: string }
   | { kind: "grid"; title: string; lead?: string; items: Item[]; cols?: 2 | 3 | 4 }
   | { kind: "steps"; title: string; items: Item[] }
   | { kind: "prose"; id?: string; title: string; paragraphs: string[] }
@@ -19,7 +19,7 @@ export type Page = {
   path: string;
   title: string;
   description: string;
-  media: MediaKey;
+  media: ArtKey;
   headline: [string, string]; // the second half is the emphasised phrase
   sub: string;
   primary: Cta;

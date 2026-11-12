@@ -72,13 +72,14 @@ export function SpecIndex({ items }: { items: { id: string; num: string; title: 
     return () => io.disconnect();
   }, [items]);
   return (
-    <nav className="spec-index" aria-label="Contents">
+    <nav className="spec-index tone-second" aria-label="Contents">
       <p>Contents</p>
       <ol>
         {items.map((i) => (
           <li key={i.id}><a href={`#${i.id}`} aria-current={cur === i.id ? "true" : undefined}><span className="num">{i.num}</span>{i.title}</a></li>
         ))}
       </ol>
+      <a href="#pilot" className="btn btn-primary btn-sm spec-go">Plan a pilot</a>
     </nav>
   );
 }

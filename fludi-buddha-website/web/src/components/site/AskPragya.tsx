@@ -84,7 +84,7 @@ export default function AskPragya() {
   };
 
   return (
-    <div className="ask" data-open={open || undefined}>
+    <div className="ask tone-ink" data-open={open || undefined}>
       {open && (
         <div className="ask-panel" role="dialog" aria-label="Ask Pragya">
           <div className="ask-head">

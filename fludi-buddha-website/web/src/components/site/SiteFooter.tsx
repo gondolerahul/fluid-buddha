@@ -1,11 +1,11 @@
-// The one footer of the whole site. Its colours follow the world on <html data-world>.
+// The one footer of the whole site: the same ink block in every world (the design system's dark).
 import Link from "next/link";
 import { FOOTER } from "@/content/site";
 import VersionSwitch from "./VersionSwitch";
 
 export default function SiteFooter() {
   return (
-    <footer className="ftr">
+    <footer className="ftr tone-ink">
       <div className="wrap">
         <div className="ftr-top">
           <div className="ftr-brand">

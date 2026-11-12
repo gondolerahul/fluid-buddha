@@ -2,15 +2,14 @@ import type { World } from "./types";
 
 // Copy: docs/marketing-docs/website/copy-enterprise.md, tightened in the redesign
 // (docs/marketing-docs/website/audit-2026-11-11.md §4).
-// World 3, "The specification": white paper, ink, hairlines; section numbers are the genre here,
-// because a security review refers to them. Gold appears only where something is approved.
+// World 3, "The specification": white (60), ink (30), gold (10). Section numbers are the
+// genre here, because a security review refers to them. Gold appears only where something is approved.
 // Never say: "SOC 2 certified", "compliant", "regulator-approved", any named regulation, any price.
 export const ENTERPRISE_WORLD: World = {
   id: "enterprise",
   path: "/for/enterprise",
   name: "Enterprise",
   audience: "banks, insurers and fintechs",
-  theme: "light",
   meta: {
     title: "FluidBuddha for banks, insurers and fintechs: AI on your website, inside your rules",
     description:
@@ -133,7 +132,7 @@ export const ENTERPRISE_WORLD: World = {
       ],
     },
     {
-      kind: "timeline", id: "pilot", num: "9", title: ["Ninety days, one product area,", "a measured result."],
+      kind: "timeline", id: "pilot", tone: "gold", num: "9", title: ["Ninety days, one product area,", "a measured result."],
       rows: [
         { stage: "Weeks 1 to 3", weeks: [0, 3], what: "Install in a sandbox. Your security team reviews the data flow and the audit log." },
         { stage: "Weeks 3 to 6", weeks: [3, 6], what: "Your brand team approves the first components. Your compliance team writes the rules." },
@@ -159,7 +158,7 @@ export const ENTERPRISE_WORLD: World = {
       ],
     },
     {
-      kind: "close", id: "close", title: ["Bring your security and compliance teams", "to the first call."], lead: "We will state the limits before they ask.",
+      kind: "close", id: "close", tone: "gold", title: ["Bring your security and compliance teams", "to the first call."], lead: "We will state the limits before they ask.",
       primary: { label: "Plan a pilot", href: "/book-demo" }, secondary: { label: "Ask for the security documents", href: "/contact" },
     },
   ],

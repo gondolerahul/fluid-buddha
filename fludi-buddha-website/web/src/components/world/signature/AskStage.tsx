@@ -98,7 +98,7 @@ export default function AskStage({ questions }: { questions: { label: string; hi
         <p className="note">{PREVIEW_NOTE}</p>
       </div>
 
-      <div className="ui-frame as-frame">
+      <div className="ui-frame as-frame tone-main">
         <div className="ui-bar"><span className="ui-orb" aria-hidden /><b>Pragya</b><span>answering from this site</span></div>
         <div className="ui-body as-body" aria-live="polite">
           {!q && <p className="as-idle">Pick a question.</p>}
