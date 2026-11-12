@@ -241,7 +241,7 @@ function Results({ res }: { res: ExperimentResults }) {
                 <Tooltip contentStyle={{ background: "#171b24", border: "1px solid rgba(255,255,255,0.16)",
                   borderRadius: 10, fontSize: 12 }} labelStyle={{ color: "#eef1f6" }}
                   itemStyle={{ color: "#aab1c0" }}
-                  formatter={(v: number, name: string) => [pct(v), name]} />
+                  formatter={(v, name) => [pct(typeof v === "number" ? v : null), String(name)]} />
                 <Line type="monotone" dataKey="agent_rate" name="With the agent" stroke={AGENT}
                   strokeWidth={2} dot={{ r: 4, strokeWidth: 0, fill: AGENT }} connectNulls />
                 <Line type="monotone" dataKey="holdout_rate" name="Held out" stroke={HOLDOUT}

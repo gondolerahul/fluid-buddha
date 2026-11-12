@@ -123,7 +123,7 @@ export default function AnalyticsPage() {
                 tickFormatter={shortBucket} stroke="rgba(255,255,255,0.12)" />
               <YAxis tick={{ fill: "#aab1c0", fontSize: 11 }} stroke="rgba(255,255,255,0.12)"
                 tickFormatter={(v) => fmtUSD(v)} width={70} />
-              <Tooltip {...tooltipStyle} formatter={(v: number) => fmtUSD(v)} />
+              <Tooltip {...tooltipStyle} formatter={(v) => fmtUSD(Number(v ?? 0))} />
               {CATS.map((c) => (
                 <Bar key={c.key} dataKey={c.key} name={c.label} stackId="cost"
                   fill={COLORS[c.color]} radius={c.key === "tool_cost" ? [3, 3, 0, 0] : undefined} />
@@ -144,7 +144,7 @@ export default function AnalyticsPage() {
                   <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2}>
                     {pieData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                   </Pie>
-                  <Tooltip {...tooltipStyle} formatter={(v: number) => fmtUSD(v)} />
+                  <Tooltip {...tooltipStyle} formatter={(v) => fmtUSD(Number(v ?? 0))} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="stack-sm" style={{ flex: 1 }}>

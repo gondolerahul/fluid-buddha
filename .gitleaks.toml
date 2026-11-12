@@ -8,4 +8,7 @@ description = "Values that look like keys but aren't secrets"
 regexes = [
   # Widget keys are public by design: they ship in every customer page's source.
   '''fbk_[A-Za-z0-9_-]+''',
+  # Model settings in the technical spec ("400 tokens, `thinking_budget=0`")
+  # trip the generic-api-key rule.
+  '''thinking_budget=\d+''',
 ]

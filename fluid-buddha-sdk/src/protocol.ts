@@ -177,7 +177,7 @@ export const bytesToBase64 = (bytes: Uint8Array): string => {
 //   sync_id · then PCM16 little-endian mono.
 export const AUDIO_CHUNK = 0x01;
 
-export const packAudio = (syncId: string | null | undefined, pcm: Uint8Array): Uint8Array => {
+export const packAudio = (syncId: string | null | undefined, pcm: Uint8Array): Uint8Array<ArrayBuffer> => {
   const id = (syncId || '').slice(0, 255);
   const out = new Uint8Array(2 + id.length + pcm.length);
   out[0] = AUDIO_CHUNK;

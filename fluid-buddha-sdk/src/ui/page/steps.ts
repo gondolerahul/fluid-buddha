@@ -24,7 +24,10 @@ export function stepNav(doc: Document, flow: FlowStep[]): HTMLOListElement {
  *  step by name, or null when the page has no steps. */
 export function setupSteps(root: Element, opts: { history: boolean }): ((step: string) => void) | null {
   const doc = root.ownerDocument;
-  const regions = Array.from(root.querySelectorAll<HTMLElement>(':scope > [data-fb-step]'));
+  // Direct children, without `:scope` (jsdom 30 misses `:scope` inside shadow roots).
+  const regions = Array.from(root.children).filter(
+    (el): el is HTMLElement => el.hasAttribute('data-fb-step'),
+  );
   const items = Array.from(root.querySelectorAll<HTMLElement>('.fb-steps [data-fb-step-nav]'));
   const steps = items.map((li) => li.getAttribute('data-fb-step-nav') || '').filter(Boolean);
   if (steps.length < 2 || !regions.length) return null;
