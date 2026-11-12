@@ -1,0 +1,24 @@
+/* ============================================================================
+   World 0, "The painted page": ink (60), paper (30), gold (10), all from the design system.
+   The film is a watercolour painted live on a sheet of paper hung on the ink page; the paper blocks
+   of the page are painted too (their edges are a brush, see "painted blocks" in app/globals.css).
+   Roblox for the hero line, Space Grotesk for headings, the system's metallic gold on the key action.
+   ============================================================================ */
+
+[data-w="default"] .hero-copy .t-display { font-size: clamp(46px, 5.2vw, 80px); max-width: 10.5em; }
+[data-w="default"] .hero-copy .t-lead { max-width: 27em; }
+[data-w="default"] .slide-copy .t-h2 { font-size: clamp(32px, 3.4vw, 52px); }
+
+/* the sections: the paper blocks carry the page's paper texture */
+[data-w="default"] .section.tone-second { background-image: url("/film/paper/paper.webp"); background-size: 512px 512px; }
+[data-w="default"] .sh { max-width: 52rem; }
+[data-w="default"] .ws-bento .sh, [data-w="default"] .ws-plans .sh { margin-bottom: clamp(36px, 4vw, 56px); }
+[data-w="default"] .close-h { font-size: clamp(46px, 5.6vw, 88px); line-height: 1; font-family: var(--font-logo); font-weight: 400; letter-spacing: .005em; }
+[data-w="default"] .close-h .em { color: var(--fg); }
+/* the doors: three sheets of paper, each showing its version as the film painted it */
+[data-w="default"] .door { box-shadow: 0 30px 60px -30px rgba(0,0,0,.8); }
+[data-w="default"] .door-pic { background: url("/film/paper/paper.webp") 0 0 / 512px 512px; }
+
+@media (max-width: 900px) {
+  [data-w="default"] .film-slide.first > .wrap { grid-template-columns: 1fr; }
+}

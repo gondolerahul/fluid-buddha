@@ -1,10 +1,19 @@
-// Working out which world a visitor belongs in (docs/marketing-docs/WebsitePlan.md §3.2).
-// Everything here is plain logic with no React, so it can be tested on its own.
+// Working out which world a visitor belongs in (docs/marketing-docs/WebsitePlan.md §3.2), and what each
+// world calls itself in the shared header and footer. Plain logic with no React, so it can be tested on its own.
 
 import type { WorldId } from "@/content/worlds/types";
 
 export const WORLD_KEY = "fb:world";
 export const GO_EVENT = "fb:go-world";
+export const WORLD_IDS: WorldId[] = ["default", "saas", "education", "enterprise"];
+
+/** How each version is named in the version switch, and the main button the header shows for it. */
+export const VERSIONS: Record<WorldId, { label: string; short: string; line: string; cta: { label: string; href: string } }> = {
+  default: { label: "General", short: "General", line: "For any business website", cta: { label: "Start free", href: "/demo#start" } },
+  saas: { label: "SaaS teams", short: "SaaS", line: "Pricing pages, technical buyers, scored leads", cta: { label: "Try it on your site", href: "/demo#your-site" } },
+  education: { label: "Universities", short: "Education", line: "Admissions at night, in Hindi or English", cta: { label: "See it in Hindi", href: "/for/education?lang=hi" } },
+  enterprise: { label: "Banks and insurers", short: "Banks", line: "On your servers, inside your rules", cta: { label: "Plan a pilot", href: "/book-demo" } },
+};
 
 export type Resolution =
   /** Land directly in that world, no morph (a link said so). */
@@ -30,6 +39,9 @@ export function matchWorld(text: string | null | undefined): WorldId | null {
 export function isPersonaWorld(v: string | null | undefined): v is WorldId {
   return !!v && (PERSONA as string[]).includes(v);
 }
+export function isWorld(v: string | null | undefined): v is WorldId {
+  return !!v && (WORLD_IDS as string[]).includes(v);
+}
 
 export function worldPath(id: WorldId) {
   return id === "default" ? "/" : `/for/${id}`;
@@ -39,6 +51,18 @@ export function worldFromPath(pathname: string): WorldId {
   const m = pathname.match(/^\/for\/([a-z]+)/);
   return m && isPersonaWorld(m[1]) ? m[1] : "default";
 }
+
+/** A world's own page (as opposed to a content page that only borrows the visitor's world). */
+export function isWorldPage(pathname: string) {
+  return pathname === "/" || /^\/for\/(saas|education|enterprise)\/?$/.test(pathname);
+}
+
+/**
+ * The script that sets <html data-world> before the first paint (app/layout.tsx), so the page never
+ * flashes another world's colours: a world page takes its own world; any other page takes the
+ * visitor's remembered choice.
+ */
+export const WORLD_BOOT = `(function(){try{var p=location.pathname,m=p.match(/^\\/for\\/(saas|education|enterprise)\\/?$/),w=m?m[1]:(p==="/"?"default":localStorage.getItem("${WORLD_KEY}"));if(!/^(default|saas|education|enterprise)$/.test(w||""))w="default";document.documentElement.setAttribute("data-world",w)}catch(e){}})()`;
 
 /**
  * Decides what to do for a visitor arriving on the default site.
@@ -53,7 +77,7 @@ export function resolveWorld(input: { search: string; referrer: string; origin: 
 
   if (isPersonaWorld(input.remembered)) return { how: "remembered", world: input.remembered };
 
-  // Only our own pages count as a hint (for example arriving from /industries/education).
+  // Only our own pages count as a hint (for example arriving from /solutions/sales).
   try {
     const ref = new URL(input.referrer);
     if (ref.origin === input.origin) {
@@ -81,9 +105,18 @@ export function remembered(): string | null {
 export function remember(id: WorldId) {
   try { if (id === "default") window.localStorage.removeItem(WORLD_KEY); else window.localStorage.setItem(WORLD_KEY, id); } catch { /* storage unavailable */ }
 }
+/** The world now on screen. */
+export function currentWorld(): WorldId {
+  const w = typeof document === "undefined" ? null : document.documentElement.getAttribute("data-world");
+  return isWorld(w) ? w : "default";
+}
+/** Puts a world's colours, type and buttons on the whole page. */
+export function applyWorld(id: WorldId) {
+  document.documentElement.setAttribute("data-world", id);
+}
 
 /** Ask the site to change to another world. Handled by <WorldSwitch>. */
-export function goWorld(id: WorldId, how: "selector" | "chip" | "offer" | "agent" | "remembered" = "selector") {
+export function goWorld(id: WorldId, how: "selector" | "chip" | "offer" | "agent" | "remembered" | "menu" | "ask" = "selector") {
   window.dispatchEvent(new CustomEvent(GO_EVENT, { detail: { id, how } }));
 }
 

@@ -1,0 +1,103 @@
+/* ============================================================================
+   World 2, "Lamp to morning": paper (60), ink (30), gold (10), all from the design system.
+   The only film with people: a photograph in a frame, from a student's desk at 11 pm to a
+   counsellor's office at 9 am. The page keeps the night's teal; whatever belongs to the morning
+   (the answer, the summary, the lead) is on morning light. Soft corners, large humane type,
+   Devanagari paired.
+   ============================================================================ */
+
+[data-w="education"] .hero-copy .t-display { font-size: clamp(34px, 3.55vw, 56px); font-weight: 300; }
+[data-w="education"] .slide-copy .t-h2 { font-size: clamp(28px, 2.9vw, 46px); font-weight: 300; }
+[data-w="education"] .section .t-h2 { font-weight: 300; }
+[data-w="education"] .t-display, [data-w="education"] .t-h2 { letter-spacing: -0.03em; }
+[data-w="education"] .photo .film-pic { border-radius: var(--radius-card); }
+
+/* ------------------------------------------------------------------ your English page, in Hindi (signature), on morning light */
+.ha { position: relative; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: clamp(36px, 7vw, 120px); align-items: center; }
+.ha-page { margin: 0; padding: clamp(24px, 2.8vw, 40px); border-radius: 18px; background: var(--white); color: var(--ink-text); box-shadow: var(--shadow-lg); display: grid; gap: 16px; }
+.ha-page-bar { padding: 8px 12px; border-radius: 8px; background: var(--surface-2); font: 400 12.5px/1 var(--font-mono); color: var(--fg-3); }
+.ha-page h3 { font: 500 clamp(22px, 2vw, 28px)/1.2 var(--font-display); letter-spacing: -0.015em; }
+.ha-page p { font-size: clamp(15.5px, 1.15vw, 17px); line-height: 1.75; color: var(--fg-2); }
+.ha-line { border-radius: 4px; transition: background-color .6s var(--ease-out), color .6s var(--ease-out), box-shadow .6s var(--ease-out); }
+.ha-line.lit { background: color-mix(in oklab, var(--gold) 55%, transparent); color: var(--fg); box-shadow: 0 0 0 3px color-mix(in oklab, var(--gold) 55%, transparent); }
+.ha-phone { justify-self: center; width: min(360px, 100%); padding: 12px; border-radius: 46px; background: var(--ds-surface-3); box-shadow: var(--shadow-lg), inset 0 0 0 1px rgba(255,240,220,.1); }
+.ha-screen { display: flex; flex-direction: column; min-height: 560px; border-radius: 36px; overflow: hidden; background: var(--white); color: var(--ink-text);
+  --fg: var(--ink-text); --bg: var(--white); --fg-2: #4a4339; --fg-3: #645c52; --line: rgba(40,30,15,.1); --line-strong: rgba(40,30,15,.2); --surface-2: #f1ece2; --mark: var(--gold-800); --accent-text: var(--gold-800); }
+.ha-top { display: flex; align-items: center; gap: 10px; padding: 26px 18px 14px; border-bottom: 1px solid var(--line); }
+.ha-top b { font-weight: 600; font-size: 15px; }
+.ha-top small { margin-left: auto; font-size: 11.5px; color: var(--fg-3); }
+.ha-chat { flex: 1; display: grid; align-content: start; gap: 10px; padding: 18px 16px; }
+.ha-idle { color: var(--fg-3); font-size: 15px; }
+.ha-chat .ui-q, .ha-chat .ui-a { font-size: 15.5px; border-radius: 18px; }
+.ha-chat .ui-a .deva, .ha-chat .ui-q[lang="hi"] { font-size: 17px; line-height: 1.6; }
+.ha-chat .w { opacity: .08; transition: opacity .4s var(--ease-out); }
+.ha-chat .w.on { opacity: 1; }
+.ha-qs { display: grid; gap: 8px; padding: 14px 14px 22px; border-top: 1px solid var(--line); }
+.ha-qs .chip { justify-content: flex-start; min-height: 44px; font-size: 15px; }
+.ha-qs .chip[lang="hi"] { font-size: 16px; }
+.ha-wire { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.ha-wire path { fill: none; stroke: var(--gold-lo); stroke-width: 2.4; stroke-dasharray: 1; stroke-dashoffset: 1; animation: fb-wire 1.1s var(--ease-out) forwards; }
+@keyframes fb-wire { to { stroke-dashoffset: 0; } }
+
+/* ------------------------------------------------------------------ one visit, four photographs */
+.visit { list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(14px, 1.6vw, 22px); }
+.visit-card { display: grid; align-content: start; gap: 10px; }
+.visit-card:nth-child(even) { margin-top: clamp(24px, 4vw, 56px); }
+.visit-img { position: relative; aspect-ratio: 4 / 5; border-radius: var(--radius-card); overflow: hidden; background: var(--surface-2); box-shadow: var(--shadow-lg); margin-bottom: 8px; border: 8px solid var(--c-second); }
+.visit-img img { object-fit: cover; transition: transform 1.2s var(--ease-out); }
+.visit-card:hover .visit-img img { transform: scale(1.03); }
+.visit-n { font: 300 34px/1 var(--font-display); color: var(--gold); }
+.visit-card p { color: var(--fg-2); font-size: 16px; }
+
+/* ------------------------------------------------------------------ what parents see */
+.phone-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .8fr); gap: clamp(36px, 6vw, 100px); align-items: center; }
+.phone { justify-self: center; width: min(350px, 100%); padding: 12px; border-radius: 46px; background: var(--c-second); box-shadow: var(--shadow-lg); }
+.phone-screen { display: grid; gap: 14px; padding: 30px 22px 26px; border-radius: 36px; background: var(--white); }
+.phone-k { font-size: 13px; font-weight: 600; color: var(--accent-text); }
+.phone-screen h3 { font: 500 19px/1.3 var(--font-display); letter-spacing: -0.01em; }
+.phone-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line-strong); font-size: 14px; color: var(--fg-2); }
+.phone-row b { font-weight: 600; color: var(--fg); text-align: right; }
+.phone-src { font: 400 11.5px/1.5 var(--font-mono); color: var(--fg-3); }
+.phone-btn { display: inline-flex; justify-content: center; min-height: 44px; align-items: center; border-radius: 999px; background: var(--gold); color: var(--gold-ink); font-weight: 600; font-size: 15px; }
+.phone-note { font-size: 12px; color: var(--fg-3); }
+
+/* ------------------------------------------------------------------ the counsellor's morning */
+.counsellor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(36px, 6vw, 100px); align-items: center; }
+.counsellor-img { position: relative; aspect-ratio: 4 / 5; border-radius: var(--radius-card); overflow: hidden; box-shadow: var(--shadow-lg); border: 10px solid var(--c-second); }
+.counsellor-img img { object-fit: cover; }
+.lead-am { border-color: transparent; }
+.lead-am .ui-bar { font-size: 14px; }
+.lead-am-kv { display: grid; grid-template-columns: 1fr; gap: 0; padding: 6px 18px 4px; }
+.lead-am-kv > div { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.lead-am-kv dt { color: var(--fg-3); font-size: 14.5px; }
+.lead-am-kv dd { margin: 0; color: var(--fg); font-size: 14.5px; font-weight: 600; }
+.lead-am .note { padding: 12px 18px 18px; }
+
+/* ------------------------------------------------------------------ fees and privacy */
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(36px, 6vw, 100px); }
+.pair-col { display: grid; gap: 26px; align-content: start; padding-top: 28px; border-top: 1px solid var(--line-strong); }
+.pair-col .t-h2 { font-size: clamp(28px, 2.8vw, 42px); }
+.pair .cp-ticks li { font-size: 17px; }
+
+/* ------------------------------------------------------------------ the example return, on gold */
+.ret { display: grid; gap: 26px; justify-items: start; }
+.eq { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 22px; font: 300 clamp(34px, 5vw, 80px)/1.05 var(--font-display); letter-spacing: -0.035em; }
+.eq i { font-style: normal; color: var(--fg-3); }
+.eq .em { font-weight: 500; }
+
+@media (max-width: 1000px) {
+  .ha, .phone-split, .counsellor, .pair { grid-template-columns: 1fr; }
+  .visit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .visit-card:nth-child(even) { margin-top: 0; }
+  .counsellor-img { aspect-ratio: 16 / 11; }
+}
+@media (max-width: 560px) {
+  .visit { gap: 12px; }
+  .visit-img { border-width: 5px; }
+  .ha-screen { min-height: 500px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ha-wire path { animation: none; stroke-dashoffset: 0; }
+  .ha-chat .w, .ha-line { transition: none; }
+  .visit-card:hover .visit-img img { transform: none; }
+}

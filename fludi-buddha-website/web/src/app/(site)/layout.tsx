@@ -1,15 +1,4 @@
-import Nav from "@/components/Nav";
-import Footer from "@/components/Footer";
-import AskBar from "@/components/AskBar";
-
-/** Chrome for the earlier content pages (pricing, demo, industries, legal). The four worlds have their own. */
+/** The content pages (product, pricing, demo, solutions, legal, …). The header and footer come from the root layout. */
 export default function SiteLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <>
-      <Nav />
-      <main id="main">{children}</main>
-      <Footer />
-      <AskBar />
-    </>
-  );
+  return <main id="main" className="page">{children}</main>;
 }

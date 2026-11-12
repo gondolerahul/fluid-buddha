@@ -1,48 +1,47 @@
-import Image from "next/image";
+// The template for the content pages (product, solutions, industries, developers, trust, company).
+// It is drawn entirely from the world tokens, so it takes the look of the visitor's version: the
+// same structure in every world (hero, sections, one band on the secondary colour, a gold close),
+// and pictures drawn in the world's own material (WorldArt).
 import Link from "next/link";
 import type { Page, Section } from "@/content/pages";
-import Theme from "./Theme";
-import styles from "./ContentPage.module.css";
+import AskButton from "@/components/site/AskButton";
+import WorldArt from "@/components/world/WorldArt";
 
-const poster = (k: string) => `/film/posters/${k}.webp`;
+function Title({ t }: { t: [string, string] }) {
+  return <>{t[0]} <span className="em">{t[1]}</span></>;
+}
 
 function Block({ s, i }: { s: Section; i: number }) {
   switch (s.kind) {
     case "story":
       return (
-        <section className={`section ${styles.story} ${i % 2 ? styles.flip : ""}`}>
-          <div className={`wrap ${styles.storyGrid}`}>
-            <div className="stack-5 reveal">
-              {s.eyebrow && <div className="eyebrow">{s.eyebrow}</div>}
-              <h2 className="h2">{s.title}</h2>
-              <p className="lead">{s.body}</p>
-              {s.bullets && <ul className={styles.bullets}>{s.bullets.map((b) => <li key={b}>{b}</li>)}</ul>}
-              {s.tag && <p className={styles.try}>{s.tag}</p>}
-              {s.note && <p className="illustrative">{s.note}</p>}
+        <section className="section">
+          <div className={`wrap cp-story${i % 2 ? " flip" : ""}`}>
+            <div className="copy">
+              <h2 className="t-h2">{s.title}</h2>
+              <p className="t-lead">{s.body}</p>
+              {s.bullets && <ul className="cp-ticks">{s.bullets.map((b) => <li key={b}>{b}</li>)}</ul>}
+              {s.ask && <AskButton question={s.ask} />}
+              {s.note && <p className="note">{s.note}</p>}
             </div>
-            {s.poster && (
-              <div className={`${styles.visual} reveal`}>
-                <Image src={poster(s.poster)} alt="" fill sizes="(max-width: 960px) 100vw, 50vw" />
-              </div>
-            )}
+            {s.media && <WorldArt k={s.media} className="cp-art" />}
           </div>
         </section>
       );
     case "grid":
       return (
-        <section className="section">
+        <section className="section tone-second">
           <div className="wrap">
-            <div className="stack-4 reveal" style={{ maxWidth: 760 }}>
-              {s.eyebrow && <div className="eyebrow">{s.eyebrow}</div>}
-              <h2 className="h2">{s.title}</h2>
-              {s.lead && <p className="lead">{s.lead}</p>}
+            <div className="sh">
+              <h2 className="t-h2">{s.title}</h2>
+              {s.lead && <p className="t-lead">{s.lead}</p>}
             </div>
-            <div className={`${s.cols === 2 ? "grid-2" : s.cols === 4 ? "grid-4" : "grid-3"} ${styles.cards}`}>
+            <div className={`cp-grid c${s.cols ?? 3}`}>
               {s.items.map((it) => (
-                <div key={it.title} className="card reveal">
-                  {it.tag && <div className="eyebrow" style={{ marginBottom: 12 }}>{it.tag}</div>}
-                  <h3 className="h3">{it.title}</h3>
-                  <p className="muted" style={{ marginTop: 10 }}>{it.body}</p>
+                <div key={it.title} className="cp-cell">
+                  {it.tag && <span className="ui-tag tag">{it.tag}</span>}
+                  <h3 className="t-h3">{it.title}</h3>
+                  <p>{it.body}</p>
                 </div>
               ))}
             </div>
@@ -53,32 +52,20 @@ function Block({ s, i }: { s: Section; i: number }) {
       return (
         <section className="section">
           <div className="wrap">
-            <div className="stack-4 reveal" style={{ maxWidth: 760 }}>
-              {s.eyebrow && <div className="eyebrow">{s.eyebrow}</div>}
-              <h2 className="h2">{s.title}</h2>
-            </div>
-            <ol className={styles.steps}>
-              {s.items.map((it, n) => (
-                <li key={it.title} className="reveal">
-                  <span className={styles.num}>{String(n + 1).padStart(2, "0")}</span>
-                  <h3 className="h3">{it.title}</h3>
-                  <p className="muted">{it.body}</p>
-                </li>
-              ))}
+            <div className="sh"><h2 className="t-h2">{s.title}</h2></div>
+            <ol className="cp-steps">
+              {s.items.map((it) => <li key={it.title}><h3 className="t-h3">{it.title}</h3><p>{it.body}</p></li>)}
             </ol>
           </div>
         </section>
       );
     case "prose":
       return (
-        <section className="section">
-          <div className={`wrap ${styles.prose}`}>
-            <div className="stack-5 reveal">
-              {s.eyebrow && <div className="eyebrow">{s.eyebrow}</div>}
-              <h2 className="h2">{s.title}</h2>
-              {s.paragraphs.map((p) =>
-                p.startsWith("<") ? <pre key={p} className={styles.code}>{p}</pre> : <p key={p} className="lead">{p}</p>,
-              )}
+        <section className="section" id={s.id}>
+          <div className="wrap">
+            <div className="cp-prose">
+              <h2 className="t-h2">{s.title}</h2>
+              {s.paragraphs.map((p) => (p.startsWith("<") ? <pre key={p} className="ui-code">{p}</pre> : <p key={p} className="t-lead">{p}</p>))}
             </div>
           </div>
         </section>
@@ -86,13 +73,9 @@ function Block({ s, i }: { s: Section; i: number }) {
     case "faq":
       return (
         <section className="section">
-          <div className={`wrap ${styles.prose}`}>
-            <h2 className="h2 reveal">{s.title}</h2>
-            <div className={styles.faq}>
-              {s.items.map((f) => (
-                <details key={f.q} className="reveal"><summary>{f.q}</summary><p className="muted">{f.a}</p></details>
-              ))}
-            </div>
+          <div className="wrap faq-split">
+            <div className="sh"><h2 className="t-h2">{s.title}</h2></div>
+            <div className="faq">{s.items.map((f) => <details key={f.q}><summary>{f.q}</summary><p>{f.a}</p></details>)}</div>
           </div>
         </section>
       );
@@ -102,36 +85,30 @@ function Block({ s, i }: { s: Section; i: number }) {
 export default function ContentPage({ page }: { page: Page }) {
   return (
     <>
-      <Theme theme={page.theme ?? "paper"} />
-      <section className={styles.hero}>
-        <div className={styles.heroImg}>
-          <Image src={poster(page.poster)} alt="" fill priority sizes="100vw" />
-        </div>
-        <div className={styles.heroVeil} />
-        <div className={`wrap ${styles.heroCopy}`}>
-          <div className="stack-5">
-            <div className="eyebrow">{page.eyebrow}</div>
-            <h1 className="h1">{page.headline[0]} <span className="gold">{page.headline[1]}</span></h1>
-            <p className="lead">{page.sub}</p>
-            <div className={styles.ctas}>
-              <Link href={page.primary.href} className="btn btn-metal btn-lg">{page.primary.label}</Link>
-              {page.secondary && <Link href={page.secondary.href} className="btn btn-ghost btn-lg">{page.secondary.label}</Link>}
+      <section className="cp-hero">
+        <div className="wrap">
+          <div className="cp-hero-copy" data-enter>
+            <h1 className="t-display"><Title t={page.headline} /></h1>
+            <p className="t-lead">{page.sub}</p>
+            <div className="ctas">
+              <Link href={page.primary.href} className="btn btn-primary btn-lg">{page.primary.label}</Link>
+              {page.secondary && <Link href={page.secondary.href} className="btn btn-quiet btn-lg">{page.secondary.label}</Link>}
             </div>
+            {page.ask && <AskButton question={page.ask} />}
           </div>
+          <WorldArt k={page.media} className="cp-hero-art" />
         </div>
       </section>
 
       {page.sections.map((s, i) => <Block key={i} s={s} i={i} />)}
 
-      <section className={`section ${styles.closing}`}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/favicon.svg" alt="" aria-hidden className={styles.mark} />
-        <div className="wrap stack-5 reveal" style={{ textAlign: "center" }}>
-          <h2 className="h1">{page.closing.title[0]} <span className="gold">{page.closing.title[1]}</span></h2>
-          {page.closing.body && <p className="lead" style={{ marginInline: "auto" }}>{page.closing.body}</p>}
-          <div className={styles.ctas} style={{ justifyContent: "center" }}>
-            <Link href={page.closing.primary.href} className="btn btn-metal btn-lg">{page.closing.primary.label}</Link>
-            {page.closing.secondary && <Link href={page.closing.secondary.href} className="btn btn-ghost btn-lg">{page.closing.secondary.label}</Link>}
+      <section className="section cp-close tone-gold">
+        <div className="wrap">
+          <h2 className="t-h2"><Title t={page.closing.title} /></h2>
+          {page.closing.body && <p className="t-lead">{page.closing.body}</p>}
+          <div className="ctas">
+            <Link href={page.closing.primary.href} className="btn btn-primary btn-lg">{page.closing.primary.label}</Link>
+            {page.closing.secondary && <Link href={page.closing.secondary.href} className="btn btn-quiet btn-lg">{page.closing.secondary.label}</Link>}
           </div>
         </div>
       </section>

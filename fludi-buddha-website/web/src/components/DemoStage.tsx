@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CAPABILITIES, CAPABILITIES_HI, DEMO_QUESTIONS, DEMO_QUESTIONS_HI } from "@/content/home";
-import styles from "./DemoStage.module.css";
+import { CAPABILITIES, DEMO_QUESTIONS } from "@/content/demo";
 
-/** Suggested questions + capability cards that light up as the agent answers each topic. */
-export default function DemoStage({ hindi = false }: { hindi?: boolean }) {
+/** Questions to try, and the capabilities they reveal as the agent answers each one. */
+export default function DemoStage() {
   const [found, setFound] = useState<Set<string>>(new Set());
   useEffect(() => {
     const on = (e: Event) => setFound((s) => new Set(s).add((e as CustomEvent<{ topic: string }>).detail.topic));
@@ -13,25 +12,24 @@ export default function DemoStage({ hindi = false }: { hindi?: boolean }) {
     return () => window.removeEventListener("fb:answered", on);
   }, []);
   const ask = (t: string) => window.dispatchEvent(new CustomEvent("fb:ask", { detail: t }));
-  const qs = hindi ? DEMO_QUESTIONS_HI : DEMO_QUESTIONS;
-  const caps = hindi ? CAPABILITIES_HI : CAPABILITIES;
 
   return (
-    <div className={styles.stage}>
-      <div className={styles.chips}>
-        {qs.map((q) => (
-          <button key={q.label} className={`glass ${styles.chip} ${hindi || ("hi" in q && q.hi) ? "deva" : ""}`} onClick={() => ask(q.ask)}>{q.label}</button>
+    <div className="dm-panel">
+      <p className="dm-hint">Questions to try</p>
+      <div className="dm-chips">
+        {DEMO_QUESTIONS.map((q) => (
+          <button key={q.label} type="button" className={`chip${q.hi ? " deva" : ""}`} lang={q.hi ? "hi" : undefined} onClick={() => ask(q.label)}>{q.label}</button>
         ))}
       </div>
-      <div className={styles.caps}>
-        {caps.map((c) => (
-          <div key={c.topic} className={`${styles.cap} ${found.has(c.topic) ? styles.on : ""}`}>
-            <i>{found.has(c.topic) ? "✓" : ""}</i>
+      <div className="dm-caps">
+        {CAPABILITIES.map((c) => (
+          <div key={c.topic} className={`dm-cap${found.has(c.topic) ? " on" : ""}`}>
+            <i aria-hidden />
             <div><b>{c.title}</b><small>{c.body}</small></div>
           </div>
         ))}
       </div>
-      <p className={styles.count}>{hindi ? `${caps.length} में से ${found.size} खोजे गए` : `You've discovered ${found.size} of ${caps.length} things it does`}</p>
+      <p className="dm-count" aria-live="polite">You have found {found.size} of {CAPABILITIES.length} things it does.</p>
     </div>
   );
 }

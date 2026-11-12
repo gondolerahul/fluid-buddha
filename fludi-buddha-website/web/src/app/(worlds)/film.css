@@ -1,0 +1,95 @@
+/* ============================================================================
+   The scroll film shared by the four worlds. One anatomy everywhere: the copy on the left, the
+   picture on the right (above the copy on upright screens), a chapter rail on the edge.
+   Only the picture's material differs: a painted paper sheet (default), a console window (saas),
+   a photograph in an ink frame (education), a drafting sheet on ink (enterprise). The picture sits
+   on the world's secondary colour, so the stage keeps the 60 / 30 / 10 of the page.
+   ============================================================================ */
+
+.w { position: relative; }
+.film-track { position: relative; }
+.film-stage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; isolation: isolate; background: var(--bg); }
+
+/* ------------------------------------------------------------------ the picture */
+.film-pic { position: absolute; overflow: hidden; background-size: cover; background-position: 72% 50%;
+  left: 47%; right: var(--gutter); max-width: 920px; top: calc(50% + var(--header-h) / 2); transform: translateY(-50%);
+  aspect-ratio: var(--pic-ratio, 4 / 3); max-height: calc(100svh - var(--header-h) - 56px);
+  border-radius: var(--radius-card); box-shadow: var(--shadow-lg); }
+.film-pic canvas { position: absolute; inset: 0; width: 100%; height: 100%; font-family: var(--font-mono); color: var(--fg); }
+.film-veil { position: absolute; inset: 0; pointer-events: none; }
+.film-load { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--line); }
+.film-load span { display: block; height: 100%; background: var(--gold); transform: scaleX(0); transform-origin: 0 50%; transition: transform .4s var(--ease-out); }
+
+/* default: a sheet of the design system's paper, deckled, hung on the ink with the system's gold glow behind it */
+.drawn-default .film-pic { --pic-ratio: 5 / 4; background: none; box-shadow: none; border-radius: 0; overflow: visible; }
+.drawn-default .film-pic canvas { -webkit-mask: var(--deckle) center / 100% 100% no-repeat; mask: var(--deckle) center / 100% 100% no-repeat; }
+.drawn-default .film-pic::before { content: ""; position: absolute; inset: 6% 3% -4%; z-index: -1; border-radius: 30px; background: rgba(0,0,0,.72); filter: blur(34px); }
+.drawn-default::before { content: ""; position: absolute; z-index: -1; right: -6vw; top: 50%; width: min(82vw, 1200px); aspect-ratio: 1; transform: translateY(-46%);
+  background: var(--glow-gold); opacity: .55; pointer-events: none; }
+/* saas: a console window on the raised ink, with a status line in gold */
+.drawn-saas .film-pic { --pic-ratio: 10 / 9; border: 1px solid var(--line-strong); }
+/* education: a photograph in an ink frame */
+.photo .film-pic { --pic-ratio: 4 / 3; border: 10px solid var(--c-second); }
+/* enterprise: a drafting sheet on ink */
+.drawn-enterprise .film-pic { --pic-ratio: 3 / 2; }
+
+/* ------------------------------------------------------------------ slides */
+.film-slide { position: absolute; inset: 0; display: grid; align-items: center; padding-top: var(--header-h); opacity: 0; pointer-events: none; will-change: opacity, transform; }
+.film-slide.first { opacity: 1; pointer-events: auto; }
+.film-slide > .wrap { display: grid; grid-template-columns: minmax(0, 43%); }
+
+.hero-copy { display: grid; gap: 26px; justify-items: start; }
+.hero-copy .t-lead { max-width: 30em; }
+.slide-copy { display: grid; gap: 18px; justify-items: start; max-width: 520px; }
+.slide-copy .t-h2 { font-size: clamp(28px, 3vw, 46px); line-height: 1.08; }
+.slide-copy .t-lead { font-size: clamp(16.5px, 1.2vw, 19px); }
+.quote { margin: 0; font: 500 clamp(28px, 3vw, 44px)/1.35 var(--font-deva); color: var(--hero-em); }
+.selector { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.roles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 6px; font-size: 14px; color: var(--fg-3); }
+.roles > span { margin-right: 4px; }
+.roles button { min-height: 36px; padding: 0 14px; border-radius: var(--radius-btn); border: 1px solid var(--line-strong); background: transparent;
+  font: 500 13.5px/1 var(--font-body); color: var(--fg-2); transition: border-color var(--dur-1), color var(--dur-1), background-color var(--dur-1); }
+.roles button:hover { color: var(--fg); border-color: var(--border-gold); }
+.roles button[aria-pressed="true"] { color: var(--fg); border-color: var(--gold); background: var(--accent-wash); }
+.role-sub { min-height: 3.2em; }
+@keyframes fb-sub { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.role-sub { animation: fb-sub .5s var(--ease-out) both; }
+
+/* ------------------------------------------------------------------ chapter rail */
+.film-rail { position: absolute; z-index: 3; right: clamp(10px, 1.4vw, 22px); top: calc(50% + var(--header-h) / 2); transform: translateY(-50%); display: grid; gap: 0; padding: 6px 2px; }
+.film-rail button { position: relative; display: grid; place-items: center; width: 24px; height: 22px; padding: 0; border: 0; background: none; }
+.film-rail i { width: 5px; height: 5px; border-radius: 3px; background: var(--fg-3); opacity: .6; transition: height .4s var(--ease-out), background-color .4s, opacity .4s; }
+.film-rail button:hover i { opacity: 1; background: var(--fg); }
+.film-rail button[aria-current] i { height: 16px; opacity: 1; background: var(--gold); }
+.film-rail span { position: absolute; right: calc(100% + 10px); top: 50%; transform: translate(6px, -50%); opacity: 0; pointer-events: none; white-space: nowrap;
+  padding: 7px 11px; border-radius: var(--r-pill); background: var(--ink-950); border: 1px solid rgba(255,240,220,.16); color: var(--warm-white);
+  font: 500 12.5px/1 var(--font-body); transition: opacity .3s var(--ease-out), transform .3s var(--ease-out); }
+.film-rail button:hover span, .film-rail button:focus-visible span { opacity: 1; transform: translate(0, -50%); }
+
+/* ------------------------------------------------------------------ narrower screens */
+@media (max-width: 1100px) { .film-rail { display: none; } }
+/* stacked: the picture above, the copy below */
+@media (max-width: 900px) {
+  .film-pic { left: var(--gutter); right: var(--gutter); max-width: none; top: calc(var(--header-h) + 12px); transform: none; aspect-ratio: auto; height: 33svh; max-height: none; }
+  .film-slide { align-items: end; padding-bottom: clamp(18px, 3.5vh, 40px); }
+  .film-slide > .wrap { grid-template-columns: 1fr; }
+  /* the hero has to fit under the picture: one row of buttons, the roles in one row that scrolls */
+  .hero-copy { gap: 16px; }
+  .hero-copy .t-lead { font-size: 16.5px; }
+  .hero-copy .ctas { gap: 8px; }
+  .hero-copy .btn-lg { min-height: 48px; padding: 0 18px; font-size: 15px; }
+  .roles { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; width: calc(100% + var(--gutter)); padding: 2px var(--gutter) 2px 0; }
+  .roles::-webkit-scrollbar { display: none; }
+  .roles button, .roles > span { flex: none; white-space: nowrap; }
+  .role-sub { min-height: 0; }
+  .slide-copy { max-width: none; }
+  .slide-copy .t-h2 { font-size: clamp(26px, 6.6vw, 36px); }
+  .slide-copy .t-lead { font-size: 16.5px; }
+  .photo .film-pic { border-width: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .role-sub { animation: none; }
+  .film-rail i, .film-rail span { transition: none; }
+}
