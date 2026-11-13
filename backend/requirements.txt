@@ -35,7 +35,7 @@ redis>=5.0                # shared sessions + rate limit when REDIS_URL is set
 pypdf>=6.0
 
 # ---- Google Cloud / Vertex AI ----
-google-genai>=1.0.0            # Gemini LLM + embeddings (Vertex backend)
+google-genai>=3.0.0            # Gemini LLM + embeddings (Vertex backend)
 google-cloud-speech>=2.26      # streaming ASR
 google-cloud-texttospeech>=2.16  # streaming TTS
 
