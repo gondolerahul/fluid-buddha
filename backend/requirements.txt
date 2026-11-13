@@ -40,5 +40,5 @@ google-cloud-speech>=2.26      # streaming ASR
 google-cloud-texttospeech>=2.16  # streaming TTS
 
 # ---- Bring your own model (M3-4): Claude and OpenAI / Azure OpenAI ----
-anthropic>=2.5
+anthropic>=2.7.0
 openai>=3.46
