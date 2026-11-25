@@ -14,7 +14,8 @@ Reported but not critical (``degraded``):
 
 * ``scheduler``   the periodic jobs loop is alive;
 * ``models``      the AI provider is configured and recent calls aren't failing;
-* ``email``       SMTP is configured and the outbox isn't backing up.
+* ``email``       a sender (SMTP or Microsoft Graph) is configured and the outbox
+                  isn't backing up.
 
 Each check has a 2-second timeout and they run together.
 """
@@ -107,8 +108,8 @@ async def _models(app: Any) -> dict:
 
 
 async def _email() -> dict:
-    s = get_settings()
-    if not s.smtp_host:
+    from app.notify.email import configured
+    if not configured(get_settings()):
         return {"ok": True, "detail": "not configured"}
     from app.db import engine
     async with engine.connect() as conn:

@@ -545,11 +545,14 @@ expire after `TURN_TTL_SECONDS` (coturn `use-auth-secret`).
     `fb_crawl_jobs_total{status}`, `fb_cost_alerts_total{level}`.
   Time to first audio is also stored per voice turn (`usage_events.ttfa_ms`)
   and shown per site on the console's Analytics tab (median and p95).
-- **Email** (`app/notify/email.py`): plain SMTP (`SMTP_*`). Everything is queued
+- **Email** (`app/notify/email.py`): SMTP (`SMTP_*`), or Microsoft 365 through
+  Microsoft Graph (`EMAIL_TRANSPORT=graph` with `GRAPH_TENANT_ID`,
+  `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`; `app/notify/graph_mail.py`), since
+  Microsoft is retiring password sign-in for SMTP. Everything is queued
   in `email_outbox` and sent by a background job: retried with backoff
   (1 → 32 minutes, 6 attempts), claimed with `SKIP LOCKED` so replicas never
   double-send, deduplicated by an idempotency key, and deleted 30 days after
-  sending. Without `SMTP_HOST`, dev logs each email; production refuses to queue.
+  sending. Without a sender, dev logs each email; production refuses to queue.
   Set up SPF and DKIM for the sending domain at your provider.
 - **Background jobs** (`app/jobs/`): retention sweep, email outbox and cleanup
   run on one scheduler; each run holds a Postgres advisory lock, so only one

@@ -142,16 +142,24 @@ class Settings(BaseSettings):
     # How often visitor data past each site's retention window is deleted.
     retention_sweep_minutes: int = 60         # 0 = off
 
-    # ---- Email (M2-0): plain SMTP, any provider ----
-    # Without SMTP_HOST, dev environments log each email instead of sending it;
-    # other environments refuse to queue email (so nothing is silently lost).
+    # ---- Email (M2-0): SMTP (any provider) or Microsoft 365 through Graph ----
+    # Without a configured sender, dev environments log each email instead of
+    # sending it; other environments refuse to queue email (so nothing is
+    # silently lost).
+    email_transport: str = "smtp"             # smtp | graph
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_security: str = "starttls"           # starttls | ssl | none
-    smtp_from: str = "FluidBuddha <no-reply@localhost>"
+    smtp_from: str = "FluidBuddha <no-reply@localhost>"   # the sender, for both transports
     smtp_timeout_seconds: float = 20.0
+    # EMAIL_TRANSPORT=graph: Microsoft Graph sendMail as the SMTP_FROM mailbox,
+    # signed in as an app registration (client credentials). Limit the app to
+    # that one mailbox in Exchange (docs/deployment/azure-operator-guide.md).
+    graph_tenant_id: str = ""
+    graph_client_id: str = ""
+    graph_client_secret: str = ""
     email_outbox_interval_seconds: int = 15   # how often queued email is sent; 0 = off
     # Insights v2 (M2-5): how often new visitor turns are classified, and how
     # often accounts are checked for a due weekly digest. 0 = off.
@@ -250,6 +258,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"JWT_SECRET must be set to a non-default value when APP_ENV "
                 f"is '{self.app_env}' (not one of {sorted(_DEV_ENVS)})."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _known_email_transport(self) -> "Settings":
+        """A typo in EMAIL_TRANSPORT stops the start, instead of silently
+        falling back to SMTP."""
+        if self.email_transport.strip().lower() not in ("smtp", "graph"):
+            raise ValueError(
+                f"EMAIL_TRANSPORT must be 'smtp' or 'graph', not '{self.email_transport}'."
             )
         return self
 
