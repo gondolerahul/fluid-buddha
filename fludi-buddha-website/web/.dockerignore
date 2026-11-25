@@ -1,0 +1,8 @@
+node_modules
+.next
+.env*
+!.env.example
+npm-debug.log*
+*.tsbuildinfo
+# Frames of the earlier default film. No page uses them (38 MB).
+public/film/default
