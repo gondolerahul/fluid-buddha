@@ -1,9 +1,52 @@
-import type { World } from "./types";
+import type { Film, World } from "./types";
 
 // Copy: docs/marketing-docs/website/copy-default.md, tightened in the redesign
 // (docs/marketing-docs/website/audit-2026-11-11.md §4).
-// World 0, "The painted page": ink (60), paper (30), gold (10). The film is a watercolour painted
-// live in the browser on a sheet of paper hung on the ink page (components/world/washFilm.ts).
+// World 0, "The painted page": ink (60), paper (30), gold (10). The film is the water film, painted
+// in oil with a palette knife (film/water); the watercolour painted live in the browser is kept as
+// PAINTED_FILM below.
+/**
+ * The water film (film/water, TREATMENT.md there): water's journey from cloud to a bowl, painted in
+ * code with a palette knife, as 540 frames scrubbed by scroll. Each chapter sits on a calm stretch of
+ * the film; between them the film plays on its own (the avalanche, the falls, the sea, the depth).
+ */
+export const WATER_FILM: Film = {
+  kind: "frames",
+  frames: { dir: "/film/water/960", mobileDir: "/film/water/512", ext: "webp", count: 540, pxPerFrame: 21, poster: "/film/water/poster.jpg", heroAt: [0, 0.05], look: "canvas" },
+  chapters: [
+    { id: "question", label: "A question", at: [0.116, 0.175], title: ["Someone has", "a question."], body: "They want to know what it costs for their team." },
+    { id: "talks", label: "It talks", at: [0.276, 0.33], title: ["It answers out loud,", "from your own pages."], body: "Every answer shows where it came from. If the answer is not on your site, it says so." },
+    { id: "shows", label: "It shows", at: [0.374, 0.426], title: ["It draws", "charts, tables and calculators", "while it talks."], body: "The visitor can move a slider and see the price change." },
+    { id: "there", label: "The right page", at: [0.458, 0.507], title: ["It opens", "the right page."], body: "It scrolls to the part that answers the question and highlights it." },
+    { id: "books", label: "It books", at: [0.572, 0.618], title: ["It books the meeting", "after the visitor says yes."], body: "Nothing happens without their confirmation. Your team gets the lead, with what was asked." },
+    { id: "fits", label: "It fits", at: [0.8, 0.858], title: ["The page", "changes to fit the kind of visitor."], body: "It is built only from parts you approved. Prices come from your own systems." },
+    { id: "you", label: "For you", at: [0.874, 0.928], title: ["Tell us what you do.", "This site will change for you."], selector: true },
+    { id: "measure", label: "Measure it", at: [0.945, 1], title: ["One visitor in ten never sees it.", "The difference is your extra sales."], body: "The product runs this test for you.", note: "Example chart." },
+  ],
+};
+
+/**
+ * The backup: the watercolour painted live in the browser on a sheet of paper (components/world/washFilm.ts),
+ * the General site's film until 13 November 2026. To bring it back, set FILM below to PAINTED_FILM.
+ */
+export const PAINTED_FILM: Film = {
+  kind: "code",
+  code: { id: "default", length: 11200, heroAt: [0, 0.05] },
+    chapters: [
+      { id: "question", label: "A question", at: [0.07, 0.115], title: ["Someone has", "a question."], body: "They want to know what it costs for their team." },
+      { id: "talks", label: "It talks", at: [0.15, 0.245], title: ["It answers out loud,", "from your own pages."], body: "Every answer shows where it came from. If the answer is not on your site, it says so." },
+      { id: "shows", label: "It shows", at: [0.285, 0.38], title: ["It draws", "charts, tables and calculators", "while it talks."], body: "The visitor can move a slider and see the price change." },
+      { id: "there", label: "The right page", at: [0.42, 0.52], title: ["It opens", "the right page."], body: "It scrolls to the part that answers the question and highlights it." },
+      { id: "books", label: "It books", at: [0.555, 0.622], title: ["It books the meeting", "after the visitor says yes."], body: "Nothing happens without their confirmation. Your team gets the lead, with what was asked." },
+      { id: "fits", label: "It fits", at: [0.66, 0.76], title: ["The page", "changes to fit the kind of visitor."], body: "It is built only from parts you approved. Prices come from your own systems." },
+      { id: "you", label: "For you", at: [0.795, 0.865], title: ["Tell us what you do.", "This site will change for you."], selector: true },
+      { id: "measure", label: "Measure it", at: [0.905, 1], title: ["One visitor in ten never sees it.", "The difference is your extra sales."], body: "The product runs this test for you.", note: "Example chart." },
+    ],
+};
+
+/** The film the General site plays: WATER_FILM, or PAINTED_FILM to go back to the watercolour. */
+const FILM: Film = WATER_FILM;
+
 export const DEFAULT_WORLD: World = {
   id: "default",
   path: "/",
@@ -20,21 +63,7 @@ export const DEFAULT_WORLD: World = {
     primary: { label: "Start free", href: "/demo#start" },
     secondary: { label: "Watch how it works", href: "#question" },
   },
-  film: {
-    // Painted live from the scroll position: one sheet of paper, five passages (components/world/washFilm.ts).
-    kind: "code",
-    code: { id: "default", length: 11200, heroAt: [0, 0.05] },
-    chapters: [
-      { id: "question", label: "A question", at: [0.07, 0.115], title: ["Someone has", "a question."], body: "They want to know what it costs for their team." },
-      { id: "talks", label: "It talks", at: [0.15, 0.245], title: ["It answers out loud,", "from your own pages."], body: "Every answer shows where it came from. If the answer is not on your site, it says so." },
-      { id: "shows", label: "It shows", at: [0.285, 0.38], title: ["It draws", "charts, tables and calculators", "while it talks."], body: "The visitor can move a slider and see the price change." },
-      { id: "there", label: "The right page", at: [0.42, 0.52], title: ["It opens", "the right page."], body: "It scrolls to the part that answers the question and highlights it." },
-      { id: "books", label: "It books", at: [0.555, 0.622], title: ["It books the meeting", "after the visitor says yes."], body: "Nothing happens without their confirmation. Your team gets the lead, with what was asked." },
-      { id: "fits", label: "It fits", at: [0.66, 0.76], title: ["The page", "changes to fit the kind of visitor."], body: "It is built only from parts you approved. Prices come from your own systems." },
-      { id: "you", label: "For you", at: [0.795, 0.865], title: ["Tell us what you do.", "This site will change for you."], selector: true },
-      { id: "measure", label: "Measure it", at: [0.905, 1], title: ["One visitor in ten never sees it.", "The difference is your extra sales."], body: "The product runs this test for you.", note: "Example chart." },
-    ],
-  },
+  film: FILM,
   hi: {
     title: "आपकी वेबसाइट|हर विज़िटर को जवाब दे सकती है।",
     sub: "यह बोलकर या लिखकर जवाब देती है, सिर्फ़ वही बताकर जो आपकी साइट पर है। यह क़ीमतें और चार्ट दिखाती है, सही पेज पर ले जाती है और मीटिंग बुक करती है।",

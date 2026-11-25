@@ -12,7 +12,8 @@
  *  - `code` "saas": a terminal window on the world's secondary colour, drawn in characters. A small
  *    light follows the pointer over the hero: the film's own sign for "a visitor".
  *  - `code` "enterprise": a drafting sheet on the secondary colour, drawn in lines.
- *  - `frames`: a photographed film in a frame, as an image sequence. Frames load in passes (every
+ *  - `frames`: a rendered film as an image sequence: a photograph in a frame (Education), or a
+ *    painting hung on the page (`look: "canvas"`, the default world's water film). Frames load in passes (every
  *    32nd frame, then 8th, 2nd, all) so scrubbing works at once. With reduced motion only one
  *    frame per slide is loaded.
  *
@@ -27,7 +28,7 @@ import { renderWashFilm } from "./washFilm";
 import { track as measure } from "@/lib/world";
 
 /** `mobileDir` holds a lighter set of the same frames, used on narrow screens. */
-export type FilmFrames = { dir: string; mobileDir?: string; ext?: "jpg" | "webp"; count: number; pxPerFrame: number; poster: string };
+export type FilmFrames = { dir: string; mobileDir?: string; ext?: "jpg" | "webp"; count: number; pxPerFrame: number; poster: string; look?: "canvas" };
 /** `length` is the scroll distance of the whole film, in pixels. */
 export type FilmCode = { id: "default" | "saas" | "enterprise"; length: number };
 
@@ -269,7 +270,7 @@ export default function FilmScroll({ frames, code, ranges, labels, ids, focus, c
   }, [ids, jump, draw]);
 
   const length = frames ? frames.count * frames.pxPerFrame : code?.length ?? 0;
-  const kind = code ? `drawn drawn-${code.id}` : "photo";
+  const kind = code ? `drawn drawn-${code.id}` : frames?.look === "canvas" ? "photo canvas" : "photo";
   return (
     <div ref={track} className="film-track" style={{ height: `calc(${length}px + 100vh)` }}>
       <div className={`film-stage ${kind}`}>
