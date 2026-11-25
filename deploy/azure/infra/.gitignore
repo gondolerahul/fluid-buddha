@@ -1,0 +1,2 @@
+# Written by provision.ps1: identifiers only, but specific to one subscription.
+outputs.*.json

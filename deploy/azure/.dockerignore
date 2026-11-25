@@ -1,0 +1,7 @@
+# The release bundle carries what the VM runs, not the provisioning templates.
+infra/
+ci/
+*.md
+release.Dockerfile
+.dockerignore
+.gitattributes

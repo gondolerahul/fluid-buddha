@@ -1,0 +1,261 @@
+#!/bin/bash
+# Deploys one release on the VM (docs/deployment/azure-production-plan.md §5).
+#
+#   fluidbuddha-deploy [--no-rollback] [--no-backup] <sha>
+#
+# It runs from the release's own folder, /opt/fluidbuddha/releases/<sha>/vm/, which the Release
+# workflow (or `fluidbuddha deploy <sha>`) fetches from the registry first. Steps:
+#   1. read Key Vault, generating the internal secrets on the first deploy, and render the settings
+#   2. take a pre-deploy dump, when the database is running
+#   3. pull the images and start the stack, waiting for every health check
+#   4. check /readyz and the edge; if anything fails, deploy the previous release again and exit 1
+#   5. mark the release live, install its CLI and timers, prune old releases and images
+set -euo pipefail
+
+ROLLBACK=1
+BACKUP=1
+while [ $# -gt 0 ]; do
+  case $1 in
+    --no-rollback) ROLLBACK=0 ;;
+    --no-backup) BACKUP=0 ;;
+    -*) echo "unknown option $1" >&2; exit 2 ;;
+    *) SHA=$1 ;;
+  esac
+  shift
+done
+[[ "${SHA:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "usage: fluidbuddha-deploy [--no-rollback] [--no-backup] <sha>" >&2; exit 2; }
+
+REL=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck source=bin/lib.sh
+. "$REL/vm/bin/lib.sh"
+[ "$(basename "$REL")" = "$SHA" ] || die "this is release $(basename "$REL")'s deploy script, not $SHA's"
+[ "$(id -u)" -eq 0 ] || die "run as root"
+
+# One deploy at a time. A rollback runs inside the deploy that failed, which already holds the lock.
+if [ -z "${FB_DEPLOY_LOCKED:-}" ]; then
+  exec 9> /run/lock/fluidbuddha-deploy.lock
+  flock -w 900 9 || die "another deploy is still running"
+  export FB_DEPLOY_LOCKED=1
+fi
+
+PREV=""
+if [ -L "$FB_HOME/current" ]; then PREV=$(basename "$(readlink -f "$FB_HOME/current")"); fi
+log "deploying $SHA (live now: ${PREV:-nothing})"
+log "$(docker --version); $(docker compose version)"
+
+# --- 1. settings and secrets ---------------------------------------------------------------------
+
+# Generated once, then kept in Key Vault. SECRETS-KEY decrypts the API keys stored in the database:
+# it must never change.
+GENERATED="POSTGRES-PASSWORD JWT-SECRET SECRETS-KEY TURN-SECRET METRICS-TOKEN STATUS-TOKEN"
+# Set by the operator (docs/deployment/azure-operator-guide.md, B3). Without them, the parts that
+# need them stay off: the deploy warns but goes on.
+EXPECTED="GOOGLE-CLOUD-PROJECT VERTEX-SA-JSON GRAPH-TENANT-ID GRAPH-CLIENT-ID GRAPH-CLIENT-SECRET ALERT-EMAIL"
+OPTIONAL="RAZORPAY-KEY-ID RAZORPAY-KEY-SECRET RAZORPAY-WEBHOOK-SECRET GOOGLE-CLIENT-ID GOOGLE-CLIENT-SECRET SENTRY-DSN"
+# Secrets that become backend settings: NAME-WITH-DASHES -> NAME_WITH_DASHES.
+TO_BACKEND="GOOGLE-CLOUD-PROJECT GRAPH-TENANT-ID GRAPH-CLIENT-ID GRAPH-CLIENT-SECRET $OPTIONAL"
+
+new_secret() {
+  case $1 in
+    SECRETS-KEY) openssl rand -base64 32 | tr '+/' '-_' ;; # a Fernet key
+    JWT-SECRET) openssl rand -hex 48 ;;
+    POSTGRES-PASSWORD) openssl rand -hex 24 ;;
+    *) openssl rand -hex 32 ;;
+  esac
+}
+
+kv_get() {
+  az keyvault secret show --vault-name "$KEY_VAULT" --name "$1" --query value -o json --only-show-errors | jq -r .
+}
+
+kv_set() { # <name> <value>, through a file so the value never appears in a process list
+  local tmp
+  tmp=$(mktemp)
+  printf '%s' "$2" > "$tmp"
+  az keyvault secret set --vault-name "$KEY_VAULT" --name "$1" --file "$tmp" --encoding utf-8 \
+    --content-type text/plain --output none --only-show-errors
+  rm -f "$tmp"
+}
+
+line_safe() { # values are written as KEY='value': no quotes or line breaks allowed
+  case $2 in
+    *"'"* | *$'\n'* | *$'\r'*) die "$1 contains a quote or a line break; fix it in Key Vault or prod.env" ;;
+  esac
+}
+
+q() { line_safe "$1" "$2"; printf "%s='%s'\n" "$1" "$2"; }
+
+umask 077
+az_login
+names=$(az keyvault secret list --vault-name "$KEY_VAULT" --query "[?attributes.enabled].name" -o tsv --only-show-errors)
+has() { grep -qx "$1" <<< "$names"; }
+
+declare -A S=()
+for n in $GENERATED; do
+  if ! has "$n"; then
+    log "generating $n (first deploy) and storing it in Key Vault"
+    kv_set "$n" "$(new_secret "$n")"
+  fi
+  S[$n]=$(kv_get "$n")
+done
+missing=()
+for n in $EXPECTED $OPTIONAL; do
+  S[$n]=""
+  if has "$n"; then S[$n]=$(kv_get "$n"); fi
+done
+for n in $EXPECTED; do
+  [ -n "${S[$n]}" ] || missing+=("$n")
+done
+[ ${#missing[@]} -eq 0 ] || log "WARNING: not in Key Vault yet: ${missing[*]} (operator guide, B3). What needs them stays off."
+
+# Compose variables.
+{
+  echo "# Rendered by fluidbuddha-deploy for release $SHA. Don't edit: change Key Vault or the repo."
+  q FB_VERSION "$SHA"
+  q FB_HOME "$FB_HOME"
+  q REGISTRY "$ACR_LOGIN_SERVER"
+  q SITE_DOMAIN "$SITE_DOMAIN"
+  q CONSOLE_DOMAIN "$CONSOLE_DOMAIN"
+  q API_DOMAIN "$API_DOMAIN"
+  q POSTGRES_PASSWORD "${S[POSTGRES-PASSWORD]}"
+} > "$FB_HOME/.env.next"
+
+# The backend's settings: prod.env, then the addresses and secrets.
+{
+  echo "# Rendered by fluidbuddha-deploy for release $SHA. Don't edit: change Key Vault or prod.env."
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in '' | '#'*) continue ;; esac
+    q "${line%%=*}" "${line#*=}"
+  done < "$REL/prod.env"
+  q RELEASE "$SHA"
+  q CORTEX_DB_URL "postgresql+asyncpg://fluidbuddha:${S[POSTGRES-PASSWORD]}@postgres:5432/fluidbuddha"
+  q REDIS_URL "redis://redis:6379/0"
+  q JWT_SECRET "${S[JWT-SECRET]}"
+  q SECRETS_KEY "${S[SECRETS-KEY]}"
+  q TURN_SECRET "${S[TURN-SECRET]}"
+  q METRICS_TOKEN "${S[METRICS-TOKEN]}"
+  q STATUS_TOKEN "${S[STATUS-TOKEN]}"
+  for n in $TO_BACKEND; do
+    if [ -n "${S[$n]}" ]; then q "${n//-/_}" "${S[$n]}"; fi
+  done
+  if [ -n "${S[VERTEX-SA-JSON]}" ]; then q GOOGLE_APPLICATION_CREDENTIALS /secrets/vertex-sa.json; fi
+} > "$FB_HOME/backend.env.next"
+
+# For the watchdog only.
+{
+  q ALERT_EMAIL "${S[ALERT-EMAIL]}"
+} > "$FB_HOME/ops.env.next"
+
+# The Vertex AI service-account key, mounted read-only into the backend.
+if [ -n "${S[VERTEX-SA-JSON]}" ]; then
+  printf '%s\n' "${S[VERTEX-SA-JSON]}" > "$FB_HOME/secrets/vertex-sa.json.next"
+  jq -e .client_email "$FB_HOME/secrets/vertex-sa.json.next" > /dev/null ||
+    die "VERTEX-SA-JSON in Key Vault isn't a service-account key file"
+fi
+
+# The TURN relay. coturn runs as nobody (65534) and must read its own secret.
+cat > "$FB_HOME/turnserver.conf.next" << EOF
+# Rendered by fluidbuddha-deploy for release $SHA. Don't edit.
+listening-port=3478
+listening-ip=$PRIVATE_IP
+relay-ip=$PRIVATE_IP
+external-ip=$PUBLIC_IP/$PRIVATE_IP
+min-port=49160
+max-port=49200
+realm=$API_DOMAIN
+use-auth-secret
+static-auth-secret=${S[TURN-SECRET]}
+fingerprint
+no-cli
+no-tls
+no-dtls
+no-tcp-relay
+no-multicast-peers
+log-file=stdout
+simple-log
+# Never relay into private, loopback, link-local or Azure platform addresses.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=168.63.129.16-168.63.129.16
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+EOF
+chown 65534:65534 "$FB_HOME/turnserver.conf.next"
+
+# --- 2. pre-deploy dump --------------------------------------------------------------------------
+
+if [ "$BACKUP" = 1 ] && [ -n "$PREV" ] &&
+  [ -n "$(docker ps -q --filter label=com.docker.compose.project=fluidbuddha --filter label=com.docker.compose.service=postgres)" ]; then
+  log "pre-deploy dump"
+  "$REL/vm/bin/backup.sh" dump predeploy || die "the pre-deploy dump failed; nothing was changed"
+fi
+
+# --- 3. start ------------------------------------------------------------------------------------
+
+fail() {
+  log "DEPLOY FAILED: $*"
+  compose_in "$REL" ps || true
+  compose_in "$REL" logs --tail 60 backend edge || true
+  if [ "$ROLLBACK" = 1 ] && [ -n "$PREV" ] && [ "$PREV" != "$SHA" ] &&
+    [ -x "$FB_HOME/releases/$PREV/vm/fluidbuddha-deploy" ]; then
+    log "rolling back to $PREV"
+    "$FB_HOME/releases/$PREV/vm/fluidbuddha-deploy" --no-rollback --no-backup "$PREV" ||
+      log "THE ROLLBACK FAILED TOO: see above, then docs/deployment/azure-runbook.md"
+  fi
+  exit 1
+}
+
+ready() {
+  local i
+  for i in $(seq 1 24); do
+    if compose_in "$REL" exec -T backend python - << 'PY'; then return 0; fi
+import sys, urllib.error, urllib.request
+try:
+    r = urllib.request.urlopen("http://127.0.0.1:8080/readyz", timeout=10)
+    print(r.read().decode())
+except urllib.error.HTTPError as e:
+    print(e.read().decode())
+    sys.exit(1)
+PY
+    log "not ready yet ($i)"
+    sleep 5
+  done
+  return 1
+}
+
+edge_up() { # Caddy answers plain HTTP with its redirect to HTTPS
+  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "Host: $SITE_DOMAIN" http://127.0.0.1/)" = 308 ]
+}
+
+for f in .env backend.env ops.env turnserver.conf secrets/vertex-sa.json; do
+  if [ -f "$FB_HOME/$f.next" ]; then mv -f "$FB_HOME/$f.next" "$FB_HOME/$f"; fi
+done
+
+az acr login --name "$ACR_NAME" --output none --only-show-errors || fail "signing in to the registry"
+compose_in "$REL" pull --quiet || fail "pulling the images"
+compose_in "$REL" up -d --remove-orphans --wait --wait-timeout 600 || fail "starting the stack"
+ready || fail "/readyz didn't answer 200"
+edge_up || fail "the edge didn't answer on port 80"
+
+# --- 5. live -------------------------------------------------------------------------------------
+
+ln -sfn "$REL" "$FB_HOME/current.next"
+mv -Tf "$FB_HOME/current.next" "$FB_HOME/current"
+install -m 0755 "$REL/vm/fluidbuddha" /usr/local/sbin/fluidbuddha
+install -m 0644 "$REL"/vm/systemd/*.service "$REL"/vm/systemd/*.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now --quiet fluidbuddha-backup.timer fluidbuddha-wal-upload.timer fluidbuddha-watchdog.timer
+[ -f "$FB_STATE/first-deploy" ] || mark first-deploy
+echo "$SHA $(date -Is)" >> "$FB_STATE/releases.log"
+
+# Keep the five newest release folders (and always the live one), and images used in the last 3 days.
+find "$FB_HOME/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%T@ %p\n' | sort -rn |
+  tail -n +6 | cut -d' ' -f2- | while read -r d; do
+    [ "$d" = "$REL" ] || rm -rf "$d"
+  done
+docker image prune -af --filter "until=72h" > /dev/null || true
+
+log "release $SHA is live"

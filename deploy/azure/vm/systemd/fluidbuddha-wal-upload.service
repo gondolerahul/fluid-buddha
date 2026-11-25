@@ -1,0 +1,9 @@
+[Unit]
+Description=FluidBuddha: upload archived WAL to Blob storage (point-in-time recovery)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fluidbuddha backup wal
+TimeoutStartSec=30min

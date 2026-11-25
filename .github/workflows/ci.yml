@@ -81,7 +81,7 @@ jobs:
       - name: gitleaks
         run: |
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 \
-            detect --source /repo --config /repo/.gitleaks.toml --redact --no-banner
+            detect --source /repo --config /repo/.gitleaks.toml --redact --verbose --no-banner
 
   # Install surfaces (M2-10): framework wrappers, the Shopify embed, and the
   # WordPress plugin's lint + unit tests.
@@ -154,3 +154,46 @@ jobs:
         working-directory: deploy/monitoring
         run: |
           docker run --rm --entrypoint promtool -v "$PWD:/m:ro" prom/prometheus:v3.16.0 check rules /m/alerts.yml
+
+  # Production on Azure (docs/deployment): the templates compile, the stack and the edge config
+  # resolve, the VM scripts pass shellcheck, and cloud-init matches its schema.
+  azure:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/azure
+    steps:
+      - uses: actions/checkout@v7
+      - name: Bicep
+        run: |
+          if command -v az > /dev/null; then
+            az bicep build --file infra/main.bicep --stdout > /dev/null
+          else
+            curl -fsSLo /tmp/bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+            chmod +x /tmp/bicep && /tmp/bicep build infra/main.bicep --stdout > /dev/null
+          fi
+      - name: Compose config
+        run: |
+          mkdir -p /tmp/fb && touch /tmp/fb/backend.env /tmp/fb/turnserver.conf
+          FB_HOME=/tmp/fb REGISTRY=example.azurecr.io FB_VERSION=test POSTGRES_PASSWORD=x \
+          SITE_DOMAIN=example.com CONSOLE_DOMAIN=app.example.com API_DOMAIN=api.example.com \
+            docker compose -f docker-compose.yml config -q
+      - name: Caddyfile
+        run: |
+          docker run --rm -e SITE_DOMAIN=example.com -e CONSOLE_DOMAIN=app.example.com -e API_DOMAIN=api.example.com \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Scripts
+        run: |
+          command -v shellcheck > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
+          shellcheck --severity=warning vm/fluidbuddha vm/fluidbuddha-deploy vm/bin/*.sh infra/bootstrap.sh ci/*.sh
+          python3 -m py_compile ci/stun_check.py
+          if command -v pwsh > /dev/null; then
+            pwsh -NoProfile -Command '$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile("infra/provision.ps1", [ref]$null, [ref]$e); if ($e) { $e; exit 1 }'
+          else
+            echo "::notice::pwsh isn't on this runner; provision.ps1 wasn't parsed"
+          fi
+      - name: cloud-init schema
+        run: |
+          command -v cloud-init > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q cloud-init; }
+          cloud-init schema --config-file infra/cloud-init.yaml

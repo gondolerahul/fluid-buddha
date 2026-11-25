@@ -1,0 +1,192 @@
+# Release to production on Azure (docs/deployment/azure-production-plan.md §5).
+#
+# Actions → Release → Run workflow, from main, with the commit to release. An older commit rolls back.
+#   prepare  resolve the commit, and refuse it unless CI passed on it
+#   build    five images tagged with the commit SHA, pushed to Azure Container Registry
+#   deploy   waits for approval (environment "production"), runs the release on the VM through
+#            Azure Run Command, then checks the public endpoints and the TURN relay
+#   prune    keeps the newest 10 images per repository
+#
+# Azure sign-in is OIDC, so GitHub stores no Azure secret. The repository variables come from
+# provisioning (deploy/azure/infra/provision.ps1 -SetGitHubVariables).
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag to release (an older commit rolls back)
+        required: true
+        default: main
+      skip_ci_check:
+        description: Release even though CI didn't pass on this commit (emergencies only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://fluidbuddha.com
+  CONSOLE_URL: https://app.fluidbuddha.com
+  API_URL: https://gateway.fluidbuddha.com
+  API_WS: wss://gateway.fluidbuddha.com
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: CI passed on this commit
+        if: ${{ !inputs.skip_ci_check }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&per_page=1" --jq .total_count)
+          if [ "$passed" -eq 0 ]; then
+            echo "::error::CI hasn't passed on $SHA. Fix it first, or run again with skip_ci_check in an emergency."
+            exit 1
+          fi
+          echo "CI passed on $SHA"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # reuse: an image already built for this commit is kept (rollbacks get the exact same
+          # image). The console and the website always rebuild, because their public build values
+          # (for example NEXT_PUBLIC_FB_KEY) can change for the same commit.
+          - image: backend
+            context: backend
+            file: backend/Dockerfile
+            reuse: true
+          - image: console
+            context: fluid-buddha-frontend
+            file: fluid-buddha-frontend/Dockerfile
+            reuse: false
+          - image: website
+            context: fludi-buddha-website/web
+            file: fludi-buddha-website/web/Dockerfile
+            reuse: false
+          - image: edge
+            context: fluid-buddha-sdk
+            file: deploy/selfhost/web.Dockerfile
+            reuse: true
+          - image: release
+            context: deploy/azure
+            file: deploy/azure/release.Dockerfile
+            reuse: true
+    env:
+      IMAGE: ${{ vars.ACR_NAME }}.azurecr.io/fluidbuddha/${{ matrix.image }}:${{ needs.prepare.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_BUILD_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Registry sign-in
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+      - name: Built already?
+        id: existing
+        if: matrix.reuse
+        run: |
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "$IMAGE exists: reusing it"
+          fi
+      - uses: docker/setup-buildx-action@v4
+        if: steps.existing.outputs.found != 'true'
+      - uses: docker/build-push-action@v7
+        if: steps.existing.outputs.found != 'true'
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          tags: ${{ env.IMAGE }}
+          provenance: false
+          sbom: false
+          labels: |
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          # Public values compiled into the console's and the website's JavaScript. Not secret.
+          build-args: |
+            NEXT_PUBLIC_API_BASE=${{ env.API_URL }}
+            NEXT_PUBLIC_WIDGET_BACKEND=${{ env.API_WS }}
+            NEXT_PUBLIC_CONSOLE_URL=${{ env.CONSOLE_URL }}
+            NEXT_PUBLIC_FB_LOADER_URL=${{ env.API_URL }}/widget/loader.js
+            NEXT_PUBLIC_FB_KEY=${{ vars.NEXT_PUBLIC_FB_KEY }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+  deploy:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: https://fluidbuddha.com
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          sparse-checkout: deploy/azure/ci
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy on the VM
+        run: bash deploy/azure/ci/deploy.sh "${{ vars.AZURE_RESOURCE_GROUP }}" "${{ vars.AZURE_VM_NAME }}" "${{ needs.prepare.outputs.sha }}"
+      - name: Public checks
+        run: bash deploy/azure/ci/verify.sh "$SITE_URL" "$CONSOLE_URL" "$API_URL"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Release ${{ needs.prepare.outputs.sha }}: ${{ job.status }}"
+            echo "- Site: $SITE_URL"
+            echo "- Console: $CONSOLE_URL"
+            echo "- Status page: $API_URL/status"
+            echo "- Roll back: run Release again with an older commit."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  prune:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_BUILD_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Keep the newest 10 images per repository
+        env:
+          ACR: ${{ vars.ACR_NAME }}
+        run: |
+          for repo in backend console website edge release; do
+            az acr manifest list-metadata --registry "$ACR" --name "fluidbuddha/$repo" \
+                --orderby time_desc --query "[10:].digest" -o tsv |
+              while read -r digest; do
+                az acr repository delete --name "$ACR" --image "fluidbuddha/$repo@$digest" --yes --output none
+                echo "deleted fluidbuddha/$repo@$digest"
+              done
+          done

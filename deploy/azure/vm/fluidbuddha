@@ -1,0 +1,85 @@
+#!/bin/bash
+# fluidbuddha: run FluidBuddha on this VM (docs/deployment/azure-runbook.md).
+# Installed to /usr/local/sbin by every deploy.
+#
+#   fluidbuddha deploy <sha>          deploy a release (an older SHA rolls back)
+#   fluidbuddha status                the live release, containers, disk and backups
+#   fluidbuddha logs [service...]     follow the logs (all services by default)
+#   fluidbuddha compose <args...>     docker compose for the live release
+#   fluidbuddha psql [args...]        a database shell
+#   fluidbuddha backup nightly|dump|base|wal
+#   fluidbuddha restore list|drill|dump|pitr-drill|pitr ...
+#   fluidbuddha watchdog              run the watchdog's checks now
+set -euo pipefail
+[ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
+
+FB_HOME=${FB_HOME:-/opt/fluidbuddha}
+# shellcheck source=/dev/null
+. /etc/fluidbuddha/host.env
+
+die() { echo "fluidbuddha: $*" >&2; exit 1; }
+live() { [ -L "$FB_HOME/current" ] || die "no release is live yet"; readlink -f "$FB_HOME/current"; }
+bin() { echo "$(live)/vm/bin/$1"; }
+
+# Fetch a release's bundle from the registry, unless it's here already.
+fetch() {
+  local sha=$1 img tmp cid
+  [ -x "$FB_HOME/releases/$sha/vm/fluidbuddha-deploy" ] && return 0
+  az login --identity --allow-no-subscriptions --output none --only-show-errors
+  az acr login --name "$ACR_NAME" --output none --only-show-errors
+  img=$ACR_LOGIN_SERVER/fluidbuddha/release:$sha
+  docker pull --quiet "$img" > /dev/null
+  tmp=$(mktemp -d "$FB_HOME/releases/.fetch.XXXXXX")
+  cid=$(docker create "$img" /bin/true)
+  docker cp "$cid:/bundle/." "$tmp/"
+  docker rm "$cid" > /dev/null
+  rm -rf "${FB_HOME:?}/releases/$sha"
+  mv "$tmp" "$FB_HOME/releases/$sha"
+}
+
+cmd=${1:-}
+[ $# -eq 0 ] || shift
+case "$cmd" in
+  deploy)
+    sha=${1:-}
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "usage: fluidbuddha deploy <full 40-character git SHA>"
+    fetch "$sha"
+    exec "$FB_HOME/releases/$sha/vm/fluidbuddha-deploy" "$sha"
+    ;;
+  status)
+    rel=$(live)
+    echo "Release: $(basename "$rel")"
+    tail -n 3 /var/lib/fluidbuddha/releases.log 2> /dev/null | sed 's/^/  deployed /' || true
+    docker compose --project-name fluidbuddha --env-file "$FB_HOME/.env" -f "$rel/docker-compose.yml" ps
+    echo
+    df -h / | tail -n 1 | awk '{ print "Disk: " $3 " of " $2 " used (" $5 ")" }'
+    free -m | awk '/^Mem:/ { print "Memory: " $7 " MiB available of " $2 }'
+    for m in last-dump last-base last-wal last-restore-drill last-pitr-drill; do
+      if [ -f "/var/lib/fluidbuddha/$m" ]; then
+        printf '%-20s %s\n' "$m" "$(date -d "@$(cat "/var/lib/fluidbuddha/$m")" '+%F %T %Z')"
+      else
+        printf '%-20s %s\n' "$m" never
+      fi
+    done
+    ;;
+  logs)
+    rel=$(live)
+    exec docker compose --project-name fluidbuddha --env-file "$FB_HOME/.env" -f "$rel/docker-compose.yml" logs -f --tail 100 "$@"
+    ;;
+  compose)
+    rel=$(live)
+    exec docker compose --project-name fluidbuddha --env-file "$FB_HOME/.env" -f "$rel/docker-compose.yml" "$@"
+    ;;
+  psql)
+    rel=$(live)
+    tty=-T
+    [ -t 0 ] && tty=
+    # shellcheck disable=SC2086
+    exec docker compose --project-name fluidbuddha --env-file "$FB_HOME/.env" -f "$rel/docker-compose.yml" \
+      exec $tty postgres psql -U fluidbuddha -d fluidbuddha "$@"
+    ;;
+  backup) exec "$(bin backup.sh)" "$@" ;;
+  restore) exec "$(bin restore.sh)" "$@" ;;
+  watchdog) exec "$(bin watchdog.sh)" "$@" ;;
+  *) sed -n '2,13p' "$0" >&2; exit 2 ;;
+esac
