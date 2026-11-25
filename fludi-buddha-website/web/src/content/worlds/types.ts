@@ -32,13 +32,14 @@ export type Chapter = {
 
 /**
  * The film behind a world's hero and chapters.
- *  - "frames": a rendered film scrubbed by scroll (education).
+ *  - "frames": a rendered film scrubbed by scroll (education; the water film of the default world).
  *  - "code": drawn live in the browser (default in watercolour, saas in characters, enterprise as line drawings).
  */
 export type Film = {
   kind: "frames" | "code";
   code?: { id: "default" | "saas" | "enterprise"; length: number; heroAt: [number, number] };
-  frames?: { dir: string; mobileDir?: string; ext?: "jpg" | "webp"; count: number; pxPerFrame: number; poster: string; heroAt: [number, number]; heroFocus?: number };
+  /** `look`: "canvas" hangs the film as a painting on the page (the water film); without it, a photograph in a frame. */
+  frames?: { dir: string; mobileDir?: string; ext?: "jpg" | "webp"; count: number; pxPerFrame: number; poster: string; heroAt: [number, number]; heroFocus?: number; look?: "canvas" };
   chapters: Chapter[];
 };
 

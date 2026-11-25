@@ -1,5 +1,10 @@
 # FluidBuddha film pipeline
 
+> **The water film** (the General site's film since 13 November 2026) is made differently: painted in
+> code with a palette-knife engine, no video model. Its source, treatment and build are in
+> [`water/`](water/) (`water/TREATMENT.md`). The rest of this page is the Gemini pipeline used for
+> the Education film.
+
 Produces the scroll-driven liquid film described in
 [`docs/marketing-docs/WebsiteConcept.md`](../../docs/marketing-docs/WebsiteConcept.md) §8–9.
 

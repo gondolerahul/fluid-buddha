@@ -1,8 +1,9 @@
 /* ============================================================================
    The scroll film shared by the four worlds. One anatomy everywhere: the copy on the left, the
    picture on the right (above the copy on upright screens), a chapter rail on the edge.
-   Only the picture's material differs: a painted paper sheet (default), a console window (saas),
-   a photograph in an ink frame (education), a drafting sheet on ink (enterprise). The picture sits
+   Only the picture's material differs: an oil painting hung on the ink (default; the watercolour
+   paper sheet is its backup), a console window (saas), a photograph in an ink frame (education),
+   a drafting sheet on ink (enterprise). The picture sits
    on the world's secondary colour, so the stage keeps the 60 / 30 / 10 of the page.
    ============================================================================ */
 
@@ -32,6 +33,11 @@
 .photo .film-pic { --pic-ratio: 4 / 3; border: 10px solid var(--c-second); }
 /* enterprise: a drafting sheet on ink */
 .drawn-enterprise .film-pic { --pic-ratio: 3 / 2; }
+/* default, the water film: an oil painting on canvas hung on the ink, with the system's gold glow behind it */
+.photo.canvas .film-pic { --pic-ratio: 5 / 4; border: 0; border-radius: 3px; background-color: var(--ink-900);
+  box-shadow: 0 60px 100px -50px rgba(0,0,0,.95), 0 0 0 1px rgba(255,240,220,.08); }
+.photo.canvas::before { content: ""; position: absolute; z-index: -1; right: -6vw; top: 50%; width: min(82vw, 1200px); aspect-ratio: 1; transform: translateY(-46%);
+  background: var(--glow-gold); opacity: .4; pointer-events: none; }
 
 /* ------------------------------------------------------------------ slides */
 .film-slide { position: absolute; inset: 0; display: grid; align-items: center; padding-top: var(--header-h); opacity: 0; pointer-events: none; will-change: opacity, transform; }
@@ -87,6 +93,7 @@
   .slide-copy .t-h2 { font-size: clamp(26px, 6.6vw, 36px); }
   .slide-copy .t-lead { font-size: 16.5px; }
   .photo .film-pic { border-width: 6px; }
+  .photo.canvas .film-pic { border-width: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

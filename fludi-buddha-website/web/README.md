@@ -49,8 +49,13 @@ and main button of the whole site, not only of its own page:
 
 ## Films and pictures
 
-- **General (`/`)**: a watercolour painted live from the scroll position (`src/components/world/washFilm.ts`)
-  on a sheet of paper (`public/film/paper/`, made by `../film/paper.mjs` and `../film/edges.mjs`).
+- **General (`/`)**: the water film, water's journey from cloud to a bowl, painted in oil with a
+  palette knife in code (`../film/water`, its `TREATMENT.md` says why each shot is there). It plays
+  as 540 WebP frames in `public/film/water/960` (desktop) and `512` (phones), scrubbed by scroll.
+  **Backup:** the watercolour painted live from the scroll position (`src/components/world/washFilm.ts`,
+  on the paper of `public/film/paper/`) is kept as `PAINTED_FILM` in `src/content/worlds/default.ts`;
+  set `FILM` there to `PAINTED_FILM` to bring it back. The watercolour still draws the General site's
+  pictures elsewhere (the bento, the doors, the content pages).
 - **SaaS** and **Enterprise**: drawn live in characters (`asciiFilm.ts`) and in lines (`lineFilm.ts`).
 - **Education**: WebP frame sequences in `public/film/education/720` (desktop) and `480` (phones),
   exported from `../film` after a render (see `../film/README.md`).
