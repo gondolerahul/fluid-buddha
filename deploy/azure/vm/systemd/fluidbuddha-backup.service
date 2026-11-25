@@ -1,0 +1,9 @@
+[Unit]
+Description=FluidBuddha: nightly database dump and base backup, copied to Blob storage
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fluidbuddha backup nightly
+TimeoutStartSec=2h

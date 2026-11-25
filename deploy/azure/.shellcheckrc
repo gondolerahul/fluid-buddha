@@ -1,0 +1,5 @@
+# Most settings come from files shellcheck can't see: /etc/fluidbuddha/host.env (written at
+# provisioning) and the env files each deploy renders.
+disable=SC2154
+source-path=SCRIPTDIR
+external-sources=true

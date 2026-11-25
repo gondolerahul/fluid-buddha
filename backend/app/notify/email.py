@@ -1,7 +1,7 @@
 """
-Email over plain SMTP (M2-0), through an outbox.
+Email over SMTP, or Microsoft Graph for Microsoft 365 (M2-0), through an outbox.
 
-Callers never talk to SMTP. They ``enqueue`` a message (a row in
+Callers never talk to the mail server. They ``enqueue`` a message (a row in
 ``email_outbox``, committed with their own transaction), and the background
 worker (``deliver_due``, run by the job scheduler) sends it:
 
@@ -11,14 +11,19 @@ worker (``deliver_due``, run by the job scheduler) sends it:
   then marked ``failed`` after ``MAX_ATTEMPTS``;
 * a row stuck in ``sending`` (the replica died mid-send) goes back to the
   queue after ``STALE_SENDING``. That is the only case in which a message can
-  go out twice — SMTP has no way to make a send idempotent;
+  go out twice — neither SMTP nor Graph can make a send idempotent;
 * ``idem_key`` makes queuing idempotent (one weekly digest per account and
   week, one invitation per token).
 
-Without ``SMTP_HOST``: in a dev environment the message is written to the log
-(so invitation links etc. can be followed locally) and marked sent; anywhere
-else ``enqueue`` raises :class:`EmailNotConfigured`, so a missing setup is
-loud rather than a silent black hole.
+``EMAIL_TRANSPORT`` picks how a message leaves: ``smtp`` (the default, any
+provider) or ``graph`` (Microsoft 365, see app/notify/graph_mail.py). Both
+send the same MIME message from ``SMTP_FROM``.
+
+Without a configured sender (``SMTP_HOST``, or the ``GRAPH_*`` settings with
+``EMAIL_TRANSPORT=graph``): in a dev environment the message is written to the
+log (so invitation links etc. can be followed locally) and marked sent;
+anywhere else ``enqueue`` raises :class:`EmailNotConfigured`, so a missing
+setup is loud rather than a silent black hole.
 
 Sent and failed rows are deleted after ``KEEP_DAYS`` (they hold addresses and
 bodies).
@@ -40,6 +45,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
+from app.notify import graph_mail
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +56,7 @@ KEEP_DAYS = 30
 
 
 class EmailNotConfigured(RuntimeError):
-    """No SMTP server is configured outside a dev environment."""
+    """No sender (SMTP server or Graph app) is configured outside a dev environment."""
 
 
 @dataclass
@@ -70,8 +76,17 @@ def _valid_address(addr: str) -> bool:
     return bool(a) and "@" in a and "\n" not in addr and "\r" not in addr
 
 
+def transport(settings: Optional[Settings] = None) -> str:
+    """``smtp`` or ``graph`` (Settings refuses anything else)."""
+    return (settings or get_settings()).email_transport.strip().lower()
+
+
 def configured(settings: Optional[Settings] = None) -> bool:
-    return bool((settings or get_settings()).smtp_host.strip())
+    s = settings or get_settings()
+    if transport(s) == "graph":
+        return all(v.strip() for v in (s.graph_tenant_id, s.graph_client_id,
+                                        s.graph_client_secret))
+    return bool(s.smtp_host.strip())
 
 
 async def enqueue(db: AsyncSession, email: Email) -> Optional[int]:
@@ -79,7 +94,9 @@ async def enqueue(db: AsyncSession, email: Email) -> Optional[int]:
     id, or None when an email with the same ``idem_key`` was already queued."""
     settings = get_settings()
     if not configured(settings) and not settings.is_dev_env:
-        raise EmailNotConfigured("Email isn't set up on this server (SMTP_HOST is empty).")
+        raise EmailNotConfigured(
+            "Email isn't set up on this server (set SMTP_HOST, or EMAIL_TRANSPORT=graph "
+            "with GRAPH_TENANT_ID, GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET).")
     if not _valid_address(email.to):
         raise ValueError("invalid recipient address")
     if any("\n" in v or "\r" in v for v in (email.subject, *email.headers.values())):
@@ -137,10 +154,13 @@ async def send_now(row: dict, settings: Optional[Settings] = None) -> None:
     msg = build_message(row, settings)
     if not configured(settings):
         # Dev only (enqueue refuses elsewhere): show it instead of sending.
-        logger.info("email (not sent, no SMTP_HOST) to=%s subject=%r\n%s",
+        logger.info("email (not sent, no sender configured) to=%s subject=%r\n%s",
                     row["to_addr"], row["subject"], row["text_body"])
         return
-    await asyncio.to_thread(_send_sync, msg, settings)
+    if transport(settings) == "graph":
+        await graph_mail.send(msg, settings)
+    else:
+        await asyncio.to_thread(_send_sync, msg, settings)
 
 
 async def deliver_due(db: AsyncSession) -> dict[str, int]:
@@ -158,7 +178,7 @@ async def deliver_due(db: AsyncSession) -> dict[str, int]:
     for row in rows:
         try:
             await send_now(dict(row))
-        except Exception as exc:   # SMTP errors, timeouts, refused recipients
+        except Exception as exc:   # SMTP or Graph errors, timeouts, refused recipients
             err = f"{type(exc).__name__}: {exc}"[:500]
             final = row["attempts"] >= MAX_ATTEMPTS
             await db.execute(text(

@@ -1,0 +1,9 @@
+[Unit]
+Description=FluidBuddha: check disk, memory, backups and containers; email when something needs a person
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fluidbuddha watchdog
+TimeoutStartSec=5min

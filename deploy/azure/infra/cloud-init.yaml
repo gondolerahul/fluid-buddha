@@ -1,0 +1,68 @@
+#cloud-config
+# FluidBuddha VM, first boot (docs/deployment/azure-production-plan.md §3).
+#
+# Bicep fills in the placeholders below (modules/vm.bicep). This runs once. Everything that changes
+# from release to release (the compose file, scripts, timers) arrives with each deploy instead
+# (vm/fluidbuddha-deploy).
+timezone: Asia/Kolkata
+package_update: true
+package_upgrade: true
+packages:
+  # Ubuntu's own Docker packages: unattended-upgrades keeps them patched.
+  - docker.io
+  - docker-compose-v2
+  - jq
+  - curl
+  - ca-certificates
+  - gnupg
+  - unattended-upgrades
+
+write_files:
+  - path: /etc/fluidbuddha/host.env
+    permissions: "0644"
+    content: |
+      # Written at provisioning (Bicep, cloud-init). Not secret.
+      FB_ENV=__FB_ENV__
+      ADMIN_USER=__ADMIN_USER__
+      KEY_VAULT=__KEY_VAULT__
+      ACR_NAME=__ACR_NAME__
+      ACR_LOGIN_SERVER=__ACR_LOGIN_SERVER__
+      STORAGE_ACCOUNT=__STORAGE_ACCOUNT__
+      BACKUP_CONTAINER=backups
+      PUBLIC_IP=__PUBLIC_IP__
+      PRIVATE_IP=__PRIVATE_IP__
+      SITE_DOMAIN=__SITE_DOMAIN__
+      CONSOLE_DOMAIN=__CONSOLE_DOMAIN__
+      API_DOMAIN=__API_DOMAIN__
+
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "live-restore": true,
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "20m", "max-file": "5" }
+      }
+
+  - path: /etc/apt/apt.conf.d/52fluidbuddha-unattended-upgrades
+    permissions: "0644"
+    content: |
+      // Security updates install every night. When one needs a reboot, it happens at 03:00 IST.
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+  - path: /etc/sysctl.d/90-fluidbuddha.conf
+    permissions: "0644"
+    content: |
+      vm.swappiness = 10
+
+  - path: /usr/local/sbin/fluidbuddha-bootstrap
+    permissions: "0755"
+    encoding: b64
+    content: __BOOTSTRAP_B64__
+
+runcmd:
+  - [/usr/local/sbin/fluidbuddha-bootstrap]
+
+final_message: "FluidBuddha first boot finished after $UPTIME seconds"

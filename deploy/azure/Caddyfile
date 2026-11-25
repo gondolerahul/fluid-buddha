@@ -1,0 +1,62 @@
+# The edge for FluidBuddha production (docs/deployment/azure-production-plan.md §2).
+# Caddy gets and renews the certificates itself (Let's Encrypt). DNS for every name below must point
+# at the VM before the first deploy.
+
+(common) {
+	encode zstd gzip
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+# The marketing site.
+{$SITE_DOMAIN} {
+	import common
+	header {
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+	}
+	# Film frames are about 25 MB per scroll. Next.js serves public files with max-age=0, so
+	# returning visitors would revalidate hundreds of frames; a day of caching spares that.
+	@film path /film/*
+	header @film {
+		Cache-Control "public, max-age=86400"
+		defer
+	}
+	reverse_proxy website:3000
+}
+
+www.{$SITE_DOMAIN} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+# The console. It sets its own content security policy.
+{$CONSOLE_DOMAIN} {
+	import common
+	reverse_proxy console:3000
+}
+
+# The API, the widget's WebSockets, /widget/loader.js, hosted campaign and recap pages, the status
+# page, and the widget's own files under /sdk/ (WIDGET_SDK_BASE).
+{$API_DOMAIN} {
+	import common
+	handle_path /sdk/* {
+		root * /srv/sdk
+		header Cache-Control "public, max-age=300"
+		header Access-Control-Allow-Origin "*"
+		header Cross-Origin-Resource-Policy "cross-origin"
+		file_server
+	}
+	handle {
+		reverse_proxy backend:8080 {
+			# Voice sessions are long-lived WebSockets; let them drain on a reload.
+			stream_close_delay 5m
+		}
+	}
+}
