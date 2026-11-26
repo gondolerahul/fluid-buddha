@@ -22,7 +22,7 @@ param(
     [string] $Subscription = '',
     [ValidateSet('prod', 'staging', 'dev')] [string] $Environment = 'prod',
     [string] $Location = 'centralindia',
-    [string] $VmSize = 'Standard_B2as_v2',
+    [string] $VmSize = 'Standard_B2s_v2',
     [int] $BudgetUsd = 120,
     # Show what would change (az what-if) and stop.
     [switch] $Preview,

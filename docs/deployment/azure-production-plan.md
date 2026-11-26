@@ -1,7 +1,8 @@
 # FluidBuddha on Azure: production plan (single VM)
 
-Status: **Phase 1 merged**, 25 November 2026; provisioning (Phase 2) is next. Phase status lives in
-[README.md](README.md).
+Status: **live in production since 26 November 2026** (Phases 0–4 done, Phase 5 in progress). Phase status lives
+in [README.md](README.md); what actually happened at launch, with every problem and fix, is in
+[azure-launch-record.md](azure-launch-record.md).
 
 FluidBuddha goes to production on **one Azure virtual machine in Central India**, running every service in
 Docker Compose behind Caddy. That covers the API and voice agent, the console, the marketing site, Postgres
@@ -130,7 +131,7 @@ globally unique names stay stable. Every resource is tagged `product=fluidbuddha
 | Network security group | `nsg-fb-prod-app` | — | The rules above |
 | Public IP | `pip-fb-prod-vm` | Standard, static, DNS label `fb-prod-<sfx>.centralindia.cloudapp.azure.com` | DNS records, TURN, the VM's outbound traffic. 30-minute idle timeout for long WebSockets. |
 | Network interface | `nic-fb-prod-vm` | Accelerated networking | — |
-| Virtual machine | `vm-fb-prod-01` | **Standard_B2as_v2** (2 vCPU, 8 GiB, burstable). Fallbacks: B2s_v2, B2ms, D2as_v5. Ubuntu 24.04 LTS (Gen2, Trusted Launch), 64 GiB Premium SSD, boot diagnostics on. | Runs everything. The OS disk survives an accidental VM delete. |
+| Virtual machine | `vm-fb-prod-01` | **Standard_B2s_v2** (2 vCPU, 8 GiB, burstable; B2as_v2 was planned but had no capacity). Fallbacks: B2as_v2, B2ms, D2as_v5. Ubuntu 24.04 LTS (Gen2, Trusted Launch), 64 GiB Premium SSD, boot diagnostics on. | Runs everything. The OS disk survives an accidental VM delete. |
 | VM managed identity | system-assigned | — | AcrPull on the registry, Key Vault Secrets Officer on the vault, Blob Data Contributor on the backups container. No keys on disk. |
 | Container registry | `acrfbprod<sfx>` | Basic (10 GB) | Release images, the newest 10 kept per repository |
 | GitHub identities | `id-fb-prod-build`, `id-fb-prod-deploy` (user-assigned) | Federated credentials: `repo:gondolerahul@158562688/fluid-buddha@1439640317:ref:refs/heads/main` (GitHub's immutable subject) and `…:environment:production` | **build** pushes and prunes images (AcrPush, AcrDelete) from `main`. **deploy** runs the release (Virtual Machine Contributor on this VM only), only from the protected environment. Both read the resource group. No stored password. |
@@ -377,7 +378,7 @@ calculator before provisioning.
 
 | Item | Estimate |
 |---|---|
-| VM Standard_B2as_v2 (2 vCPU, 8 GiB) | 45–60 |
+| VM Standard_B2s_v2 (2 vCPU, 8 GiB) | 45–60 |
 | OS disk, 64 GiB Premium SSD (P6) | ~10 |
 | Static public IP (Standard) | ~4 |
 | Container Registry, Basic | ~5 |
@@ -406,14 +407,14 @@ free 100 GB. That is the trigger for a CDN.
 
 | # | Task | Owner | Done when |
 |---|---|---|---|
-| 0.1 | Azure: Owner role, vCPU quota in Central India, size offered | Eng (checked) | **Done**: Owner on Pay-As-You-Go; quota to spare; B2as_v2 offered without restrictions |
+| 0.1 | Azure: Owner role, vCPU quota in Central India, size offered | Eng (checked) | **Done**: Owner on Pay-As-You-Go; quota to spare; B2as_v2 offered (but out of capacity at creation, so B2s_v2) |
 | 0.2 | Google Cloud: production project, billing, APIs, service account and JSON key; models confirmed in `us-central1`; GCP budget | Owner | **Done**: project chosen; the key goes into Key Vault in B3 |
-| 0.3 | Microsoft 365: `fluidbuddha.com` in the tenant (SPF, DKIM, DMARC), shared mailbox `no-reply@`, mail app limited to it | Owner | Domain, mailbox and app done; the Exchange scope waits for `Enable-OrganizationCustomization` |
+| 0.3 | Microsoft 365: `fluidbuddha.com` in the tenant (SPF, DKIM, DMARC), shared mailbox `no-reply@`, mail app limited to it | Owner | **Done** |
 | 0.4 | GoDaddy: records reviewed, TTL lowered to 600 s, no forwarding or parking | Owner | **Done** |
-| 0.5 | GitHub: environment `production` with the Owner as required reviewer, `main` only | Eng (asked to) | Environment exists |
+| 0.5 | GitHub: environment `production` with the Owner as required reviewer, `main` only | Eng (asked to) | **Done** |
 | 0.6 | SSH key pair and the Owner's public IP | Owner | **Done** |
-| 0.7 | Website work merged to `main`, water-film frames included (Release builds from git) | Eng (asked to) | `main` builds the site |
-| 0.8 | CI green on `main`: identify the gitleaks finding (verbose run on the pull request), then rotate or allowlist | Eng (Owner rotates if real) | CI green |
+| 0.7 | Website work merged to `main`, water-film frames included (Release builds from git) | Eng (asked to) | **Done** |
+| 0.8 | CI green on `main`: identify the gitleaks finding (verbose run on the pull request), then rotate or allowlist | Eng (Owner rotates if real) | **Done** (PR #35) |
 | 0.9 | Decisions D4–D11 (§14) | Owner | **Done**: defaults accepted |
 
 ### Phase 1: build the deployment (Eng, one pull request from branch `feature/azure-production`)

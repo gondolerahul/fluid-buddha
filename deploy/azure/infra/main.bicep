@@ -19,8 +19,8 @@ param location string = 'centralindia'
 ])
 param env string = 'prod'
 
-@description('VM size. Fallbacks: Standard_B2s_v2, Standard_B2ms, Standard_D2as_v5.')
-param vmSize string = 'Standard_B2as_v2'
+@description('VM size. Production runs Standard_B2s_v2 (Central India had no B2as_v2 capacity at launch). Fallbacks: Standard_B2as_v2, Standard_B2ms, Standard_D2as_v5.')
+param vmSize string = 'Standard_B2s_v2'
 
 @description('Linux admin user, for emergency SSH only.')
 param adminUsername string = 'fbadmin'
