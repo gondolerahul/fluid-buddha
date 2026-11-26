@@ -23,6 +23,7 @@ Google Cloud, Microsoft 365, GoDaddy and GitHub, or a secret only you should han
 Engineering checked from your `az login`:
 - You are **Owner** on the **Pay-As-You-Go** subscription.
 - Central India has vCPU quota to spare, and **Standard_B2as_v2** is offered there without restrictions.
+  (At creation it had no capacity, so production runs **Standard_B2s_v2**, the same size on Intel.)
 - FluidBuddha's names (`rg-fb-prod-core`, `rg-fb-prod-data`, network `10.52.0.0/24`) don't touch anything
   else in the subscription.
 
@@ -62,7 +63,8 @@ ssh-keygen -t ed25519 -C "fluidbuddha-prod" -f "$env:USERPROFILE\.ssh\fluidbuddh
    - If Google refuses with *"Service account key creation is disabled"*, your organisation enforces the
      policy `iam.disableServiceAccountKeyCreation`. An organisation admin can switch it off for this one
      project: **IAM & Admin → Organization Policies → "Disable service account key creation" → Manage
-     policy → Override → Off**.
+     policy → Override → Off**. Create the key, then set the policy back to **Inherit parent's policy**.
+     While the policy blocks creation nothing downloads, so an empty Downloads folder means no key was made.
    - Alternatively, say so, and we switch to keyless federation from the Azure VM. That is more setup.
 5. **Models.** Production uses the same models as your working local setup, in region `us-central1`:
    - `gemini-3.8-flash` (fast)
@@ -121,6 +123,13 @@ It is not the Azure tenant.
 
    ```powershell
    Connect-ExchangeOnline
+   ```
+
+   If it seems to hang, the sign-in window has opened behind other windows: check the taskbar, or press
+   Ctrl+C and connect with a browser sign-in instead:
+
+   ```powershell
+   Connect-ExchangeOnline -DisableWAM
    ```
 
    Smaller tenants first need Exchange customization switched on, once per tenant. If it says it's

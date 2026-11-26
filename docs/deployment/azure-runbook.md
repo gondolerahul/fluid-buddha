@@ -51,6 +51,10 @@ ssh -i "$env:USERPROFILE\.ssh\fluidbuddha_prod" fbadmin@<PUBLIC_IP>
   roll back, the older code may not run on the new schema. Then restore the pre-deploy dump (below), which
   every deploy takes first.
 - **Apply a changed secret:** edit it in Key Vault, then run Release with the commit that is live now.
+- **Change the website's widget key:** set the GitHub repository variable `NEXT_PUBLIC_FB_KEY` to the new
+  `fbk_…` (it is public, so a variable, not a secret), then run Release with the commit that is live now. The
+  website image is rebuilt even for the same commit, because the key is baked in at build time.
+- **Which release is live:** `fluidbuddha status` on the VM, or the newest green run under Actions → Release.
 
 ## Status and logs
 
@@ -172,3 +176,16 @@ storage account's portal page first.
 | Voice handoff doesn't connect | The Release workflow's STUN check; `fluidbuddha logs coturn` | NSG rules 120 and 130; on strict office networks, TURN over TLS (plan §12, 6.4) |
 | A deploy failed and rolled back | The workflow log; `/var/log/fluidbuddha/deploy-*.log` | Fix forward; the previous release is serving |
 | Backups late | `journalctl -u fluidbuddha-backup -n 100` | Blob access: the VM identity needs Blob Data Contributor on `backups` (re-run provisioning) |
+
+## Provisioning and release problems
+
+Each of these happened at launch; the [launch record](azure-launch-record.md) has the full story.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Release fails at Azure login: `AADSTS700213 No matching federated identity record found` | The federated credential's subject doesn't match what GitHub sends. The repository uses immutable subjects (`repo:<owner>@<id>/<repo>@<id>:…`). | `gh api repos/OWNER/REPO/actions/oidc/customization/sub` shows the prefix; set `githubSubjectPrefix` in `main.bicep` and re-run provisioning, or fix both credentials with `az identity federated-credential update` |
+| Release stops before building: CI not green | Release only builds commits whose CI passed | Fix CI on `main` first (in an emergency only: Run workflow with `skip_ci_check`) |
+| Provisioning: `AllocationFailed` / `SkuNotAvailable` for the VM | The region has no capacity for that size right now, even with quota | Delete the half-created VM and its OS disk, then `provision.ps1 -VmSize <fallback>` (B2s_v2, B2as_v2, B2ms, D2as_v5) |
+| Provisioning: `ResourceNotFound` on the VM's identity | Azure was still creating the VM | Run provisioning again; the template already orders this |
+| Provisioning changes nothing on the VM | The VM exists, so `provision.ps1` leaves it alone (its custom data can't change) | Resize with `az vm resize`, or rebuild (above) |
+| Certificates not issued after the first deploy | DNS didn't point at the VM yet, or GoDaddy forwarding is on | Check with `Resolve-DnsName <name> -Server 8.8.8.8`; Caddy retries by itself once DNS is right |
