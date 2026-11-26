@@ -11,4 +11,12 @@ regexes = [
   # Model settings in the technical spec ("400 tokens, `thinking_budget=0`")
   # trip the generic-api-key rule.
   '''thinking_budget=\d+''',
+  # An Azure built-in role ID (Key Vault Secrets Officer), a public constant in the Bicep under
+  # deploy/azure: the word "Secrets" in the role's name trips the generic-api-key rule.
+  '''b86a8fe4-44ce-4948-aee5-eccb2c155cd7''',
+]
+paths = [
+  # A product-film example brief that ships with the keynote skill: its mock UI shows a made-up
+  # Stripe-style key next to its masked form.
+  '''^\.claude/skills/keynote-product-film/examples/prismor/brief\.json$''',
 ]

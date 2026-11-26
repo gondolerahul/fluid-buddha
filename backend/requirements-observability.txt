@@ -5,4 +5,5 @@
 opentelemetry-api>=1.27
 opentelemetry-sdk>=1.45.2
 opentelemetry-exporter-otlp-proto-http>=1.27
-sentry-sdk>=2.73.0
+# 3.0 (November 2026) drops options setup_sentry passes; move with app/observability/errors.py.
+sentry-sdk>=2.73.0,<3

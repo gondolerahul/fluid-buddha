@@ -220,10 +220,12 @@ module vm 'vm.bicep' = if (deployVm) {
   }
 }
 
-// The VM, whether created just now or on an earlier run.
+// The VM, whether created just now or on an earlier run. A new VM's identity comes from the module
+// itself: looking it up here can run before the VM exists.
 resource vmRef 'Microsoft.Compute/virtualMachines@2024-07-01' existing = {
   name: vmName
 }
+var vmPrincipalId = deployVm ? vm!.outputs.principalId : vmRef.identity.principalId
 
 // GitHub Actions signs in with OIDC: no password or key is stored in GitHub.
 // "build" pushes images from main; "deploy" runs the release on the VM, only from the protected
@@ -269,7 +271,7 @@ module access 'core-access.bicep' = {
   params: {
     acrName: acr.name
     vmName: vmName
-    vmPrincipalId: vmRef.identity.principalId
+    vmPrincipalId: vmPrincipalId
     buildPrincipalId: buildIdentity.properties.principalId
     deployPrincipalId: deployIdentity.properties.principalId
   }
@@ -396,7 +398,7 @@ resource vmHealth 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
 }
 
 output vmName string = vmName
-output vmPrincipalId string = vmRef.identity.principalId
+output vmPrincipalId string = vmPrincipalId
 output publicIp string = pip.properties.ipAddress
 output publicFqdn string = pip.properties.dnsSettings.fqdn
 output acrName string = acr.name
