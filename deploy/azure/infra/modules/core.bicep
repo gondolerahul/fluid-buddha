@@ -9,7 +9,7 @@ param adminUsername string
 param sshPublicKey string
 param adminIpCidr string
 param alertEmail string
-param githubRepo string
+param githubSubjectPrefix string
 param githubBuildBranch string
 param githubEnvironment string
 param siteDomain string
@@ -241,7 +241,7 @@ resource buildFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/feder
   name: 'github-${githubBuildBranch}'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${githubRepo}:ref:refs/heads/${githubBuildBranch}'
+    subject: '${githubSubjectPrefix}:ref:refs/heads/${githubBuildBranch}'
     audiences: [
       'api://AzureADTokenExchange'
     ]
@@ -259,7 +259,7 @@ resource deployFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/fede
   name: 'github-${githubEnvironment}'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${githubRepo}:environment:${githubEnvironment}'
+    subject: '${githubSubjectPrefix}:environment:${githubEnvironment}'
     audiences: [
       'api://AzureADTokenExchange'
     ]

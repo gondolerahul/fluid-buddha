@@ -37,8 +37,8 @@ param alertEmail string
 @description('Object ID of the person running provisioning. Gets Key Vault Secrets Officer and read access to backups.')
 param operatorPrincipalId string
 
-@description('GitHub repository allowed to build and deploy (owner/name).')
-param githubRepo string = 'gondolerahul/fluid-buddha'
+@description('Start of the OIDC subject GitHub sends for this repository. With immutable subjects (a repository setting) it carries the owner and repository IDs: gh api repos/OWNER/REPO/actions/oidc/customization/sub shows it.')
+param githubSubjectPrefix string = 'repo:gondolerahul@158562688/fluid-buddha@1439640317'
 
 @description('Branch whose workflow runs may push images.')
 param githubBuildBranch string = 'main'
@@ -114,7 +114,7 @@ module core 'modules/core.bicep' = {
     sshPublicKey: sshPublicKey
     adminIpCidr: adminIpCidr
     alertEmail: alertEmail
-    githubRepo: githubRepo
+    githubSubjectPrefix: githubSubjectPrefix
     githubBuildBranch: githubBuildBranch
     githubEnvironment: githubEnvironment
     siteDomain: siteDomain

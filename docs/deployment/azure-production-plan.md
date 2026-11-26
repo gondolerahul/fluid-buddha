@@ -133,7 +133,7 @@ globally unique names stay stable. Every resource is tagged `product=fluidbuddha
 | Virtual machine | `vm-fb-prod-01` | **Standard_B2as_v2** (2 vCPU, 8 GiB, burstable). Fallbacks: B2s_v2, B2ms, D2as_v5. Ubuntu 24.04 LTS (Gen2, Trusted Launch), 64 GiB Premium SSD, boot diagnostics on. | Runs everything. The OS disk survives an accidental VM delete. |
 | VM managed identity | system-assigned | — | AcrPull on the registry, Key Vault Secrets Officer on the vault, Blob Data Contributor on the backups container. No keys on disk. |
 | Container registry | `acrfbprod<sfx>` | Basic (10 GB) | Release images, the newest 10 kept per repository |
-| GitHub identities | `id-fb-prod-build`, `id-fb-prod-deploy` (user-assigned) | Federated credentials: `repo:gondolerahul/fluid-buddha:ref:refs/heads/main` and `…:environment:production` | **build** pushes and prunes images (AcrPush, AcrDelete) from `main`. **deploy** runs the release (Virtual Machine Contributor on this VM only), only from the protected environment. Both read the resource group. No stored password. |
+| GitHub identities | `id-fb-prod-build`, `id-fb-prod-deploy` (user-assigned) | Federated credentials: `repo:gondolerahul@158562688/fluid-buddha@1439640317:ref:refs/heads/main` (GitHub's immutable subject) and `…:environment:production` | **build** pushes and prunes images (AcrPush, AcrDelete) from `main`. **deploy** runs the release (Virtual Machine Contributor on this VM only), only from the protected environment. Both read the resource group. No stored password. |
 | Alerts | `ag-fb-prod` and `alert-fb-prod-*` | — | Email on CPU > 85 %, CPU credits low, memory < 400 MiB, and any Resource Health change of the VM |
 
 **`rg-fb-prod-data`**: state. A `CanNotDelete` lock protects it.
