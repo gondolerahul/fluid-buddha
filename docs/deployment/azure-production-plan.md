@@ -511,7 +511,7 @@ End-to-end checks for 5.4:
 
 | # | Decision | Default |
 |---|---|---|
-| D1 | VM size | Standard_B2as_v2 (2 vCPU, 8 GiB). Fallbacks if needed: B2s_v2, B2ms, D2as_v5. |
+| D1 | VM size | Standard_B2as_v2 (2 vCPU, 8 GiB). Fallbacks if needed: B2s_v2, B2ms, D2as_v5. **Provisioned as Standard_B2s_v2** (same size, Intel): Central India had no B2as_v2 capacity on 26 November. |
 | D2 | Who runs provisioning | **Decided:** Eng, after the Owner's `az login` and yes on the preview |
 | D3 | Email provider | **Decided:** Microsoft 365 through Graph, sender `no-reply@fluidbuddha.com` (shared mailbox) |
 | D4 | Billing at launch | On if Razorpay live keys exist; otherwise checkout off, free plan only |

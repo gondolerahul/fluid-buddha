@@ -18,7 +18,7 @@ staging come later from the same templates. The code is in [`deploy/azure`](../.
 |---|---|---|
 | 0. Prerequisites | Account owner + Eng | Nearly done: the Exchange scope for the mail app and the gitleaks finding remain |
 | 1. Build the deployment (PR) | Eng | Done, merged to `main` |
-| 2. Provision Azure | Eng, with the account owner's approval | Preview next |
+| 2. Provision Azure | Eng, with the account owner's approval | Done, 26 November. The VM is Standard_B2s_v2: Central India had no capacity for B2as_v2. |
 | 3. Configure secrets and DNS | Account owner | Not started |
 | 4. First deploy and checks | Together | Not started |
 | 5. Go live, website integration | Together | Not started |
